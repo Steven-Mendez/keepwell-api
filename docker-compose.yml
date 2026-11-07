@@ -1,0 +1,15 @@
+# Local stand-in for Aurora DSQL: collation C and repeatable read, like DSQL, so ordering and
+# concurrency surprises show up here and not in production.
+services:
+  postgres:
+    image: postgres:17-alpine
+    ports: ["54329:5432"]
+    environment:
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: keepwell
+      POSTGRES_INITDB_ARGS: "--locale=C --encoding=UTF8"
+    command: ["postgres", "-c", "default_transaction_isolation=repeatable read", "-c", "max_connections=200"]
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "postgres"]
+      interval: 2s
+      retries: 20

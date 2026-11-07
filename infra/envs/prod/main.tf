@@ -16,28 +16,17 @@ terraform {
 provider "aws" {
   region = var.region
   default_tags {
-    tags = { project = "keepwell", environment = local.environment, managed_by = "terraform" }
+    tags = { project = "keepwell", environment = "prod", managed_by = "terraform" }
   }
 }
 
-locals {
+module "environment" {
+  source      = "../../modules/environment"
   environment = "prod"
-  name        = "keepwell-${local.environment}"
-}
-
-module "api" {
-  source      = "../../modules/api"
-  name        = local.name
+  domain      = var.domain
+  hostname    = "api.${var.domain}"
   lambda_zip  = var.lambda_zip
   app_version = var.app_version
-}
-
-module "dns" {
-  source    = "../../modules/dns"
-  zone_name = var.domain
-  hostname  = "api.${var.domain}"
-  api_id    = module.api.api_id
-  stage_id  = module.api.stage_id
 }
 
 # An abuse shows up on the bill first. Account-wide, so it lives with prod only.

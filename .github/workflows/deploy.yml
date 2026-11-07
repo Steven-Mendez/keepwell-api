@@ -1,0 +1,98 @@
+# Deploys one environment: migrations, terraform apply, then that environment's verification.
+# Called by pipeline.yml for dev and then prod.
+name: deploy
+
+on:
+  workflow_call:
+    inputs:
+      environment:
+        type: string
+        required: true
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  AWS_REGION: us-east-1
+  TF_IN_AUTOMATION: "1"
+  TF_INPUT: "0"
+  TF_VAR_app_version: ${{ github.sha }}
+  TF_VAR_alert_email: ${{ vars.ALERT_EMAIL }}
+  TF_VAR_domain: ${{ vars.DOMAIN }}
+
+jobs:
+  deploy:
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: lambda
+          path: dist
+      - uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+      - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
+        with:
+          terraform_wrapper: false
+
+      - name: terraform init
+        working-directory: infra/envs/${{ inputs.environment }}
+        run: terraform init -backend-config="bucket=${{ vars.TF_STATE_BUCKET }}"
+
+      # Migrations go before the apply, so the new Lambda never runs against the old schema. The
+      # very first time the cluster doesn't exist yet; then they run right after the apply.
+      - name: migrate (before apply)
+        id: premigrate
+        working-directory: infra/envs/${{ inputs.environment }}
+        run: |
+          host=$(terraform output -raw db_endpoint 2>/dev/null || true)
+          if [ -z "$host" ] || [[ "$host" == *"No outputs"* ]] || [[ "$host" == *"Warning"* ]]; then
+            echo "No cluster yet; migrations run after the apply"
+            echo "done=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          DB_HOST="$host" APP_IAM_ROLE_ARN="$(terraform output -raw app_role_arn)" pnpm --dir ../../.. db:migrate
+          echo "done=true" >> "$GITHUB_OUTPUT"
+
+      - name: terraform apply
+        working-directory: infra/envs/${{ inputs.environment }}
+        run: terraform apply -auto-approve
+
+      - name: outputs
+        id: out
+        working-directory: infra/envs/${{ inputs.environment }}
+        run: |
+          {
+            echo "url=$(terraform output -raw api_url)"
+            echo "db=$(terraform output -raw db_endpoint)"
+            echo "role=$(terraform output -raw app_role_arn)"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: migrate (first deploy of the cluster)
+        if: steps.premigrate.outputs.done != 'true'
+        env:
+          DB_HOST: ${{ steps.out.outputs.db }}
+          APP_IAM_ROLE_ARN: ${{ steps.out.outputs.role }}
+        run: pnpm db:migrate
+
+      - name: integration tests against dev
+        if: inputs.environment == 'dev'
+        env:
+          DB_HOST: ${{ steps.out.outputs.db }}
+          API_URL: ${{ steps.out.outputs.url }}
+        run: pnpm test:remote
+
+      - name: smoke test
+        run: ./scripts/smoke.sh "${{ steps.out.outputs.url }}" "${{ github.sha }}"

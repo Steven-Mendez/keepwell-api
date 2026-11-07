@@ -11,8 +11,10 @@ are recorded as ADRs in [`docs/adr`](docs/adr).
 
 ```bash
 pnpm install
+pnpm db:up          # Postgres in Docker, configured like DSQL (collation C, repeatable read)
+DATABASE_URL=postgres://postgres:postgres@localhost:54329/keepwell pnpm db:migrate
 pnpm dev            # http://localhost:3001
-pnpm check          # typecheck, lint (including the layer rule) and tests
+pnpm check          # typecheck, lint (including the layer rule) and tests, against local Postgres
 pnpm build          # dist/lambda-*.zip, what Terraform deploys
 ```
 
