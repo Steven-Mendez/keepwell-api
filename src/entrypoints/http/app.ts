@@ -8,7 +8,8 @@ import type { RequestAccountDeletion } from "../../core/use-cases/request-accoun
 import type { ResolveCapabilities } from "../../core/use-cases/resolve-capabilities"
 import type { SyncRepository } from "../../core/ports/sync-repository"
 import { syncRoutes } from "./routes/sync"
-import { mcpRoutes } from "./routes/mcp"
+import { mcpRoutes, wellKnownRoutes } from "./routes/mcp"
+import type { McpConnections } from "../../adapters/auth/mcp-connections"
 import type { ReadLedger } from "../../core/use-cases/read-ledger"
 import { openApiDocument } from "./openapi"
 import { ApiError, errorBody, onError } from "./errors"
@@ -35,7 +36,7 @@ export interface AppDependencies {
   sync?: SyncRepository
   clock?: () => number
   /** The MCP server's data access; with it, /mcp is mounted. */
-  mcp?: { readLedger: ReadLedger; baseURL: string; now?: () => Date }
+  mcp?: { readLedger: ReadLedger; baseURL: string; now?: () => Date; connections?: McpConnections }
 }
 
 /** Builds the whole HTTP surface from its dependencies, so tests and Lambda wire the same app. */
@@ -75,6 +76,7 @@ export function createApp(deps: AppDependencies) {
       app.route("/", syncRoutes({ auth: deps.auth, capabilities: deps.capabilities, repository: deps.sync, clock: deps.clock }))
     }
     if (deps.capabilities && deps.mcp) {
+      app.route("/", wellKnownRoutes(deps.auth, deps.mcp.baseURL))
       app.route("/", mcpRoutes({ auth: deps.auth, capabilities: deps.capabilities, ...deps.mcp }))
     }
   }

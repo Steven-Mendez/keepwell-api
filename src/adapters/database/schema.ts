@@ -1,4 +1,4 @@
-import { boolean, index, pgTable, text, timestamp } from "drizzle-orm/pg-core"
+import { boolean, index, integer, pgTable, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core"
 
 // Drizzle tables. Money and rates are `text` holding exact decimals (DECIMAL_PATTERN), never
 // `numeric`: DSQL's bare `numeric` is numeric(18,6) and rounds silently. JSON is stored as `text`.
@@ -27,6 +27,11 @@ export const users = pgTable("users", {
    * deletion job erases their data in batches; the row itself goes last.
    */
   deletionRequestedAt: timestamp("deletion_requested_at", { withTimezone: true }),
+  /**
+   * "Disconnect everything": MCP access tokens issued before this instant are refused. Access tokens
+   * are JWTs that can't be revoked one by one, so this is how revocation is immediate (ADR 0007).
+   */
+  mcpTokensNotBefore: timestamp("mcp_tokens_not_before", { withTimezone: true }),
 })
 
 export const sessions = pgTable(
@@ -76,6 +81,156 @@ export const verifications = pgTable(
   },
   (table) => [index("verifications_identifier_idx").on(table.identifier)]
 )
+
+// --- OAuth 2.1 for MCP (Better Auth jwt, mcp/oauth-provider and cimd plugins) ---
+// Generated with `npx auth generate --adapter drizzle`, then adapted for DSQL: arrays and JSON are
+// text (the adapter is patched to serialize them, patches/@better-auth__drizzle-adapter*.patch),
+// and foreign keys are dropped.
+
+const at = (name: string) => timestamp(name, { withTimezone: true })
+
+export const jwkss = pgTable("jwkss", {
+  id: text("id").primaryKey(),
+  publicKey: text("public_key").notNull(),
+  privateKey: text("private_key").notNull(),
+  createdAt: at("created_at").notNull(),
+  expiresAt: at("expires_at"),
+  alg: text("alg"),
+  crv: text("crv"),
+})
+
+export const oauthClients = pgTable(
+  "oauth_clients",
+  {
+    id: text("id").primaryKey(),
+    clientId: text("client_id").notNull().unique(),
+    clientSecret: text("client_secret"),
+    clientDiscoveryId: text("client_discovery_id"),
+    disabled: boolean("disabled").default(false),
+    skipConsent: boolean("skip_consent"),
+    enableEndSession: boolean("enable_end_session"),
+    subjectType: text("subject_type"),
+    scopes: text("scopes"),
+    clientCredentialsScopes: text("client_credentials_scopes"),
+    userId: text("user_id"),
+    createdAt: at("created_at"),
+    updatedAt: at("updated_at"),
+    name: text("name"),
+    uri: text("uri"),
+    icon: text("icon"),
+    contacts: text("contacts"),
+    tos: text("tos"),
+    policy: text("policy"),
+    softwareId: text("software_id"),
+    softwareVersion: text("software_version"),
+    softwareStatement: text("software_statement"),
+    redirectUris: text("redirect_uris").notNull(),
+    postLogoutRedirectUris: text("post_logout_redirect_uris"),
+    backchannelLogoutUri: text("backchannel_logout_uri"),
+    backchannelLogoutSessionRequired: boolean("backchannel_logout_session_required"),
+    tokenEndpointAuthMethod: text("token_endpoint_auth_method"),
+    applicationType: text("application_type"),
+    jwks: text("jwks"),
+    jwksUri: text("jwks_uri"),
+    grantTypes: text("grant_types"),
+    responseTypes: text("response_types"),
+    requirePKCE: boolean("require_pkce"),
+    dpopBoundAccessTokens: boolean("dpop_bound_access_tokens").default(false),
+    referenceId: text("reference_id"),
+    metadata: text("metadata"),
+  },
+  (table) => [index("oauth_clients_user_id_idx").on(table.userId)]
+)
+
+export const oauthResources = pgTable("oauth_resources", {
+  id: text("id").primaryKey(),
+  identifier: text("identifier").notNull().unique(),
+  name: text("name").notNull(),
+  accessTokenTtl: integer("access_token_ttl"),
+  refreshTokenTtl: integer("refresh_token_ttl"),
+  signingAlgorithm: text("signing_algorithm"),
+  signingKeyId: text("signing_key_id"),
+  allowedScopes: text("allowed_scopes"),
+  customClaims: text("custom_claims"),
+  dpopBoundAccessTokensRequired: boolean("dpop_bound_access_tokens_required").default(false),
+  disabled: boolean("disabled").default(false),
+  createdAt: at("created_at"),
+  updatedAt: at("updated_at"),
+  policyVersion: integer("policy_version").default(1),
+  metadata: text("metadata"),
+})
+
+export const oauthClientResources = pgTable(
+  "oauth_client_resources",
+  {
+    id: text("id").primaryKey(),
+    clientId: text("client_id").notNull(),
+    resourceId: text("resource_id").notNull(),
+    metadata: text("metadata"),
+    createdAt: at("created_at"),
+  },
+  (table) => [
+    uniqueIndex("oauth_client_resources_client_resource_uidx").on(table.clientId, table.resourceId),
+    index("oauth_client_resources_resource_id_idx").on(table.resourceId),
+  ]
+)
+
+/** A function, not a shared object: Drizzle column builders carry their table's constraint names. */
+const tokenColumns = () => ({
+  id: text("id").primaryKey(),
+  token: text("token").notNull().unique(),
+  clientId: text("client_id").notNull(),
+  sessionId: text("session_id"),
+  referenceId: text("reference_id"),
+  authorizationCodeId: text("authorization_code_id"),
+  resources: text("resources"),
+  requestedUserInfoClaims: text("requested_user_info_claims"),
+  expiresAt: at("expires_at").notNull(),
+  createdAt: at("created_at").notNull(),
+  revoked: at("revoked"),
+  confirmation: text("confirmation"),
+  scopes: text("scopes").notNull(),
+})
+
+export const oauthRefreshTokens = pgTable(
+  "oauth_refresh_tokens",
+  {
+    ...tokenColumns(),
+    userId: text("user_id").notNull(),
+    rotatedAt: at("rotated_at"),
+    rotationReplayResponse: text("rotation_replay_response"),
+    rotationReplayExpiresAt: at("rotation_replay_expires_at"),
+    authTime: at("auth_time"),
+  },
+  (table) => [index("oauth_refresh_tokens_user_id_idx").on(table.userId), index("oauth_refresh_tokens_client_id_idx").on(table.clientId)]
+)
+
+export const oauthAccessTokens = pgTable(
+  "oauth_access_tokens",
+  { ...tokenColumns(), userId: text("user_id"), refreshId: text("refresh_id") },
+  (table) => [index("oauth_access_tokens_user_id_idx").on(table.userId), index("oauth_access_tokens_refresh_id_idx").on(table.refreshId)]
+)
+
+export const oauthConsents = pgTable(
+  "oauth_consents",
+  {
+    id: text("id").primaryKey(),
+    clientId: text("client_id").notNull(),
+    userId: text("user_id"),
+    referenceId: text("reference_id"),
+    resources: text("resources"),
+    requestedUserInfoClaims: text("requested_user_info_claims"),
+    scopes: text("scopes").notNull(),
+    createdAt: at("created_at").notNull(),
+    updatedAt: at("updated_at").notNull(),
+  },
+  (table) => [index("oauth_consents_user_id_idx").on(table.userId), index("oauth_consents_client_id_idx").on(table.clientId)]
+)
+
+export const oauthClientAssertions = pgTable("oauth_client_assertions", {
+  id: text("id").primaryKey(),
+  expiresAt: at("expires_at").notNull(),
+})
 
 // --- Security and account events: insert-only for keepwell_app (granted in the migration) ---
 

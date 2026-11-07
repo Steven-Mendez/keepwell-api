@@ -13,6 +13,10 @@ import { withTransaction } from "./with-transaction"
  */
 export const USER_OWNED_TABLES: { name: string; key: string }[] = [
   { name: "sessions", key: "id" },
+  { name: "oauth_access_tokens", key: "id" },
+  { name: "oauth_refresh_tokens", key: "id" },
+  { name: "oauth_consents", key: "id" },
+  { name: "oauth_clients", key: "id" },
   { name: "accounts", key: "id" },
   { name: "transactions", key: "id" },
   { name: "recurring_rules", key: "id" },

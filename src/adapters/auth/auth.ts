@@ -1,4 +1,8 @@
+import { cimd } from "@better-auth/cimd"
+import { fetchClientMetadataResource } from "@better-auth/cimd/node"
+import { mcp } from "@better-auth/mcp"
 import { betterAuth } from "better-auth"
+import { jwt } from "better-auth/plugins"
 import { drizzleAdapter } from "better-auth/adapters/drizzle"
 import { APIError } from "better-auth/api"
 import { and, eq, isNotNull } from "drizzle-orm"
@@ -28,6 +32,20 @@ export interface AuthOptions {
 }
 
 export const SESSION_DAYS = 30
+/** MCP access tokens live 15 minutes; refresh tokens rotate and are revocable (ADR 0007). */
+export const MCP_ACCESS_TOKEN_SECONDS = 15 * 60
+export const MCP_SCOPES = ["read", "write", "offline_access"] as const
+
+/** Exact match is the provider's default; on top of it, only https or a loopback address. */
+export function allowedRedirectUri(uri: string): boolean {
+  try {
+    const url = new URL(uri)
+    if (url.protocol === "https:") return true
+    return url.protocol === "http:" && (url.hostname === "localhost" || url.hostname === "127.0.0.1")
+  } catch {
+    return false
+  }
+}
 
 /**
  * Better Auth with Sign in with Apple only. The web signs in through the redirect flow (audience:
@@ -44,7 +62,30 @@ export function createAuth(options: AuthOptions) {
     basePath: "/api/auth",
     secret: config.auth_secret,
     trustedOrigins: [options.webOrigin, "https://appleid.apple.com"],
-    database: drizzleAdapter(options.db, { provider: "pg", usePlural: true, schema }),
+    // JSON and arrays as text: Aurora DSQL has no jsonb or array columns (patched adapter option).
+    database: drizzleAdapter(options.db, { provider: "pg", usePlural: true, schema, supportsJSON: false, supportsArrays: false }),
+    plugins: [
+      // Signs MCP access tokens; /api/auth/jwks publishes the keys requireMcpAuth verifies against.
+      jwt(),
+      mcp({
+        resource: `${options.baseURL}/mcp`,
+        // Both pages live in the web app, which shares the session cookie with the API.
+        loginPage: `${options.webOrigin}/connect`,
+        consentPage: `${options.webOrigin}/connect/consent`,
+        scopes: [...MCP_SCOPES],
+        clientRegistrationDefaultScopes: ["read", "offline_access"],
+        clientRegistrationAllowedScopes: [...MCP_SCOPES],
+        clientRegistrationRequirePKCE: true,
+        accessTokenExpiresIn: MCP_ACCESS_TOKEN_SECONDS,
+        grantTypes: ["authorization_code", "refresh_token"],
+        // CIMD first; dynamic registration stays as a fallback for clients without it, rate limited.
+        allowDynamicClientRegistration: true,
+        allowUnauthenticatedClientRegistration: true,
+        rateLimit: { register: { window: 3600, max: 10 } },
+        validateRedirectUri: (uri, _registered, exactMatch) => exactMatch && allowedRedirectUri(uri),
+      }),
+      cimd({ fetchClientMetadataResource, metadataProfile: "mcp-2026-07-28" }),
+    ],
     socialProviders: {
       apple: {
         clientId: config.apple_services_id,

@@ -1,0 +1,30 @@
+diff --git a/dist/index.d.mts b/dist/index.d.mts
+index f66ec0dec5f498691ff177acac2f3daa31a6d02b..6393d6d83a7ea9fc180581678eac8dac7f03bbb0 100644
+--- a/dist/index.d.mts
++++ b/dist/index.d.mts
+@@ -56,6 +56,9 @@ export interface DrizzleAdapterConfig {
+    * @default undefined
+    */
+   schemaName?: string | undefined;
++  /** Patched in keepwell-api: store JSON and arrays as text (Aurora DSQL has no jsonb or array columns). */
++  supportsJSON?: boolean | undefined;
++  supportsArrays?: boolean | undefined;
+ }
+ export declare const drizzleAdapter: (db: DB, config: DrizzleAdapterConfig) => (options: BetterAuthOptions) => DBAdapter<BetterAuthOptions>;
+ //#endregion
+\ No newline at end of file
+diff --git a/dist/index.mjs b/dist/index.mjs
+index 2e378335a244f23b2678e3a0fc26c23fcd750f0b..995e5187322068d9abfa8dd5b9b54f6f71e10b0a 100644
+--- a/dist/index.mjs
++++ b/dist/index.mjs
+@@ -548,8 +548,8 @@ const drizzleAdapter = (db, config) => {
+ 			usePlural: config.usePlural ?? false,
+ 			debugLogs: config.debugLogs ?? false,
+ 			supportsUUIDs: config.provider === "pg" ? true : false,
+-			supportsJSON: config.provider === "pg" ? true : false,
+-			supportsArrays: config.provider === "pg" ? true : false,
++			supportsJSON: config.supportsJSON ?? (config.provider === "pg" ? true : false),
++			supportsArrays: config.supportsArrays ?? (config.provider === "pg" ? true : false),
+ 			customTransformInput: ({ data, fieldAttributes, model, field }) => {
+ 				if (fieldAttributes.type !== "date") return data;
+ 				const schema = config.schema || db._.fullSchema;

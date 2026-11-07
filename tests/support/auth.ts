@@ -16,6 +16,7 @@ import { ScopedLedgerReader } from "../../src/adapters/database/repositories/led
 import { scopedDb } from "../../src/adapters/database/scoped-db"
 import { ApplySyncBatch } from "../../src/core/use-cases/apply-sync-batch"
 import { ReadLedger } from "../../src/core/use-cases/read-ledger"
+import { McpConnections } from "../../src/adapters/auth/mcp-connections"
 import { DrizzleEntitlementRepository } from "../../src/adapters/database/entitlements"
 import { CachedPlansSource } from "../../src/adapters/config/plans-source"
 import { CLOSED_PLANS, type PlansConfig } from "../../src/core/capabilities"
@@ -64,7 +65,8 @@ async function verify(token: string) {
 /** Plans as at launch: sync for everyone during early access, MCP with the coffee. */
 export const LAUNCH_PLANS: PlansConfig = { ...CLOSED_PLANS, early_access: { cloud_sync: true } }
 
-export function testAuthApp(db: Database, config: Partial<AppConfig> = {}, options: { runJobs?: boolean; plans?: () => PlansConfig; clock?: () => number; now?: () => Date } = {}) {
+export function testAuthApp(db: Database, config: Partial<AppConfig> = {}, options: { runJobs?: boolean; plans?: () => PlansConfig; clock?: () => number; now?: () => Date; baseURL?: string } = {}) {
+  const baseURL = options.baseURL ?? "http://localhost:3001"
   const { logger, lines } = captureLogger()
   const audit = new DrizzleAuditLog(db)
   const accounts = new DrizzleAccountStore(db, logger)
@@ -73,7 +75,7 @@ export function testAuthApp(db: Database, config: Partial<AppConfig> = {}, optio
     db,
     config: { ...TEST_CONFIG, ...config },
     audit: new DrizzleAuditLog(db),
-    baseURL: "http://localhost:3001",
+    baseURL,
     webOrigin: "http://localhost:3000",
     appleClientSecret: "unused-in-tests",
     verifyAppleIdToken: verify,
@@ -84,7 +86,7 @@ export function testAuthApp(db: Database, config: Partial<AppConfig> = {}, optio
   const capabilities = Promise.resolve(new ResolveCapabilities(entitlements, new CachedPlansSource(async () => JSON.stringify(plans()), logger, 0)))
   const sync = createSyncRepository(db, logger)
   const now = options.now ?? (() => new Date())
-  const mcp = { readLedger: new ReadLedger(new ScopedLedgerReader((userId) => scopedDb(db, userId)), new ApplySyncBatch(sync), now), baseURL: "http://localhost:3001", now }
+  const mcp = { readLedger: new ReadLedger(new ScopedLedgerReader((userId) => scopedDb(db, userId)), new ApplySyncBatch(sync), now), baseURL, now, connections: new McpConnections(db, audit) }
   const app = createApp({ logger, version: "test", auth: Promise.resolve(auth), webOrigin: "http://localhost:3000", requestDeletion, capabilities, sync, clock: options.clock, mcp })
   return { app, auth, lines, queue, accounts, audit, entitlements, capabilities }
 }
