@@ -1,0 +1,16 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["config:recommended", "helpers:pinGitHubActionDigests"],
+  "schedule": ["before 6am on monday"],
+  "packageRules": [
+    { "matchManagers": ["npm"], "groupName": "npm weekly", "matchUpdateTypes": ["minor", "patch"] },
+    {
+      "description": "Security-sensitive: never wait for the weekly group",
+      "matchPackageNames": ["better-auth", "@better-auth/*", "@modelcontextprotocol/sdk"],
+      "groupName": null,
+      "schedule": ["at any time"]
+    },
+    { "matchManagers": ["terraform"], "groupName": "terraform providers" }
+  ],
+  "vulnerabilityAlerts": { "enabled": true, "schedule": ["at any time"] }
+}

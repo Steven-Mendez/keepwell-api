@@ -1,0 +1,11 @@
+node_modules/
+dist/
+lambda*.zip
+coverage/
+.env
+.env.*
+*.tfstate
+*.tfstate.*
+.terraform/
+*.tfplan
+config.local.json

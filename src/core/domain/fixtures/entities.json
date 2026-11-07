@@ -1,0 +1,549 @@
+{
+  "$comment": "Shared cases: keepwell-web is the source; keepwell-api and keepwell-ios copy this file verbatim. Every suite must accept each valid value and reject each invalid one.",
+  "version": 1,
+  "entities": {
+    "account": {
+      "valid": [
+        {
+          "name": "deposit in two currencies",
+          "value": {
+            "id": "11111111-1111-4111-8111-111111111111",
+            "name": "Ahorro",
+            "bank": "BAC",
+            "kind": "deposit",
+            "openingBalances": [
+              {
+                "amount": "1250.50",
+                "currency": "USD"
+              },
+              {
+                "amount": "0",
+                "currency": "NIO"
+              }
+            ],
+            "openingDate": "2026-11-01T12:00:00.000Z"
+          }
+        },
+        {
+          "name": "credit card with terms",
+          "value": {
+            "id": "22222222-2222-4222-8222-222222222222",
+            "name": "Visa",
+            "kind": "credit",
+            "openingBalances": [
+              {
+                "amount": "-300.00",
+                "currency": "USD"
+              }
+            ],
+            "openingDate": "2026-11-01T12:00:00.000Z",
+            "creditTerms": {
+              "debtMode": "dual",
+              "limit": {
+                "amount": "2000",
+                "currency": "USD"
+              },
+              "cutoffDay": 15,
+              "dueDay": 31
+            }
+          }
+        }
+      ],
+      "invalid": [
+        {
+          "name": "amount with exponent",
+          "reason": "Not an exact decimal",
+          "value": {
+            "id": "11111111-1111-4111-8111-111111111111",
+            "name": "x",
+            "kind": "deposit",
+            "openingBalances": [
+              {
+                "amount": "1e3",
+                "currency": "USD"
+              }
+            ],
+            "openingDate": "2026-11-01T12:00:00.000Z"
+          }
+        },
+        {
+          "name": "unknown currency",
+          "reason": "Unknown ISO 4217 currency",
+          "value": {
+            "id": "11111111-1111-4111-8111-111111111111",
+            "name": "x",
+            "kind": "cash",
+            "openingBalances": [
+              {
+                "amount": "1",
+                "currency": "XXZ"
+              }
+            ],
+            "openingDate": "2026-11-01T12:00:00.000Z"
+          }
+        },
+        {
+          "name": "cutoff day 32",
+          "reason": "day of month",
+          "value": {
+            "id": "11111111-1111-4111-8111-111111111111",
+            "name": "x",
+            "kind": "credit",
+            "openingBalances": [],
+            "openingDate": "2026-11-01T12:00:00.000Z",
+            "creditTerms": {
+              "debtMode": "dual",
+              "cutoffDay": 32
+            }
+          }
+        }
+      ]
+    },
+    "card": {
+      "valid": [
+        {
+          "name": "debit card",
+          "value": {
+            "id": "33333333-3333-4333-8333-333333333333",
+            "accountId": "11111111-1111-4111-8111-111111111111",
+            "kind": "debit",
+            "network": "visa",
+            "lastFour": "4242",
+            "color": "azul",
+            "expiry": {
+              "month": 12,
+              "year": 2029
+            }
+          }
+        }
+      ],
+      "invalid": [
+        {
+          "name": "full card number",
+          "reason": "Last four must be four digits",
+          "value": {
+            "id": "33333333-3333-4333-8333-333333333333",
+            "accountId": "11111111-1111-4111-8111-111111111111",
+            "kind": "debit",
+            "lastFour": "4242424242424242"
+          }
+        }
+      ]
+    },
+    "category": {
+      "valid": [
+        {
+          "name": "default with budget",
+          "value": {
+            "id": "groceries",
+            "name": "Groceries",
+            "kind": "expense",
+            "isRenamed": false,
+            "monthlyBudget": {
+              "amount": "400",
+              "currency": "USD"
+            }
+          }
+        }
+      ],
+      "invalid": [
+        {
+          "name": "zero budget",
+          "reason": "Must be greater than zero",
+          "value": {
+            "id": "groceries",
+            "name": "Groceries",
+            "kind": "expense",
+            "isRenamed": false,
+            "monthlyBudget": {
+              "amount": "0",
+              "currency": "USD"
+            }
+          }
+        }
+      ]
+    },
+    "transaction": {
+      "valid": [
+        {
+          "name": "expense in second currency",
+          "value": {
+            "id": "44444444-4444-4444-8444-444444444444",
+            "date": "2026-11-01T12:00:00.000Z",
+            "status": "confirmed",
+            "description": "Supermercado",
+            "kind": "expense",
+            "categoryId": "groceries",
+            "amount": "1520.75",
+            "currency": "NIO",
+            "accountId": "11111111-1111-4111-8111-111111111111",
+            "exchangeRate": {
+              "principal": "USD",
+              "second": "NIO",
+              "rate": "36.6243"
+            },
+            "isShared": false
+          }
+        },
+        {
+          "name": "transfer with bank rate",
+          "value": {
+            "id": "44444444-4444-4444-8444-444444444444",
+            "date": "2026-11-01T06:00:00-06:00",
+            "status": "planned",
+            "description": "Pago tarjeta",
+            "kind": "transfer",
+            "amount": "100",
+            "currency": "USD",
+            "accountId": "11111111-1111-4111-8111-111111111111",
+            "destinationAccountId": "22222222-2222-4222-8222-222222222222",
+            "actualDebitedPrincipal": "100.00",
+            "exchangeRate": {
+              "principal": "USD",
+              "second": "NIO",
+              "rate": "36.6243"
+            },
+            "isShared": false,
+            "tags": [
+              "tarjeta"
+            ]
+          }
+        }
+      ],
+      "invalid": [
+        {
+          "name": "negative amount",
+          "reason": "amount is always positive; kind carries the direction",
+          "value": {
+            "id": "44444444-4444-4444-8444-444444444444",
+            "date": "2026-11-01T12:00:00.000Z",
+            "status": "confirmed",
+            "description": "x",
+            "kind": "expense",
+            "amount": "-10",
+            "currency": "USD",
+            "accountId": "11111111-1111-4111-8111-111111111111",
+            "exchangeRate": {
+              "principal": "USD",
+              "second": "NIO",
+              "rate": "36.6243"
+            },
+            "isShared": false
+          }
+        },
+        {
+          "name": "amount as a number",
+          "reason": "amounts travel as exact decimal text",
+          "value": {
+            "id": "44444444-4444-4444-8444-444444444444",
+            "date": "2026-11-01T12:00:00.000Z",
+            "status": "confirmed",
+            "description": "x",
+            "kind": "expense",
+            "amount": 10.5,
+            "currency": "USD",
+            "accountId": "11111111-1111-4111-8111-111111111111",
+            "exchangeRate": {
+              "principal": "USD",
+              "second": "NIO",
+              "rate": "36.6243"
+            },
+            "isShared": false
+          }
+        },
+        {
+          "name": "zero exchange rate",
+          "reason": "Must be greater than zero",
+          "value": {
+            "id": "44444444-4444-4444-8444-444444444444",
+            "date": "2026-11-01T12:00:00.000Z",
+            "status": "confirmed",
+            "description": "x",
+            "kind": "expense",
+            "amount": "1",
+            "currency": "USD",
+            "accountId": "11111111-1111-4111-8111-111111111111",
+            "exchangeRate": {
+              "principal": "USD",
+              "second": "NIO",
+              "rate": "0"
+            },
+            "isShared": false
+          }
+        },
+        {
+          "name": "date without offset",
+          "reason": "instants carry their offset",
+          "value": {
+            "id": "44444444-4444-4444-8444-444444444444",
+            "date": "2026-11-01T12:00:00",
+            "status": "confirmed",
+            "description": "x",
+            "kind": "expense",
+            "amount": "1",
+            "currency": "USD",
+            "accountId": "11111111-1111-4111-8111-111111111111",
+            "exchangeRate": {
+              "principal": "USD",
+              "second": "NIO",
+              "rate": "36.6243"
+            },
+            "isShared": false
+          }
+        }
+      ]
+    },
+    "recurringRule": {
+      "valid": [
+        {
+          "name": "monthly rent",
+          "value": {
+            "id": "55555555-5555-4555-8555-555555555555",
+            "name": "Alquiler",
+            "kind": "expense",
+            "categoryId": "housing",
+            "amount": "450",
+            "currency": "USD",
+            "accountId": "11111111-1111-4111-8111-111111111111",
+            "frequency": "monthly",
+            "interval": 1,
+            "startDate": "2026-11-01T12:00:00.000Z",
+            "nextDate": "2026-12-01T12:00:00.000Z",
+            "isSubscription": false,
+            "autoConfirm": true,
+            "isPaused": false
+          }
+        }
+      ],
+      "invalid": [
+        {
+          "name": "interval 100",
+          "reason": "interval is 1 to 99",
+          "value": {
+            "id": "55555555-5555-4555-8555-555555555555",
+            "name": "x",
+            "kind": "expense",
+            "amount": "1",
+            "currency": "USD",
+            "accountId": "11111111-1111-4111-8111-111111111111",
+            "frequency": "monthly",
+            "interval": 100,
+            "startDate": "2026-11-01T12:00:00.000Z",
+            "nextDate": "2026-11-01T12:00:00.000Z",
+            "isSubscription": false,
+            "autoConfirm": true,
+            "isPaused": false
+          }
+        }
+      ]
+    },
+    "savingsGoal": {
+      "valid": [
+        {
+          "name": "trip",
+          "value": {
+            "id": "55555555-5555-4555-8555-555555555555",
+            "name": "Viaje",
+            "target": {
+              "amount": "15000",
+              "currency": "NIO"
+            },
+            "saved": "2500.00",
+            "targetMonth": {
+              "month": 12,
+              "year": 2026
+            }
+          }
+        }
+      ],
+      "invalid": [
+        {
+          "name": "negative saved",
+          "reason": "Can't be negative",
+          "value": {
+            "id": "55555555-5555-4555-8555-555555555555",
+            "name": "Viaje",
+            "target": {
+              "amount": "15000",
+              "currency": "NIO"
+            },
+            "saved": "-1"
+          }
+        }
+      ]
+    },
+    "loan": {
+      "valid": [
+        {
+          "name": "two installments paid",
+          "value": {
+            "id": "55555555-5555-4555-8555-555555555555",
+            "name": "Moto",
+            "borrowed": {
+              "amount": "1200",
+              "currency": "USD"
+            },
+            "installmentAmount": "110",
+            "installmentCount": 12,
+            "frequency": "monthly",
+            "firstDueDate": "2026-11-01T12:00:00.000Z",
+            "payments": [
+              {
+                "number": 1,
+                "paidAt": "2026-11-01T12:00:00.000Z",
+                "transactionId": "44444444-4444-4444-8444-444444444444"
+              },
+              {
+                "number": 2,
+                "paidAt": "2026-11-01T12:00:00.000Z"
+              }
+            ]
+          }
+        }
+      ],
+      "invalid": [
+        {
+          "name": "same installment paid twice",
+          "reason": "Payments must name distinct installments of the schedule",
+          "value": {
+            "id": "55555555-5555-4555-8555-555555555555",
+            "name": "Moto",
+            "borrowed": {
+              "amount": "1200",
+              "currency": "USD"
+            },
+            "installmentAmount": "110",
+            "installmentCount": 12,
+            "frequency": "monthly",
+            "firstDueDate": "2026-11-01T12:00:00.000Z",
+            "payments": [
+              {
+                "number": 1,
+                "paidAt": "2026-11-01T12:00:00.000Z"
+              },
+              {
+                "number": 1,
+                "paidAt": "2026-11-01T12:00:00.000Z"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    "personalDebt": {
+      "valid": [
+        {
+          "name": "partly repaid",
+          "value": {
+            "id": "55555555-5555-4555-8555-555555555555",
+            "person": "Ana",
+            "direction": "theyOweMe",
+            "amount": {
+              "amount": "50",
+              "currency": "USD"
+            },
+            "date": "2026-11-01T12:00:00.000Z",
+            "repayments": [
+              {
+                "amount": "20",
+                "date": "2026-11-01T12:00:00.000Z"
+              }
+            ]
+          }
+        }
+      ],
+      "invalid": [
+        {
+          "name": "repaid past the amount",
+          "reason": "Repayments can't add up past the amount",
+          "value": {
+            "id": "55555555-5555-4555-8555-555555555555",
+            "person": "Ana",
+            "direction": "theyOweMe",
+            "amount": {
+              "amount": "50",
+              "currency": "USD"
+            },
+            "date": "2026-11-01T12:00:00.000Z",
+            "repayments": [
+              {
+                "amount": "30",
+                "date": "2026-11-01T12:00:00.000Z"
+              },
+              {
+                "amount": "30.01",
+                "date": "2026-11-01T12:00:00.000Z"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    "categorizationRule": {
+      "valid": [
+        {
+          "name": "uber to transport",
+          "value": {
+            "id": "55555555-5555-4555-8555-555555555555",
+            "match": "Uber",
+            "categoryId": "transport",
+            "kind": "expense",
+            "tags": [
+              "viaje"
+            ]
+          }
+        }
+      ],
+      "invalid": [
+        {
+          "name": "blank match",
+          "reason": "Can't be empty",
+          "value": {
+            "id": "55555555-5555-4555-8555-555555555555",
+            "match": "   ",
+            "categoryId": "transport",
+            "kind": "expense"
+          }
+        }
+      ]
+    },
+    "settings": {
+      "valid": [
+        {
+          "name": "two currencies",
+          "value": {
+            "currencies": {
+              "principal": "USD",
+              "second": "NIO",
+              "rate": "36.6243"
+            },
+            "unlockMethod": "biometrics",
+            "relockAfterSeconds": 60,
+            "hidesAmountsInAppSwitcher": true,
+            "isICloudBackupEnabled": true,
+            "paymentReminderDaysBefore": 3,
+            "hasCompletedOnboarding": true
+          }
+        }
+      ],
+      "invalid": [
+        {
+          "name": "negative reminder days",
+          "reason": "reminder days are a non-negative integer",
+          "value": {
+            "currencies": {
+              "principal": "USD",
+              "rate": "1"
+            },
+            "unlockMethod": "biometrics",
+            "relockAfterSeconds": 60,
+            "hidesAmountsInAppSwitcher": true,
+            "isICloudBackupEnabled": true,
+            "paymentReminderDaysBefore": -1,
+            "hasCompletedOnboarding": true
+          }
+        }
+      ]
+    }
+  }
+}

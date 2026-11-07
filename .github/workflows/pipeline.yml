@@ -1,0 +1,132 @@
+# The only way to production. Pull requests: checks and a visible `terraform plan`. main: build,
+# apply and smoke test. Actions are pinned by SHA; AWS access is OIDC only, no stored keys.
+name: pipeline
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  # Never cancel a deploy halfway through an apply.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+env:
+  AWS_REGION: us-east-1
+  TF_IN_AUTOMATION: "1"
+  TF_INPUT: "0"
+
+jobs:
+  check:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm audit --audit-level high --prod
+      - run: pnpm check
+      - run: pnpm build
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: lambda
+          path: dist/*.zip
+          retention-days: 7
+
+  plan:
+    if: github.event_name == 'pull_request'
+    needs: check
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      id-token: write
+      pull-requests: write
+    strategy:
+      matrix:
+        environment: [prod]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: lambda
+          path: dist
+      - uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        with:
+          role-to-assume: ${{ vars.AWS_PLAN_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+      - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
+        with:
+          terraform_wrapper: false
+      - name: terraform plan
+        id: plan
+        working-directory: infra/envs/${{ matrix.environment }}
+        env:
+          TF_VAR_app_version: ${{ github.event.pull_request.head.sha }}
+          TF_VAR_alert_email: ${{ vars.ALERT_EMAIL }}
+        run: |
+          terraform init -backend-config="bucket=${{ vars.TF_STATE_BUCKET }}"
+          # Read-only role: no lock, no writes.
+          terraform plan -lock=false -no-color -out=tfplan | tee plan.txt
+          terraform show -no-color tfplan > /dev/null
+          # A plan that destroys a resource holding data stops the merge until someone reviews it.
+          if terraform show -json tfplan | jq -e '[.resource_changes[] | select((.change.actions | index("delete")) and (.type | test("dsql_cluster|s3_bucket|backup_vault")))] | length > 0' > /dev/null; then
+            echo "destroys_data=true" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        env:
+          ENVIRONMENT: ${{ matrix.environment }}
+          DESTROYS_DATA: ${{ steps.plan.outputs.destroys_data }}
+        with:
+          script: |
+            const fs = require("fs")
+            const env = process.env.ENVIRONMENT
+            const plan = fs.readFileSync(`infra/envs/${env}/plan.txt`, "utf8")
+            const summary = plan.split("\n").filter((l) => /^Plan:|^No changes/.test(l)).join("\n") || "See the job log"
+            const warning = process.env.DESTROYS_DATA ? "\n\n> [!CAUTION]\n> This plan destroys a resource that holds data. Review before merging.\n" : ""
+            const body = `### terraform plan · ${env}\n\n${summary}${warning}\n\n<details><summary>Full plan</summary>\n\n\`\`\`\n${plan.slice(-60000)}\n\`\`\`\n</details>`
+            await github.rest.issues.createComment({ ...context.repo, issue_number: context.issue.number, body })
+      - if: steps.plan.outputs.destroys_data == 'true'
+        run: echo "::error::The plan destroys a resource with data" && exit 1
+
+  deploy-prod:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: check
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: lambda
+          path: dist
+      - uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+      - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
+        with:
+          terraform_wrapper: false
+      - name: terraform apply
+        id: apply
+        working-directory: infra/envs/prod
+        env:
+          TF_VAR_app_version: ${{ github.sha }}
+          TF_VAR_alert_email: ${{ vars.ALERT_EMAIL }}
+        run: |
+          terraform init -backend-config="bucket=${{ vars.TF_STATE_BUCKET }}"
+          terraform apply -auto-approve
+          echo "url=$(terraform output -raw api_endpoint)" >> "$GITHUB_OUTPUT"
+      - name: smoke test
+        env:
+          URL: ${{ steps.apply.outputs.url }}
+          SHA: ${{ github.sha }}
+        run: ./scripts/smoke.sh "$URL" "$SHA"

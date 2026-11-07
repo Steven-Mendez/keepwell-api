@@ -1,0 +1,439 @@
+import { newID } from "../schema/id"
+import type { CurrencySettings, RecurringFrequency, RecurringRule, Transaction } from "../schema"
+import { MAX_RECURRING_INTERVAL } from "../schema"
+
+import { addDays, dayKey, startOfDay } from "./calendar"
+import { Decimal, ZERO, dec, decimalText } from "./decimal"
+import { DomainError } from "./errors"
+import { convert, settingsRate, type Money } from "./money"
+import { accountIdFor, getTransactionContext, saveTransaction, validatedTransaction, type PaymentSource, type SavedTransaction, type TransactionContext, type TransactionDraft } from "./movements"
+import { SUBSCRIPTIONS_CATEGORY_ID, checkAmounts } from "./rules"
+import type { LedgerStore } from "./store"
+import { tagsField } from "./tags"
+
+// Recurring movements and subscriptions: the shared iOS/web contract (RecurringRule, its schedule,
+// materializing what's due, and the totals the Recurring screen shows).
+
+/** No flood after months away: a run creates at most this many movements per rule, the latest ones. */
+export const MAX_MATERIALIZED_PER_RULE = 12
+
+type Schedule = Pick<RecurringRule, "frequency" | "interval" | "startDate">
+
+/** Foundation `Calendar.date(byAdding: .month)`: the day clamps to the target month's last day, time kept. */
+function addCalendarMonths(date: Date, months: number): Date {
+  const index = date.getFullYear() * 12 + date.getMonth() + months
+  const year = Math.floor(index / 12)
+  const month = index - year * 12
+  const day = Math.min(date.getDate(), new Date(year, month + 1, 0).getDate())
+  return new Date(year, month, day, date.getHours(), date.getMinutes(), date.getSeconds(), date.getMilliseconds())
+}
+
+/**
+ * The `n`-th occurrence (0 is `startDate`), always computed from the anchor: Jan 31 + 1 month is
+ * Feb 28/29 and + 2 months is Mar 31, never chained from a clamped date. Weekly is 7 calendar days.
+ */
+export function occurrence(rule: Schedule, n: number): Date {
+  const start = new Date(rule.startDate)
+  const steps = n * rule.interval
+  switch (rule.frequency) {
+    case "weekly":
+      return addDays(start, 7 * steps)
+    case "monthly":
+      return addCalendarMonths(start, steps)
+    case "yearly":
+      return addCalendarMonths(start, 12 * steps)
+  }
+}
+
+function checkInterval(interval: number): void {
+  if (!Number.isInteger(interval) || interval < 1 || interval > MAX_RECURRING_INTERVAL) throw DomainError.invalidInterval(interval)
+}
+
+const isBeforeDay = (a: Date, b: Date) => dayKey(a) < dayKey(b)
+const isAfterDay = (a: Date, b: Date) => dayKey(a) > dayKey(b)
+
+/** The index of the smallest occurrence whose calendar day is on or after `day`'s. */
+function firstIndexOnOrAfter(rule: Schedule, day: Date): number {
+  checkInterval(rule.interval)
+  const start = new Date(rule.startDate)
+  if (Number.isNaN(start.getTime()) || Number.isNaN(day.getTime())) throw DomainError.corruptedData("date")
+  // A guess known to fall before `day`, so only a few steps are left to walk.
+  let n: number
+  if (rule.frequency === "weekly") {
+    const days = Math.round((startOfDay(day).getTime() - startOfDay(start).getTime()) / 86_400_000)
+    n = Math.floor(days / (7 * rule.interval)) - 1
+  } else {
+    const months = day.getFullYear() * 12 + day.getMonth() - (start.getFullYear() * 12 + start.getMonth())
+    n = Math.floor(months / (rule.interval * (rule.frequency === "yearly" ? 12 : 1))) - 1
+  }
+  n = Math.max(0, n)
+  while (isBeforeDay(occurrence(rule, n), day)) n++
+  return n
+}
+
+/** The smallest occurrence whose calendar day is on or after `day`'s. */
+export function firstOccurrence(rule: Schedule, onOrAfter: Date): Date {
+  return occurrence(rule, firstIndexOnOrAfter(rule, onOrAfter))
+}
+
+/** Whether `date` falls after the rule's last day. */
+function isPastEnd(rule: Pick<RecurringRule, "endDate">, date: Date): boolean {
+  return rule.endDate !== undefined && isAfterDay(date, new Date(rule.endDate))
+}
+
+/** A rule whose next occurrence is past its end: it will never produce anything again. */
+export function isFinished(rule: RecurringRule): boolean {
+  return isPastEnd(rule, new Date(rule.nextDate))
+}
+
+/** Producing movements: not paused and not past its end. */
+export function isActive(rule: RecurringRule): boolean {
+  return !rule.isPaused && !isFinished(rule)
+}
+
+interface Occurrence {
+  index: number
+  date: Date
+}
+
+function dueOccurrences(rule: RecurringRule, today: Date): Occurrence[] {
+  if (rule.isPaused) return []
+  const due: Occurrence[] = []
+  for (let index = firstIndexOnOrAfter(rule, new Date(rule.nextDate)); ; index++) {
+    const date = occurrence(rule, index)
+    if (isAfterDay(date, today) || isPastEnd(rule, date)) break
+    due.push({ index, date })
+  }
+  return due
+}
+
+/** Occurrences from `nextDate` on whose day is today or earlier, not after `endDate`. Empty when paused. */
+export function due(rule: RecurringRule, today: Date): Date[] {
+  return dueOccurrences(rule, today).map((entry) => entry.date)
+}
+
+/** The movement an occurrence produces, through the same validation as a movement typed by hand. */
+export function sourceOf(rule: Pick<RecurringRule, "cardId" | "accountId">): PaymentSource {
+  return rule.cardId ? { type: "card", id: rule.cardId } : { type: "account", id: rule.accountId }
+}
+
+function occurrenceDraft(rule: RecurringRule, date: Date): TransactionDraft {
+  return {
+    id: newID(),
+    kind: rule.kind,
+    amount: dec(rule.amount),
+    currency: rule.currency,
+    ...(rule.categoryId === undefined ? {} : { categoryId: rule.categoryId }),
+    source: sourceOf(rule),
+    ...(rule.destinationAccountId === undefined ? {} : { destinationAccountId: rule.destinationAccountId }),
+    description: rule.name,
+    date,
+    note: rule.note ?? "",
+    isDraft: !rule.autoConfirm,
+    ...(rule.tags ? { tags: [...rule.tags] } : {}),
+  }
+}
+
+/** The movement for one occurrence: today's settings rate, not shared, confirmed or a draft. */
+export function occurrenceTransaction(rule: RecurringRule, date: Date, context: TransactionContext): Transaction {
+  return { ...validatedTransaction(occurrenceDraft(rule, date), context), recurringId: rule.id }
+}
+
+const occurrenceKey = (ruleId: string, date: Date) => `${ruleId} ${dayKey(date)}`
+
+/**
+ * Saves the movements every active rule owes up to today (at most the latest 12 per rule), skipping
+ * an occurrence that already has a movement from the rule that day, and moves each rule's `nextDate`
+ * past what it produced. One atomic save; reads happen inside it so two runs (two tabs, load and
+ * focus) can't both create the same movement. A rule that no longer validates (its category or
+ * currency is gone) is left as it was. Returns the movements created.
+ */
+export async function materializeRecurring(store: LedgerStore, today: Date = new Date()): Promise<Transaction[]> {
+  return store.atomically(async () => {
+    const rules = await store.fetchRecurringRules()
+    if (!rules.some((rule) => dueOccurrences(rule, today).length > 0)) return []
+    const context = await getTransactionContext(store)
+    const existing = new Set(context.transactions.flatMap((transaction) => (transaction.recurringId ? [occurrenceKey(transaction.recurringId, new Date(transaction.date))] : [])))
+    const created: Transaction[] = []
+    const advanced: RecurringRule[] = []
+    for (const rule of rules) {
+      const owed = dueOccurrences(rule, today)
+      const last = owed.at(-1)
+      if (!last) continue
+      try {
+        const movements = owed
+          .slice(-MAX_MATERIALIZED_PER_RULE)
+          .filter((entry) => !existing.has(occurrenceKey(rule.id, entry.date)))
+          .map((entry) => occurrenceTransaction(rule, entry.date, context))
+        for (const movement of movements) existing.add(occurrenceKey(rule.id, new Date(movement.date)))
+        created.push(...movements)
+      } catch {
+        continue
+      }
+      advanced.push({ ...rule, nextDate: occurrence(rule, last.index + 1).toISOString() })
+    }
+    for (const movement of created) await store.saveTransaction(movement)
+    for (const rule of advanced) await store.saveRecurringRule(rule)
+    return created
+  })
+}
+
+// Creating, editing, pausing and deleting rules.
+
+/** What the rule editor saves; `id` edits that rule. */
+export interface RecurringRuleDraft {
+  id?: string
+  name: string
+  kind: RecurringRule["kind"]
+  amount: Decimal
+  currency: string
+  categoryId?: string
+  source?: PaymentSource
+  destinationAccountId?: string
+  frequency: RecurringFrequency
+  interval: number
+  startDate: Date
+  endDate?: Date
+  isSubscription: boolean
+  autoConfirm: boolean
+  note: string
+  /** Left out keeps an edited rule's tags as they were. */
+  tags?: string[]
+}
+
+/**
+ * Checks a rule like a movement typed by hand (amount, currency, method, category or destination)
+ * plus its own fields: a name, an interval of 1…99 and an end no earlier than the start.
+ */
+export function checkRecurringRule(rule: RecurringRule, context: TransactionContext): void {
+  if (rule.name.trim() === "") throw DomainError.missingName()
+  checkAmounts(dec(rule.amount))
+  checkInterval(rule.interval)
+  if (rule.endDate !== undefined && isBeforeDay(new Date(rule.endDate), new Date(rule.startDate))) throw DomainError.invalidEndDate()
+  validatedTransaction(occurrenceDraft(rule, new Date(rule.startDate)), context)
+}
+
+const sameSchedule = (a: Schedule, b: Schedule) => a.startDate === b.startDate && a.frequency === b.frequency && a.interval === b.interval
+
+const laterOf = (a: Date, b: Date) => (a.getTime() >= b.getTime() ? a : b)
+
+/**
+ * Saves a new rule or edits one. A new rule, or one whose start, frequency or interval changed, next
+ * falls on the first occurrence on or after the later of today and its start; movements already
+ * produced stay as they are. Then whatever is due is produced.
+ */
+export async function saveRecurringRule(store: LedgerStore, draft: RecurringRuleDraft, today: Date = new Date()): Promise<RecurringRule> {
+  checkInterval(draft.interval)
+  const context = await getTransactionContext(store)
+  const existing = draft.id ? (await store.fetchRecurringRules()).find((rule) => rule.id === draft.id) : undefined
+  if (draft.id && !existing) throw DomainError.notFound(draft.id)
+  const accountId = draft.source ? accountIdFor(context, draft.source) : undefined
+  if (!draft.source || !accountId) throw DomainError.notFound("source")
+  const note = draft.note.trim()
+  const schedule: Schedule = { frequency: draft.frequency, interval: draft.interval, startDate: draft.startDate.toISOString() }
+  const nextDate = existing && sameSchedule(existing, schedule) ? existing.nextDate : firstNextDate(schedule, today).toISOString()
+  const rule: RecurringRule = {
+    id: existing?.id ?? newID(),
+    name: draft.name.trim(),
+    kind: draft.kind,
+    ...(draft.kind === "transfer" || draft.categoryId === undefined ? {} : { categoryId: draft.categoryId }),
+    amount: decimalText(draft.amount),
+    currency: draft.currency,
+    accountId,
+    ...(draft.source.type === "card" ? { cardId: draft.source.id } : {}),
+    ...(draft.kind === "transfer" && draft.destinationAccountId ? { destinationAccountId: draft.destinationAccountId } : {}),
+    ...schedule,
+    nextDate,
+    ...(draft.endDate ? { endDate: draft.endDate.toISOString() } : {}),
+    isSubscription: draft.isSubscription,
+    autoConfirm: draft.autoConfirm,
+    isPaused: existing?.isPaused ?? false,
+    ...(note === "" ? {} : { note }),
+    ...tagsField(draft.tags ?? existing?.tags),
+  }
+  checkRecurringRule(rule, context)
+  await store.saveRecurringRule(rule)
+  await materializeRecurring(store, today)
+  return rule
+}
+
+/** Pausing freezes `nextDate`; resuming starts again today, without back-filling the skipped period. */
+export async function setRecurringRulePaused(store: LedgerStore, id: string, paused: boolean, today: Date = new Date()): Promise<void> {
+  const rule = (await store.fetchRecurringRules()).find((candidate) => candidate.id === id)
+  if (!rule) throw DomainError.notFound(id)
+  if (rule.isPaused === paused) return
+  await store.saveRecurringRule(paused ? { ...rule, isPaused: true } : { ...rule, isPaused: false, nextDate: firstOccurrence(rule, today).toISOString() })
+  if (!paused) await materializeRecurring(store, today)
+}
+
+/** Deletes the rule and the drafts it left waiting; confirmed movements stay. */
+export async function deleteRecurringRule(store: LedgerStore, id: string): Promise<void> {
+  if (!(await store.fetchRecurringRules()).some((rule) => rule.id === id)) throw DomainError.notFound(id)
+  await store.atomically(async () => {
+    for (const movement of await store.fetchTransactions()) {
+      if (movement.recurringId === id && movement.status === "planned") await store.deleteTransaction(movement.id)
+    }
+    await store.deleteRecurringRule(id)
+  })
+}
+
+/**
+ * "Repeat" on a new movement: the rule it starts, anchored on its date, its next occurrence the one
+ * after it. A subscription when its category is Subscriptions; occurrences wait as drafts.
+ */
+export function ruleRepeating(transaction: Transaction, frequency: RecurringFrequency, id: string = newID()): RecurringRule {
+  const schedule: Schedule = { frequency, interval: 1, startDate: transaction.date }
+  return {
+    id,
+    name: transaction.description,
+    kind: transaction.kind,
+    ...(transaction.categoryId === undefined ? {} : { categoryId: transaction.categoryId }),
+    amount: transaction.amount,
+    currency: transaction.currency,
+    accountId: transaction.accountId,
+    ...(transaction.cardId === undefined ? {} : { cardId: transaction.cardId }),
+    ...(transaction.destinationAccountId === undefined ? {} : { destinationAccountId: transaction.destinationAccountId }),
+    ...schedule,
+    nextDate: occurrence(schedule, 1).toISOString(),
+    isSubscription: transaction.categoryId === SUBSCRIPTIONS_CATEGORY_ID,
+    autoConfirm: false,
+    isPaused: false,
+    ...(transaction.note === undefined ? {} : { note: transaction.note }),
+    ...tagsField(transaction.tags),
+  }
+}
+
+/** Saves a new movement with "Repeat" on: the movement, linked to the rule it starts, and the rule. */
+export async function saveRepeatingTransaction(store: LedgerStore, draft: TransactionDraft, frequency: RecurringFrequency, today: Date = new Date()): Promise<SavedTransaction> {
+  const ruleId = newID()
+  const saved = await store.atomically(async () => {
+    const result = await saveTransaction(store, { ...draft, recurringId: ruleId })
+    await store.saveRecurringRule(ruleRepeating(result.transaction, frequency, ruleId))
+    return result
+  })
+  await materializeRecurring(store, today)
+  return saved
+}
+
+// Totals and what's coming.
+
+/** What a rule costs per month, for totals only (rounded only for display). */
+export function monthlyEquivalent(rule: Pick<RecurringRule, "amount" | "frequency" | "interval">): Decimal {
+  const amount = dec(rule.amount)
+  switch (rule.frequency) {
+    case "monthly":
+      return amount.div(rule.interval)
+    case "weekly":
+      return amount.times(52).div(12).div(rule.interval)
+    case "yearly":
+      return amount.div(12 * rule.interval)
+  }
+}
+
+/**
+ * Active expense subscriptions per month, in the principal currency at today's settings rate. A rule
+ * in a currency the settings no longer convert is left out rather than mixed in.
+ */
+export function subscriptionsPerMonth(rules: readonly RecurringRule[], currencies: CurrencySettings): Money {
+  const rate = settingsRate(currencies)
+  let total = ZERO
+  for (const rule of rules) {
+    if (!rule.isSubscription || rule.kind !== "expense" || !isActive(rule)) continue
+    try {
+      total = total.plus(convert({ amount: monthlyEquivalent(rule), currency: rule.currency }, rate, currencies.principal).amount)
+    } catch {
+      continue
+    }
+  }
+  return { amount: total, currency: currencies.principal }
+}
+
+export interface UpcomingOccurrence {
+  rule: RecurringRule
+  date: Date
+}
+
+/** Occurrences not produced yet from today through `days` days ahead, soonest first. */
+export function upcoming(rules: readonly RecurringRule[], from: Date, days: number): UpcomingOccurrence[] {
+  const last = addDays(startOfDay(from), days)
+  const found: UpcomingOccurrence[] = []
+  for (const rule of rules) {
+    if (rule.isPaused) continue
+    const next = new Date(rule.nextDate)
+    for (let index = firstIndexOnOrAfter(rule, laterOf(next, from)); ; index++) {
+      const date = occurrence(rule, index)
+      if (isAfterDay(date, last) || isPastEnd(rule, date)) break
+      found.push({ rule, date })
+    }
+  }
+  return found.sort((a, b) => a.date.getTime() - b.date.getTime() || (a.rule.name < b.rule.name ? -1 : 1))
+}
+
+/**
+ * Occurrences not recorded yet, from `nextDate` through `lastDay`'s calendar day, none after the end
+ * (iOS `RecurringSchedule.pending`). Paused rules have none. The balance forecast counts these on
+ * top of the drafts already recorded, so nothing is counted twice.
+ */
+export function pendingOccurrences(rule: RecurringRule, lastDay: Date): Date[] {
+  if (rule.isPaused) return []
+  const dates: Date[] = []
+  for (let index = firstIndexOnOrAfter(rule, new Date(rule.nextDate)); ; index++) {
+    const date = occurrence(rule, index)
+    if (isAfterDay(date, lastDay) || isPastEnd(rule, date)) break
+    dates.push(date)
+  }
+  return dates
+}
+
+/** The next occurrence a rule will produce, if it ever will. */
+export function nextOccurrenceOf(rule: RecurringRule): Date | undefined {
+  return isFinished(rule) ? undefined : new Date(rule.nextDate)
+}
+
+/** The first `count` occurrences on or after `from`, within the rule's end. */
+export function occurrencesFrom(rule: Schedule & Pick<RecurringRule, "endDate">, from: Date, count: number): Date[] {
+  const dates: Date[] = []
+  for (let index = firstIndexOnOrAfter(rule, from); dates.length < count; index++) {
+    const date = occurrence(rule, index)
+    if (isPastEnd(rule, date)) break
+    dates.push(date)
+  }
+  return dates
+}
+
+/** The next `count` occurrences the rule will produce, from `nextDate`. */
+export function nextOccurrences(rule: RecurringRule, count: number): Date[] {
+  return occurrencesFrom(rule, new Date(rule.nextDate), count)
+}
+
+/** Where a new rule (or one whose schedule changed) starts producing: the later of today and its start. */
+export function firstNextDate(rule: Schedule, today: Date = new Date()): Date {
+  return firstOccurrence(rule, laterOf(today, new Date(rule.startDate)))
+}
+
+export type RecurringSectionKind = "subscriptions" | "bills" | "income" | "transfers"
+export const RECURRING_SECTIONS: readonly RecurringSectionKind[] = ["subscriptions", "bills", "income", "transfers"]
+
+export function recurringSectionOf(rule: RecurringRule): RecurringSectionKind {
+  if (rule.isSubscription) return "subscriptions"
+  if (rule.kind === "expense") return "bills"
+  return rule.kind === "income" ? "income" : "transfers"
+}
+
+export interface RecurringOverview {
+  /** Expense subscriptions per month, principal currency. */
+  subscriptionsPerMonth: Money
+  subscriptionsPerYear: Money
+  /** Non-empty sections in screen order; active rules by next date, then paused and finished ones. */
+  sections: { kind: RecurringSectionKind; rules: RecurringRule[] }[]
+}
+
+export function recurringOverview(rules: readonly RecurringRule[], currencies: CurrencySettings): RecurringOverview {
+  const perMonth = subscriptionsPerMonth(rules, currencies)
+  const ordered = [...rules].sort((a, b) => Number(!isActive(a)) - Number(!isActive(b)) || (a.nextDate < b.nextDate ? -1 : a.nextDate > b.nextDate ? 1 : a.name.localeCompare(b.name)))
+  return {
+    subscriptionsPerMonth: perMonth,
+    subscriptionsPerYear: { amount: perMonth.amount.times(12), currency: perMonth.currency },
+    sections: RECURRING_SECTIONS.map((kind) => ({ kind, rules: ordered.filter((rule) => recurringSectionOf(rule) === kind) })).filter((section) => section.rules.length > 0),
+  }
+}
