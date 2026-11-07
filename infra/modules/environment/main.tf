@@ -42,9 +42,16 @@ module "api" {
   lambda_zip  = var.lambda_zip
   app_version = var.app_version
   environment = {
-    DB_HOST = module.database.endpoint
-    DB_USER = "keepwell_app"
+    DB_HOST       = module.database.endpoint
+    DB_USER       = "keepwell_app"
+    CONFIG_PREFIX = "/keepwell/${var.environment}"
   }
+}
+
+module "parameters" {
+  source        = "../parameters"
+  prefix        = "/keepwell/${var.environment}"
+  app_role_name = module.api.role_name
 }
 
 module "dns" {

@@ -45,3 +45,17 @@ Protect `main`: pull requests only, `check` and `plan` required.
 ## Outside Terraform, documented here
 
 These steps are added as the increments that need them land.
+
+### Secrets in SSM (increment 4 onward)
+
+Terraform creates each secret parameter with the placeholder `unset` through a write-only
+argument, so values never reach the state. After the first deploy of each environment, set them:
+
+```bash
+for env in dev prod; do
+  aws ssm put-parameter --overwrite --type SecureString \
+    --name /keepwell/$env/auth_secret --value "$(openssl rand -base64 48)"
+done
+```
+
+`GET /health` answers `config: error` until the real values are in place.

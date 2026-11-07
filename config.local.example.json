@@ -1,0 +1,3 @@
+{
+  "auth_secret": "local-development-secret-at-least-32-chars"
+}

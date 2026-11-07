@@ -8,6 +8,9 @@ importers:
 
   .:
     dependencies:
+      '@aws-sdk/client-ssm':
+        specifier: ^3.1164.0
+        version: 3.1164.0
       '@aws/aurora-dsql-drizzle':
         specifier: ^0.2.0
         version: 0.2.0(drizzle-orm@0.45.4(@types/pg@8.23.1)(pg@8.23.1))(pg-connection-string@2.14.1)(pg@8.23.1)
@@ -68,6 +71,10 @@ importers:
         version: 3.2.7(@types/node@22.20.5)(tsx@4.23.15)
 
 packages:
+
+  '@aws-sdk/client-ssm@3.1164.0':
+    resolution: {integrity: sha512-dLt23uDdnM/CvfBJ9KLv96RMs3RadUSSFzU801WDozt9eIp0XVKvoeIFT1BG5dmBLJvje87tDq6UZyt/D2FbwQ==}
+    engines: {node: '>=20.0.0'}
 
   '@aws-sdk/core@3.980.1':
     resolution: {integrity: sha512-W7jDWUPucezIUjFZpr8MudQQtz/m6yPMyAFrOyyQcHjuF4UrZdcCdP8eV1js06U9sH3dxp0AbhN+s9uHwQyXzQ==}
@@ -1739,6 +1746,17 @@ packages:
     resolution: {integrity: sha512-g8W2D2kU6a8untc053fX1uVBKzM7yqAxW/3zwk83+6RyF2+SKOuV+c0wBDhUwzV1PaGapmZH+rmcUzPf+3CGwg==}
 
 snapshots:
+
+  '@aws-sdk/client-ssm@3.1164.0':
+    dependencies:
+      '@aws-sdk/core': 3.980.1
+      '@aws-sdk/credential-provider-node': 3.972.94
+      '@aws-sdk/types': 3.975.0
+      '@smithy/core': 3.39.0
+      '@smithy/fetch-http-handler': 5.8.1
+      '@smithy/node-http-handler': 4.14.2
+      '@smithy/types': 4.20.0
+      tslib: 2.9.1
 
   '@aws-sdk/core@3.980.1':
     dependencies:

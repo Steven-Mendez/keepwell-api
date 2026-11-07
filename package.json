@@ -21,6 +21,7 @@
     "test:remote": "vitest run --config vitest.remote.config.ts"
   },
   "dependencies": {
+    "@aws-sdk/client-ssm": "^3.1164.0",
     "@aws/aurora-dsql-drizzle": "^0.2.0",
     "@aws/aurora-dsql-node-postgres-connector": "^0.1.9",
     "decimal.js": "^10.6.0",

@@ -1,15 +1,14 @@
 import { serve } from "@hono/node-server"
 
-import { APP_ROLE, createDatabase } from "../adapters/db/client"
-import { pingDatabase } from "../adapters/db/health"
+import { APP_ROLE } from "../adapters/db/client"
 import { createLogger } from "../adapters/observability/logger"
-import { createApp } from "./http/app"
+import { bootstrap } from "./bootstrap"
 
-// Local development against docker-compose's Postgres, connected as the app role like production.
+// Local development against docker-compose's Postgres, connected as the app role like production,
+// with configuration from config.local.json (copy config.local.example.json).
 const port = Number(process.env.PORT ?? 3001)
 const logger = createLogger({ version: "dev", level: "debug" })
 const url = process.env.DATABASE_URL ?? "postgres://postgres:postgres@localhost:54329/keepwell"
-const { db } = createDatabase({ kind: "postgres", url, role: APP_ROLE }, logger)
-const app = createApp({ logger, version: "dev", healthChecks: [{ name: "db", run: () => pingDatabase(db) }] })
+const app = bootstrap({ logger, version: "dev", database: { kind: "postgres", url, role: APP_ROLE } })
 
 serve({ fetch: app.fetch, port }, () => logger.info({ port }, "keepwell-api listening"))
