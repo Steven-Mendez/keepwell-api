@@ -4,6 +4,9 @@ import { databaseConfigFromEnv } from "../adapters/database/client"
 import { createLogger } from "../adapters/observability/logger"
 import { bootstrap } from "./bootstrap"
 
+// Calendar math (months, recurring occurrences) follows the person's time zone, as on their devices.
+process.env.TZ = process.env.KEEPWELL_TIME_ZONE ?? "America/Managua"
+
 // Module scope runs once per Lambda instance (the cold start); handlers reuse what it builds.
 const initStarted = performance.now()
 const version = process.env.APP_VERSION ?? "unknown"

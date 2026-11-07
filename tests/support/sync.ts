@@ -30,7 +30,7 @@ export function transactionRow(id: string, at: string, extra: Record<string, unk
   }
 }
 
-export function event(entity: string, row: { id: string; deleted_at: string | null }, operation?: string) {
+export function event(entity: string, row: { id: string; deleted_at: string | null } & Record<string, unknown>, operation?: string) {
   return { event_id: randomUUID(), entity, entity_id: row.id, operation: operation ?? (row.deleted_at ? "delete" : "update"), payload: row, created_at: new Date().toISOString() }
 }
 

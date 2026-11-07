@@ -5,6 +5,10 @@ import { DrizzleAccountStore } from "../adapters/database/account-store"
 import { DrizzleAuditLog } from "../adapters/database/audit-log"
 import { DrizzleEntitlementRepository } from "../adapters/database/entitlements"
 import { createSyncRepository } from "../adapters/database/sync-store"
+import { ScopedLedgerReader } from "../adapters/database/repositories/ledger-reader"
+import { scopedDb } from "../adapters/database/scoped-db"
+import { ApplySyncBatch } from "../core/use-cases/apply-sync-batch"
+import { ReadLedger } from "../core/use-cases/read-ledger"
 import { CachedPlansSource, filePlansLoader, ssmPlansLoader } from "../adapters/config/plans-source"
 import { ResolveCapabilities } from "../core/use-cases/resolve-capabilities"
 import { createDatabase, type Database, type DatabaseConfig } from "../adapters/database/client"
@@ -78,9 +82,15 @@ export function bootstrap(options: { logger: Logger; version: string; database: 
   const plansLoader = env.CONFIG_PREFIX ? ssmPlansLoader(`${env.CONFIG_PREFIX}/capabilities`) : filePlansLoader(env.CONFIG_FILE ?? "config.local.json")
   const capabilities = Promise.resolve(new ResolveCapabilities(new DrizzleEntitlementRepository(db), new CachedPlansSource(plansLoader, logger)))
 
+  const sync = createSyncRepository(db, logger)
+  const mcp = {
+    readLedger: new ReadLedger(new ScopedLedgerReader((userId) => scopedDb(db, userId)), new ApplySyncBatch(sync)),
+    baseURL: urls.apiBaseUrl,
+  }
+
   const healthChecks: HealthCheck[] = [
     { name: "db", run: () => pingDatabase(db) },
     { name: "config", run: async () => void (await auth) },
   ]
-  return createApp({ logger, version, healthChecks, auth, webOrigin: urls.webOrigin, requestDeletion, capabilities, sync: createSyncRepository(db, logger) })
+  return createApp({ logger, version, healthChecks, auth, webOrigin: urls.webOrigin, requestDeletion, capabilities, sync, mcp })
 }

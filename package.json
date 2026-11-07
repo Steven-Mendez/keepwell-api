@@ -28,6 +28,7 @@
     "@aws-sdk/client-ssm": "^3.1164.0",
     "@aws/aurora-dsql-drizzle": "^0.2.0",
     "@aws/aurora-dsql-node-postgres-connector": "^0.1.9",
+    "@modelcontextprotocol/sdk": "^1.32.2",
     "better-auth": "^1.7.18",
     "decimal.js": "^10.6.0",
     "drizzle-orm": "^0.45.4",

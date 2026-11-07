@@ -41,6 +41,12 @@ variable "alert_email" {
   type = string
 }
 
+variable "time_zone" {
+  type        = string
+  default     = "America/Managua"
+  description = "The person's time zone, for calendar math such as recurring occurrences"
+}
+
 variable "deletion_protection" {
   type    = bool
   default = true
@@ -55,13 +61,14 @@ module "api" {
   name       = local.name
   lambda_zip = var.lambda_zip
   environment = {
-    DB_HOST       = module.database.endpoint
-    DB_USER       = "keepwell_app"
-    CONFIG_PREFIX = "/keepwell/${var.environment}"
-    API_BASE_URL  = "https://${var.hostname}"
-    WEB_ORIGIN    = "https://${var.web_hostname}"
-    COOKIE_DOMAIN = var.domain
-    QUEUE_URL     = module.queue.queue_url
+    DB_HOST            = module.database.endpoint
+    DB_USER            = "keepwell_app"
+    CONFIG_PREFIX      = "/keepwell/${var.environment}"
+    API_BASE_URL       = "https://${var.hostname}"
+    WEB_ORIGIN         = "https://${var.web_hostname}"
+    COOKIE_DOMAIN      = var.domain
+    QUEUE_URL          = module.queue.queue_url
+    KEEPWELL_TIME_ZONE = var.time_zone
   }
 }
 

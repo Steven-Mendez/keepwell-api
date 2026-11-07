@@ -1,0 +1,795 @@
+{
+  "$comment": "Columns of each sync entity's wire row (schema/sync.ts): name, JSON type, nullable (key present with null) and optional (key may be absent). iOS and the API check their rows against it.",
+  "version": 1,
+  "entities": {
+    "account": {
+      "id": {
+        "type": "string",
+        "nullable": false,
+        "optional": false
+      },
+      "name": {
+        "type": "string",
+        "nullable": false,
+        "optional": false
+      },
+      "bank": {
+        "type": "string",
+        "nullable": true,
+        "optional": false
+      },
+      "kind": {
+        "type": "string",
+        "nullable": false,
+        "optional": false
+      },
+      "opening_balances": {
+        "type": "array",
+        "nullable": false,
+        "optional": false
+      },
+      "opening_date": {
+        "type": "string",
+        "nullable": false,
+        "optional": false
+      },
+      "debt_mode": {
+        "type": "string",
+        "nullable": true,
+        "optional": false
+      },
+      "limit_amount": {
+        "type": "string",
+        "nullable": true,
+        "optional": false
+      },
+      "limit_currency": {
+        "type": "string",
+        "nullable": true,
+        "optional": false
+      },
+      "cutoff_day": {
+        "type": "number",
+        "nullable": true,
+        "optional": false
+      },
+      "due_day": {
+        "type": "number",
+        "nullable": true,
+        "optional": false
+      },
+      "created_at": {
+        "type": "string",
+        "nullable": false,
+        "optional": false
+      },
+      "updated_at": {
+        "type": "string",
+        "nullable": false,
+        "optional": false
+      },
+      "deleted_at": {
+        "type": "string",
+        "nullable": true,
+        "optional": false
+      }
+    },
+    "card": {
+      "id": {
+        "type": "string",
+        "nullable": false,
+        "optional": false
+      },
+      "account_id": {
+        "type": "string",
+        "nullable": false,
+        "optional": false
+      },
+      "kind": {
+        "type": "string",
+        "nullable": false,
+        "optional": false
+      },
+      "network": {
+        "type": "string",
+        "nullable": true,
+        "optional": false
+      },
+      "last_four": {
+        "type": "string",
+        "nullable": true,
+        "optional": false
+      },
+      "color": {
+        "type": "string",
+        "nullable": true,
+        "optional": false
+      },
+      "product_name": {
+        "type": "string",
+        "nullable": true,
+        "optional": false
+      },
+      "expiry_month": {
+        "type": "number",
+        "nullable": true,
+        "optional": false
+      },
+      "expiry_year": {
+        "type": "number",
+        "nullable": true,
+        "optional": false
+      },
+      "created_at": {
+        "type": "string",
+        "nullable": false,
+        "optional": false
+      },
+      "updated_at": {
+        "type": "string",
+        "nullable": false,
+        "optional": false
+      },
+      "deleted_at": {
+        "type": "string",
+        "nullable": true,
+        "optional": false
+      }
+    },
+    "category": {
+      "id": {
+        "type": "string",
+        "nullable": false,
+        "optional": false
+      },
+      "name": {
+        "type": "string",
+        "nullable": false,
+        "optional": false
+      },
+      "kind": {
+        "type": "string",
+        "nullable": false,
+        "optional": false
+      },
+      "icon": {
+        "type": "string",
+        "nullable": true,
+        "optional": false
+      },
+      "color": {
+        "type": "string",
+        "nullable": true,
+        "optional": false
+      },
+      "is_renamed": {
+        "type": "boolean",
+        "nullable": false,
+        "optional": false
+      },
+      "sort_index": {
+        "type": "number",
+        "nullable": false,
+        "optional": false
+      },
+      "budget_amount": {
+        "type": "string",
+        "nullable": true,
+        "optional": false
+      },
+      "budget_currency": {
+        "type": "string",
+        "nullable": true,
+        "optional": false
+      },
+      "created_at": {
+        "type": "string",
+        "nullable": false,
+        "optional": false
+      },
+      "updated_at": {
+        "type": "string",
+        "nullable": false,
+        "optional": false
+      },
+      "deleted_at": {
+        "type": "string",
+        "nullable": true,
+        "optional": false
+      }
+    },
+    "transaction": {
+      "id": {
+        "type": "string",
+        "nullable": false,
+        "optional": false
+      },
+      "date": {
+        "type": "string",
+        "nullable": false,
+        "optional": false
+      },
+      "status": {
+        "type": "string",
+        "nullable": false,
+        "optional": false
+      },
+      "description": {
+        "type": "string",
+        "nullable": false,
+        "optional": false
+      },
+      "kind": {
+        "type": "string",
+        "nullable": false,
+        "optional": false
+      },
+      "category_id": {
+        "type": "string",
+        "nullable": true,
+        "optional": false
+      },
+      "amount": {
+        "type": "string",
+        "nullable": false,
+        "optional": false
+      },
+      "currency": {
+        "type": "string",
+        "nullable": false,
+        "optional": false
+      },
+      "account_id": {
+        "type": "string",
+        "nullable": false,
+        "optional": false
+      },
+      "card_id": {
+        "type": "string",
+        "nullable": true,
+        "optional": false
+      },
+      "destination_account_id": {
+        "type": "string",
+        "nullable": true,
+        "optional": false
+      },
+      "actual_debited_principal": {
+        "type": "string",
+        "nullable": true,
+        "optional": false
+      },
+      "rate_principal": {
+        "type": "string",
+        "nullable": false,
+        "optional": false
+      },
+      "rate_second": {
+        "type": "string",
+        "nullable": false,
+        "optional": false
+      },
+      "rate": {
+        "type": "string",
+        "nullable": false,
+        "optional": false
+      },
+      "is_shared": {
+        "type": "boolean",
+        "nullable": false,
+        "optional": false
+      },
+      "note": {
+        "type": "string",
+        "nullable": true,
+        "optional": false
+      },
+      "recurring_id": {
+        "type": "string",
+        "nullable": true,
+        "optional": false
+      },
+      "tags": {
+        "type": "array",
+        "nullable": false,
+        "optional": false
+      },
+      "source": {
+        "type": "string",
+        "nullable": false,
+        "optional": true
+      },
+      "created_at": {
+        "type": "string",
+        "nullable": false,
+        "optional": false
+      },
+      "updated_at": {
+        "type": "string",
+        "nullable": false,
+        "optional": false
+      },
+      "deleted_at": {
+        "type": "string",
+        "nullable": true,
+        "optional": false
+      }
+    },
+    "recurringRule": {
+      "id": {
+        "type": "string",
+        "nullable": false,
+        "optional": false
+      },
+      "name": {
+        "type": "string",
+        "nullable": false,
+        "optional": false
+      },
+      "kind": {
+        "type": "string",
+        "nullable": false,
+        "optional": false
+      },
+      "category_id": {
+        "type": "string",
+        "nullable": true,
+        "optional": false
+      },
+      "amount": {
+        "type": "string",
+        "nullable": false,
+        "optional": false
+      },
+      "currency": {
+        "type": "string",
+        "nullable": false,
+        "optional": false
+      },
+      "account_id": {
+        "type": "string",
+        "nullable": false,
+        "optional": false
+      },
+      "card_id": {
+        "type": "string",
+        "nullable": true,
+        "optional": false
+      },
+      "destination_account_id": {
+        "type": "string",
+        "nullable": true,
+        "optional": false
+      },
+      "frequency": {
+        "type": "string",
+        "nullable": false,
+        "optional": false
+      },
+      "interval": {
+        "type": "number",
+        "nullable": false,
+        "optional": false
+      },
+      "start_date": {
+        "type": "string",
+        "nullable": false,
+        "optional": false
+      },
+      "next_date": {
+        "type": "string",
+        "nullable": false,
+        "optional": false
+      },
+      "end_date": {
+        "type": "string",
+        "nullable": true,
+        "optional": false
+      },
+      "is_subscription": {
+        "type": "boolean",
+        "nullable": false,
+        "optional": false
+      },
+      "auto_confirm": {
+        "type": "boolean",
+        "nullable": false,
+        "optional": false
+      },
+      "is_paused": {
+        "type": "boolean",
+        "nullable": false,
+        "optional": false
+      },
+      "note": {
+        "type": "string",
+        "nullable": true,
+        "optional": false
+      },
+      "tags": {
+        "type": "array",
+        "nullable": false,
+        "optional": false
+      },
+      "source": {
+        "type": "string",
+        "nullable": false,
+        "optional": true
+      },
+      "created_at": {
+        "type": "string",
+        "nullable": false,
+        "optional": false
+      },
+      "updated_at": {
+        "type": "string",
+        "nullable": false,
+        "optional": false
+      },
+      "deleted_at": {
+        "type": "string",
+        "nullable": true,
+        "optional": false
+      }
+    },
+    "savingsGoal": {
+      "id": {
+        "type": "string",
+        "nullable": false,
+        "optional": false
+      },
+      "name": {
+        "type": "string",
+        "nullable": false,
+        "optional": false
+      },
+      "target_amount": {
+        "type": "string",
+        "nullable": false,
+        "optional": false
+      },
+      "target_currency": {
+        "type": "string",
+        "nullable": false,
+        "optional": false
+      },
+      "saved": {
+        "type": "string",
+        "nullable": false,
+        "optional": false
+      },
+      "target_month": {
+        "type": "number",
+        "nullable": true,
+        "optional": false
+      },
+      "target_year": {
+        "type": "number",
+        "nullable": true,
+        "optional": false
+      },
+      "icon": {
+        "type": "string",
+        "nullable": true,
+        "optional": false
+      },
+      "color": {
+        "type": "string",
+        "nullable": true,
+        "optional": false
+      },
+      "created_at": {
+        "type": "string",
+        "nullable": false,
+        "optional": false
+      },
+      "updated_at": {
+        "type": "string",
+        "nullable": false,
+        "optional": false
+      },
+      "deleted_at": {
+        "type": "string",
+        "nullable": true,
+        "optional": false
+      }
+    },
+    "loan": {
+      "id": {
+        "type": "string",
+        "nullable": false,
+        "optional": false
+      },
+      "name": {
+        "type": "string",
+        "nullable": false,
+        "optional": false
+      },
+      "lender": {
+        "type": "string",
+        "nullable": true,
+        "optional": false
+      },
+      "borrowed_amount": {
+        "type": "string",
+        "nullable": false,
+        "optional": false
+      },
+      "borrowed_currency": {
+        "type": "string",
+        "nullable": false,
+        "optional": false
+      },
+      "installment_amount": {
+        "type": "string",
+        "nullable": false,
+        "optional": false
+      },
+      "installment_count": {
+        "type": "number",
+        "nullable": false,
+        "optional": false
+      },
+      "frequency": {
+        "type": "string",
+        "nullable": false,
+        "optional": false
+      },
+      "first_due_date": {
+        "type": "string",
+        "nullable": false,
+        "optional": false
+      },
+      "created_at": {
+        "type": "string",
+        "nullable": false,
+        "optional": false
+      },
+      "updated_at": {
+        "type": "string",
+        "nullable": false,
+        "optional": false
+      },
+      "deleted_at": {
+        "type": "string",
+        "nullable": true,
+        "optional": false
+      }
+    },
+    "loanPayment": {
+      "id": {
+        "type": "string",
+        "nullable": false,
+        "optional": false
+      },
+      "loan_id": {
+        "type": "string",
+        "nullable": false,
+        "optional": false
+      },
+      "number": {
+        "type": "number",
+        "nullable": false,
+        "optional": false
+      },
+      "paid_at": {
+        "type": "string",
+        "nullable": false,
+        "optional": false
+      },
+      "transaction_id": {
+        "type": "string",
+        "nullable": true,
+        "optional": false
+      },
+      "created_at": {
+        "type": "string",
+        "nullable": false,
+        "optional": false
+      },
+      "updated_at": {
+        "type": "string",
+        "nullable": false,
+        "optional": false
+      },
+      "deleted_at": {
+        "type": "string",
+        "nullable": true,
+        "optional": false
+      }
+    },
+    "personalDebt": {
+      "id": {
+        "type": "string",
+        "nullable": false,
+        "optional": false
+      },
+      "person": {
+        "type": "string",
+        "nullable": false,
+        "optional": false
+      },
+      "direction": {
+        "type": "string",
+        "nullable": false,
+        "optional": false
+      },
+      "amount": {
+        "type": "string",
+        "nullable": false,
+        "optional": false
+      },
+      "currency": {
+        "type": "string",
+        "nullable": false,
+        "optional": false
+      },
+      "date": {
+        "type": "string",
+        "nullable": false,
+        "optional": false
+      },
+      "note": {
+        "type": "string",
+        "nullable": true,
+        "optional": false
+      },
+      "settled_at": {
+        "type": "string",
+        "nullable": true,
+        "optional": false
+      },
+      "transaction_id": {
+        "type": "string",
+        "nullable": true,
+        "optional": false
+      },
+      "created_at": {
+        "type": "string",
+        "nullable": false,
+        "optional": false
+      },
+      "updated_at": {
+        "type": "string",
+        "nullable": false,
+        "optional": false
+      },
+      "deleted_at": {
+        "type": "string",
+        "nullable": true,
+        "optional": false
+      }
+    },
+    "personalDebtRepayment": {
+      "id": {
+        "type": "string",
+        "nullable": false,
+        "optional": false
+      },
+      "debt_id": {
+        "type": "string",
+        "nullable": false,
+        "optional": false
+      },
+      "amount": {
+        "type": "string",
+        "nullable": false,
+        "optional": false
+      },
+      "date": {
+        "type": "string",
+        "nullable": false,
+        "optional": false
+      },
+      "created_at": {
+        "type": "string",
+        "nullable": false,
+        "optional": false
+      },
+      "updated_at": {
+        "type": "string",
+        "nullable": false,
+        "optional": false
+      },
+      "deleted_at": {
+        "type": "string",
+        "nullable": true,
+        "optional": false
+      }
+    },
+    "categorizationRule": {
+      "id": {
+        "type": "string",
+        "nullable": false,
+        "optional": false
+      },
+      "match": {
+        "type": "string",
+        "nullable": false,
+        "optional": false
+      },
+      "category_id": {
+        "type": "string",
+        "nullable": false,
+        "optional": false
+      },
+      "kind": {
+        "type": "string",
+        "nullable": false,
+        "optional": false
+      },
+      "tags": {
+        "type": "array",
+        "nullable": false,
+        "optional": false
+      },
+      "sort_index": {
+        "type": "number",
+        "nullable": false,
+        "optional": false
+      },
+      "created_at": {
+        "type": "string",
+        "nullable": false,
+        "optional": false
+      },
+      "updated_at": {
+        "type": "string",
+        "nullable": false,
+        "optional": false
+      },
+      "deleted_at": {
+        "type": "string",
+        "nullable": true,
+        "optional": false
+      }
+    },
+    "settings": {
+      "id": {
+        "type": "string",
+        "nullable": false,
+        "optional": false
+      },
+      "principal": {
+        "type": "string",
+        "nullable": false,
+        "optional": false
+      },
+      "second": {
+        "type": "string",
+        "nullable": true,
+        "optional": false
+      },
+      "rate": {
+        "type": "string",
+        "nullable": false,
+        "optional": false
+      },
+      "payment_reminder_days_before": {
+        "type": "number",
+        "nullable": false,
+        "optional": false
+      },
+      "has_completed_onboarding": {
+        "type": "boolean",
+        "nullable": false,
+        "optional": false
+      },
+      "created_at": {
+        "type": "string",
+        "nullable": false,
+        "optional": false
+      },
+      "updated_at": {
+        "type": "string",
+        "nullable": false,
+        "optional": false
+      },
+      "deleted_at": {
+        "type": "string",
+        "nullable": true,
+        "optional": false
+      }
+    }
+  }
+}
