@@ -14,6 +14,37 @@ variable "app_role_name" {
   type = string
 }
 
+variable "capabilities" {
+  description = "Plan → capabilities table and early-access flags (ADR 0008). Not secret: versioned here."
+  type = object({
+    early_access = map(bool)
+    plans        = map(list(string))
+  })
+  default = {
+    early_access = { cloud_sync = true }
+    plans = {
+      free          = []
+      supporter     = ["mcp"]
+      pro           = ["cloud_sync", "mcp"]
+      grandfathered = ["cloud_sync", "mcp"]
+    }
+  }
+  validation {
+    condition = alltrue([
+      for capabilities in values(var.capabilities.plans) : alltrue([for c in capabilities : contains(["cloud_sync", "mcp"], c)])
+    ]) && alltrue([for c in keys(var.capabilities.early_access) : contains(["cloud_sync", "mcp"], c)])
+    error_message = "Capabilities are cloud_sync or mcp."
+  }
+}
+
+# Changing it is a terraform apply of seconds; the API rereads it within a minute.
+resource "aws_ssm_parameter" "capabilities" {
+  name        = "${var.prefix}/capabilities"
+  type        = "String"
+  value       = jsonencode(var.capabilities)
+  description = "Plans and capabilities (ADR 0008)"
+}
+
 data "aws_region" "current" {}
 data "aws_caller_identity" "current" {}
 

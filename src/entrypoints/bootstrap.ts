@@ -3,6 +3,9 @@ import { createAuth, type Auth } from "../adapters/auth/auth"
 import { configSourceFromEnv, loadConfig, type AppConfig } from "../adapters/config/config"
 import { DrizzleAccountStore } from "../adapters/database/account-store"
 import { DrizzleAuditLog } from "../adapters/database/audit-log"
+import { DrizzleEntitlementRepository } from "../adapters/database/entitlements"
+import { CachedPlansSource, filePlansLoader, ssmPlansLoader } from "../adapters/config/plans-source"
+import { ResolveCapabilities } from "../core/use-cases/resolve-capabilities"
 import { createDatabase, type Database, type DatabaseConfig } from "../adapters/database/client"
 import { pingDatabase } from "../adapters/database/health"
 import type { Logger } from "../adapters/observability/logger"
@@ -71,10 +74,12 @@ export function bootstrap(options: { logger: Logger; version: string; database: 
     ? new SqsJobQueue(env.QUEUE_URL)
     : new InlineJobQueue((job) => new DeleteAccountData(accounts, audit).execute(job.userId))
   const requestDeletion = auth.then(() => new RequestAccountDeletion(accounts, queue, audit))
+  const plansLoader = env.CONFIG_PREFIX ? ssmPlansLoader(`${env.CONFIG_PREFIX}/capabilities`) : filePlansLoader(env.CONFIG_FILE ?? "config.local.json")
+  const capabilities = Promise.resolve(new ResolveCapabilities(new DrizzleEntitlementRepository(db), new CachedPlansSource(plansLoader, logger)))
 
   const healthChecks: HealthCheck[] = [
     { name: "db", run: () => pingDatabase(db) },
     { name: "config", run: async () => void (await auth) },
   ]
-  return createApp({ logger, version, healthChecks, auth, webOrigin: urls.webOrigin, requestDeletion })
+  return createApp({ logger, version, healthChecks, auth, webOrigin: urls.webOrigin, requestDeletion, capabilities })
 }

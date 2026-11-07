@@ -19,7 +19,8 @@
     "db:migrate": "tsx scripts/migrate.ts",
     "db:generate": "scripts/generate-migration.sh",
     "test:remote": "vitest run --config vitest.remote.config.ts",
-    "reconcile": "tsx scripts/reconcile.ts"
+    "reconcile": "tsx scripts/reconcile.ts",
+    "grant": "tsx scripts/grant.ts"
   },
   "dependencies": {
     "@aws-sdk/client-sqs": "^3.1164.0",

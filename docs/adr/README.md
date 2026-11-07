@@ -11,3 +11,4 @@ decision that changes gets a new record that supersedes the old one; records are
 | [0004](0004-financial-data-model.md)           | Derived balances, immutable history, reconciliation, isolation |
 | [0005](0005-sync-protocol.md)                  | Sync protocol: outbox, sync_state, delete wins, per-event rejection |
 | [0006](0006-async-jobs.md)                      | SQS with a dead-letter queue, for account deletion only       |
+| [0008](0008-capabilities-by-configuration.md)    | Capabilities by configuration, not plans in code              |
