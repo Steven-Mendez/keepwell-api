@@ -82,6 +82,26 @@ export const verifications = pgTable(
   (table) => [index("verifications_identifier_idx").on(table.identifier)]
 )
 
+// --- Passkeys (Better Auth passkey plugin), relying party: the web app's host ---
+
+export const passkeys = pgTable(
+  "passkeys",
+  {
+    id: text("id").primaryKey(),
+    name: text("name"),
+    publicKey: text("public_key").notNull(),
+    userId: text("user_id").notNull(),
+    credentialID: text("credential_id").notNull(),
+    counter: integer("counter").notNull(),
+    deviceType: text("device_type").notNull(),
+    backedUp: boolean("backed_up").notNull(),
+    transports: text("transports"),
+    createdAt: timestamp("created_at", { withTimezone: true }),
+    aaguid: text("aaguid"),
+  },
+  (table) => [index("passkeys_user_id_idx").on(table.userId), index("passkeys_credential_id_idx").on(table.credentialID)]
+)
+
 // --- OAuth 2.1 for MCP (Better Auth jwt, mcp/oauth-provider and cimd plugins) ---
 // Generated with `npx auth generate --adapter drizzle`, then adapted for DSQL: arrays and JSON are
 // text (the adapter is patched to serialize them, patches/@better-auth__drizzle-adapter*.patch),

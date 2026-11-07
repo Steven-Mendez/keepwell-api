@@ -1,10 +1,11 @@
 import { cimd } from "@better-auth/cimd"
 import { fetchClientMetadataResource } from "@better-auth/cimd/node"
 import { mcp } from "@better-auth/mcp"
+import { passkey } from "@better-auth/passkey"
 import { betterAuth } from "better-auth"
 import { jwt } from "better-auth/plugins"
 import { drizzleAdapter } from "better-auth/adapters/drizzle"
-import { APIError } from "better-auth/api"
+import { APIError, createAuthMiddleware } from "better-auth/api"
 import { and, eq, isNotNull } from "drizzle-orm"
 
 import type { AuditLog } from "../../core/ports/audit-log"
@@ -65,6 +66,9 @@ export function createAuth(options: AuthOptions) {
     // JSON and arrays as text: Aurora DSQL has no jsonb or array columns (patched adapter option).
     database: drizzleAdapter(options.db, { provider: "pg", usePlural: true, schema, supportsJSON: false, supportsArrays: false }),
     plugins: [
+      // Passkeys belong to the web app's host; the iPhone shares them through its associated domain
+      // (webcredentials:app.<domain>), so both sign in with the same credential.
+      passkey({ rpID: new URL(options.webOrigin).hostname, rpName: "Keepwell", origin: [options.webOrigin] }),
       // Signs MCP access tokens; /api/auth/jwks publishes the keys requireMcpAuth verifies against.
       jwt(),
       mcp({
@@ -118,6 +122,18 @@ export function createAuth(options: AuthOptions) {
       ...(options.cookieDomain ? { crossSubDomainCookies: { enabled: true, domain: options.cookieDomain } } : {}),
       defaultCookieAttributes: { httpOnly: true, sameSite: "lax" },
       ipAddress: { ipAddressHeaders: ["x-forwarded-for"] },
+    },
+    hooks: {
+      // Passkeys and connected MCP clients are security events (audit_log), like sign-ins.
+      after: createAuthMiddleware(async (ctx) => {
+        const userId = ctx.context.session?.user.id ?? ctx.context.newSession?.user.id
+        if (ctx.path === "/passkey/verify-registration" && userId && !(ctx.context.returned instanceof Error)) {
+          await audit.record({ action: "passkey.created", userId })
+        }
+        if (ctx.path === "/oauth2/consent" && userId && (ctx.body as { accept?: boolean } | undefined)?.accept) {
+          await audit.record({ action: "mcp.client_authorized", userId, details: { scopes: String((ctx.body as { scope?: string }).scope ?? "requested") } })
+        }
+      }),
     },
     databaseHooks: {
       session: {

@@ -91,8 +91,8 @@ describe("MCP over OAuth 2.1", () => {
     expect(list.clients).toMatchObject([{ client_id: clientId, name: "Claude" }])
     expect((await harness.app.request(`/mcp/clients/${clientId}`, { method: "DELETE", headers: { cookie, origin: "http://localhost:3000" } })).status).toBe(204)
     expect((await refresh(base, clientId, token!.refresh_token!)).status).toBeGreaterThanOrEqual(400)
-    const audit = (await admin.db.execute<{ action: string }>(sql`select action from audit_log where action like 'mcp.%'`)).rows
-    expect(audit.map((row) => row.action)).toEqual(["mcp.client_revoked"])
+    const audit = (await admin.db.execute<{ action: string }>(sql`select action from audit_log where action like 'mcp.%' order by at`)).rows
+    expect(audit.map((row) => row.action)).toEqual(["mcp.client_authorized", "mcp.client_revoked"])
   })
 
   it("disconnects everything at once: even unexpired access tokens stop working", async () => {
