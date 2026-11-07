@@ -1,8 +1,8 @@
 import { sql } from "drizzle-orm"
 import { afterAll, describe, expect, it } from "vitest"
 
-import { APP_ROLE, createDatabase } from "../../src/adapters/db/client"
-import { pingDatabase } from "../../src/adapters/db/health"
+import { APP_ROLE, createDatabase } from "../../src/adapters/database/client"
+import { pingDatabase } from "../../src/adapters/database/health"
 
 // Runs in the pipeline against the dev cluster (`pnpm test:remote`), with the deploy role's
 // credentials. Never against prod.

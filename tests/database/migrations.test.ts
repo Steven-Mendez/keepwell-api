@@ -1,7 +1,7 @@
 import { sql } from "drizzle-orm"
 import { afterAll, describe, expect, it } from "vitest"
 
-import { runMigrations, toPostgres } from "../../src/adapters/db/migrate"
+import { runMigrations, toPostgres } from "../../src/adapters/database/migrate"
 import { adminDatabase } from "../support/database"
 import { captureLogger } from "../support/logger"
 

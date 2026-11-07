@@ -17,16 +17,18 @@
     "check": "pnpm typecheck && pnpm lint && pnpm test",
     "db:up": "docker compose up -d --wait postgres",
     "db:migrate": "tsx scripts/migrate.ts",
-    "db:generate": "drizzle-kit generate && aurora-dsql-drizzle transform drizzle",
+    "db:generate": "scripts/generate-migration.sh",
     "test:remote": "vitest run --config vitest.remote.config.ts"
   },
   "dependencies": {
     "@aws-sdk/client-ssm": "^3.1164.0",
     "@aws/aurora-dsql-drizzle": "^0.2.0",
     "@aws/aurora-dsql-node-postgres-connector": "^0.1.9",
+    "better-auth": "^1.7.18",
     "decimal.js": "^10.6.0",
     "drizzle-orm": "^0.45.4",
     "hono": "^4.13.16",
+    "jose": "^6.2.15",
     "pg": "^8.23.1",
     "pino": "^10.4.0",
     "zod": "^4.6.7"

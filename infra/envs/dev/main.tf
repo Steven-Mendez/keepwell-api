@@ -24,6 +24,7 @@ module "environment" {
   environment         = "dev"
   domain              = var.domain
   hostname            = "api.dev.${var.domain}"
+  web_hostname        = "app.dev.${var.domain}"
   lambda_zip          = var.lambda_zip
   app_version         = var.app_version
   deletion_protection = false

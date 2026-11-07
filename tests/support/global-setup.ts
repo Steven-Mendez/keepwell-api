@@ -1,7 +1,7 @@
 import pg from "pg"
 
-import { createDatabase } from "../../src/adapters/db/client"
-import { runMigrations } from "../../src/adapters/db/migrate"
+import { createDatabase } from "../../src/adapters/database/client"
+import { runMigrations } from "../../src/adapters/database/migrate"
 import { createLogger } from "../../src/adapters/observability/logger"
 import { adminUrl, TEST_DATABASE } from "./env"
 

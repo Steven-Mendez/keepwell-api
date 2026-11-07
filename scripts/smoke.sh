@@ -16,4 +16,9 @@ echo "$body" | jq -e --arg sha "$sha" '.ok == true and .version == $sha' > /dev/
 for header in strict-transport-security x-content-type-options referrer-policy x-request-id; do
   grep -qi "^$header:" /tmp/smoke-headers || { echo "missing header $header"; exit 1; }
 done
+# Better Auth is mounted and answers (no session needed).
+curl -fsS --max-time 10 "$base/api/auth/ok" | jq -e '.ok == true' > /dev/null || { echo "auth does not answer"; exit 1; }
+# Protected routes refuse anonymous callers.
+code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 "$base/me")
+[ "$code" = 401 ] || { echo "/me answered $code without a session"; exit 1; }
 echo "smoke test passed"

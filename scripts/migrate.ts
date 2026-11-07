@@ -1,8 +1,8 @@
 // Runs migrations against one environment. In the pipeline: DB_HOST=<cluster endpoint> with the
 // deploy role's credentials (connects as `admin`), and APP_IAM_ROLE_ARN to map keepwell_app.
 // Locally: DATABASE_URL=postgres://... (see docker-compose.yml).
-import { createDatabase } from "../src/adapters/db/client"
-import { grantIamRole, runMigrations } from "../src/adapters/db/migrate"
+import { createDatabase } from "../src/adapters/database/client"
+import { grantIamRole, runMigrations } from "../src/adapters/database/migrate"
 import { createLogger } from "../src/adapters/observability/logger"
 
 const log = createLogger({ version: process.env.APP_VERSION ?? "local" })

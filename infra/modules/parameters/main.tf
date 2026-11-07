@@ -17,15 +17,28 @@ variable "app_role_name" {
 data "aws_region" "current" {}
 data "aws_caller_identity" "current" {}
 
-# Secret parameters are created here with a placeholder through a write-only argument, so their
-# value never enters the state. The real value is set by hand (BOOTSTRAP.md); the API refuses to
-# start serving with the placeholder.
-resource "aws_ssm_parameter" "auth_secret" {
-  name             = "${var.prefix}/auth_secret"
-  type             = "SecureString"
+# Parameters whose values are set by hand (BOOTSTRAP.md). Terraform creates each one with the
+# placeholder `unset` through a write-only argument, so no value ever enters the state; the API
+# refuses to serve with a placeholder and GET /health says which key is missing.
+locals {
+  manual_parameters = {
+    auth_secret        = { type = "SecureString", description = "Better Auth secret, 32+ random characters" }
+    apple_private_key  = { type = "SecureString", description = "Sign in with Apple .p8 key, PEM with \\n" }
+    apple_key_id       = { type = "String", description = "Key ID of the .p8 key" }
+    apple_team_id      = { type = "String", description = "Apple developer team ID" }
+    apple_services_id  = { type = "String", description = "Services ID used by the web (OAuth client_id)" }
+    apple_bundle_id    = { type = "String", description = "iOS bundle identifier (audience of native ID tokens)" }
+    allowed_apple_subs = { type = "String", description = "Comma-separated Apple user IDs allowed to sign in" }
+  }
+}
+
+resource "aws_ssm_parameter" "manual" {
+  for_each         = local.manual_parameters
+  name             = "${var.prefix}/${each.key}"
+  type             = each.value.type
+  description      = each.value.description
   value_wo         = "unset"
   value_wo_version = 1
-  description      = "Better Auth secret. Set with: aws ssm put-parameter --overwrite"
 }
 
 resource "aws_iam_role_policy" "read" {

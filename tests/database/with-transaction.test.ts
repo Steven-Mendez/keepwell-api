@@ -1,7 +1,7 @@
 import { sql } from "drizzle-orm"
 import { afterAll, beforeAll, describe, expect, it } from "vitest"
 
-import { withTransaction } from "../../src/adapters/db/with-transaction"
+import { withTransaction } from "../../src/adapters/database/with-transaction"
 import { adminDatabase, appDatabase } from "../support/database"
 import { captureLogger } from "../support/logger"
 

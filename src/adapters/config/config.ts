@@ -11,6 +11,20 @@ import { z } from "zod"
 export const AppConfig = z.object({
   /** Signs sessions and tokens (Better Auth). 32+ characters; rotated per docs/runbooks. */
   auth_secret: z.string().min(32, "auth_secret must be at least 32 characters (still the placeholder?)"),
+  /** Sign in with Apple: team, key and Services ID (web) from the developer portal, and the app's bundle ID. */
+  apple_team_id: z.string().regex(/^[A-Z0-9]{10}$/, "apple_team_id is a 10-character team ID"),
+  apple_key_id: z.string().regex(/^[A-Z0-9]{10}$/, "apple_key_id is a 10-character key ID"),
+  apple_services_id: z.string().min(3),
+  apple_bundle_id: z.string().min(3),
+  /** The .p8 key, PEM, newlines as \n. */
+  apple_private_key: z.string().includes("PRIVATE KEY", { message: "apple_private_key must be the .p8 PEM" }),
+  /**
+   * Closed registration: Apple user identifiers (`sub`) allowed to sign in, comma-separated. A
+   * rejected attempt is recorded in audit_log with its `sub`, which is how the author finds theirs.
+   */
+  allowed_apple_subs: z
+    .string()
+    .transform((list) => list.split(",").map((sub) => sub.trim()).filter(Boolean)),
 })
 export type AppConfig = z.infer<typeof AppConfig>
 

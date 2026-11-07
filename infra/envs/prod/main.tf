@@ -21,12 +21,13 @@ provider "aws" {
 }
 
 module "environment" {
-  source      = "../../modules/environment"
-  environment = "prod"
-  domain      = var.domain
-  hostname    = "api.${var.domain}"
-  lambda_zip  = var.lambda_zip
-  app_version = var.app_version
+  source       = "../../modules/environment"
+  environment  = "prod"
+  domain       = var.domain
+  hostname     = "api.${var.domain}"
+  web_hostname = "app.${var.domain}"
+  lambda_zip   = var.lambda_zip
+  app_version  = var.app_version
 }
 
 # An abuse shows up on the bill first. Account-wide, so it lives with prod only.

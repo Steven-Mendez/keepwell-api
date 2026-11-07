@@ -1,0 +1,79 @@
+import { generateKeyPairSync, randomUUID } from "node:crypto"
+
+import { importPKCS8, jwtVerify, SignJWT, importSPKI } from "jose"
+
+import { createAuth } from "../../src/adapters/auth/auth"
+import type { AppConfig } from "../../src/adapters/config/config"
+import { DrizzleAuditLog } from "../../src/adapters/database/audit-log"
+import type { Database } from "../../src/adapters/database/client"
+import { createApp } from "../../src/entrypoints/http/app"
+import { captureLogger } from "./logger"
+
+// A stand-in for Apple: ID tokens signed with a local RSA key. Everything after the signature check
+// (allowlist, account creation, session cookie, audit) is the production code path.
+const { privateKey, publicKey } = generateKeyPairSync("rsa", { modulusLength: 2048 })
+const privatePem = privateKey.export({ type: "pkcs8", format: "pem" }).toString()
+const publicPem = publicKey.export({ type: "spki", format: "pem" }).toString()
+
+export const TEST_CONFIG: AppConfig = {
+  auth_secret: "test-secret-test-secret-test-secret-123",
+  apple_team_id: "TEAM000000",
+  apple_key_id: "KEY0000000",
+  apple_services_id: "app.keepwell.web",
+  apple_bundle_id: "app.keepwell.ios",
+  apple_private_key: "-----BEGIN PRIVATE KEY-----",
+  allowed_apple_subs: ["000001.author", "000002.second"],
+}
+
+export async function appleIdToken(sub: string, options: { audience?: string; email?: string } = {}) {
+  return new SignJWT({ email: options.email ?? `${sub}@privaterelay.appleid.com`, email_verified: true })
+    .setProtectedHeader({ alg: "RS256", kid: "test" })
+    .setIssuer("https://appleid.apple.com")
+    .setAudience(options.audience ?? TEST_CONFIG.apple_bundle_id)
+    .setSubject(sub)
+    .setIssuedAt()
+    .setExpirationTime("10m")
+    .sign(await importPKCS8(privatePem, "RS256"))
+}
+
+async function verify(token: string) {
+  try {
+    await jwtVerify(token, await importSPKI(publicPem, "RS256"), {
+      issuer: "https://appleid.apple.com",
+      audience: [TEST_CONFIG.apple_services_id, TEST_CONFIG.apple_bundle_id],
+    })
+    return true
+  } catch {
+    return false
+  }
+}
+
+export function testAuthApp(db: Database, config: Partial<AppConfig> = {}) {
+  const { logger, lines } = captureLogger()
+  const auth = createAuth({
+    db,
+    config: { ...TEST_CONFIG, ...config },
+    audit: new DrizzleAuditLog(db),
+    baseURL: "http://localhost:3001",
+    webOrigin: "http://localhost:3000",
+    appleClientSecret: "unused-in-tests",
+    verifyAppleIdToken: verify,
+  })
+  const app = createApp({ logger, version: "test", auth: Promise.resolve(auth), webOrigin: "http://localhost:3000" })
+  return { app, auth, lines }
+}
+
+/** Signs in through the native-app path and returns the session cookie. */
+export async function signIn(app: ReturnType<typeof testAuthApp>["app"], sub: string) {
+  const res = await app.request("/api/auth/sign-in/social", {
+    method: "POST",
+    headers: { "content-type": "application/json", origin: "http://localhost:3000", "user-agent": "KeepwellTests/1" },
+    body: JSON.stringify({ provider: "apple", idToken: { token: await appleIdToken(sub) } }),
+  })
+  const cookie = (res.headers.getSetCookie?.() ?? [])
+    .map((c) => c.split(";")[0])
+    .join("; ")
+  return { res, cookie }
+}
+
+export const uniqueSub = () => `0000${randomUUID()}`

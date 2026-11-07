@@ -4,7 +4,7 @@ import { defineConfig } from "drizzle-kit"
 // DSQL (CREATE INDEX ASYNC, one statement per breakpoint). Review and commit the result.
 export default defineConfig({
   dialect: "postgresql",
-  schema: "./src/adapters/db/schema.ts",
+  schema: "./src/adapters/database/schema.ts",
   out: "./drizzle",
   breakpoints: true,
 })

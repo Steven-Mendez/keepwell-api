@@ -19,11 +19,11 @@ What DSQL makes the code do, and where it is done:
 
 | DSQL fact | What the code does | Where |
 | --- | --- | --- |
-| Optimistic concurrency at repeatable read; conflicts fail at commit with OC000/OC001 (40001); `FOR UPDATE` doesn't wait | Every write runs through `withTransaction`, which re-runs the whole closure on a conflict. Only SQL inside the closure. Each retry is logged | `src/adapters/db/with-transaction.ts`, `tests/db/with-transaction.test.ts` |
-| One DDL per transaction; `CREATE INDEX` only `ASYNC`, as a job | The adapter's migrator applies statement by statement and waits for jobs. Locally the same files run with `ASYNC` removed | `src/adapters/db/migrate.ts`, `drizzle/` |
-| Bare `numeric` is `numeric(18,6)` and rounds silently | Money and rates are `text` validated with the domain's `DECIMAL_PATTERN`; the server never sums in SQL | `src/adapters/db/schema.ts` |
+| Optimistic concurrency at repeatable read; conflicts fail at commit with OC000/OC001 (40001); `FOR UPDATE` doesn't wait | Every write runs through `withTransaction`, which re-runs the whole closure on a conflict. Only SQL inside the closure. Each retry is logged | `src/adapters/database/with-transaction.ts`, `tests/database/with-transaction.test.ts` |
+| One DDL per transaction; `CREATE INDEX` only `ASYNC`, as a job | The adapter's migrator applies statement by statement and waits for jobs. Locally the same files run with `ASYNC` removed | `src/adapters/database/migrate.ts`, `drizzle/` |
+| Bare `numeric` is `numeric(18,6)` and rounds silently | Money and rates are `text` validated with the domain's `DECIMAL_PATTERN`; the server never sums in SQL | `src/adapters/database/schema.ts` |
 | Up to 3,000 modified rows and 10 MiB per transaction | A push is capped at 200 events (≈600 rows). Account deletion goes through a queue in batches | sync and jobs |
-| Connections close after 60 minutes; 100 new connections per second per cluster | A two-connection pool per Lambda instance, recycled at 55 minutes; each new connection signs a fresh IAM token | `src/adapters/db/client.ts` |
+| Connections close after 60 minutes; 100 new connections per second per cluster | A two-connection pool per Lambda instance, recycled at 55 minutes; each new connection signs a fresh IAM token | `src/adapters/database/client.ts` |
 | No triggers, PL/pgSQL or extensions; collation `C` | Local Postgres runs with collation `C` and repeatable read (`docker-compose.yml`, CI service) | |
 | Sequences have no cross-session order | The sync cursor is not a bare sequence (ADR 0005, `sync_state`) | sync |
 | Permissions per table | The app role `keepwell_app` has no `UPDATE`/`DELETE` on the log tables; migrations run as `admin` | migrations |

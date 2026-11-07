@@ -1,3 +1,9 @@
 {
-  "auth_secret": "local-development-secret-at-least-32-chars"
+  "auth_secret": "local-development-secret-at-least-32-chars",
+  "apple_team_id": "TEAM000000",
+  "apple_key_id": "KEY0000000",
+  "apple_services_id": "app.keepwell.web",
+  "apple_bundle_id": "app.keepwell.ios",
+  "apple_private_key": "-----BEGIN PRIVATE KEY-----\nMIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgGANgpllug9BXnQaX\nwonc5Rh7l1H59pyjoDq/+mwDLUihRANCAAQCx5L0l5IqOWZ0c1LxOng3nTWhC+zL\neOHfW4V1HVUGEGkwY2UO4iyuhryvcvZJPTgtjlF06Df2aSE8w+CQaoyG\n-----END PRIVATE KEY-----\n",
+  "allowed_apple_subs": "000000.local.author"
 }

@@ -218,11 +218,13 @@ keepwell-api/                   repo propio
       domain/                   copia literal de keepwell-web/src/lib/domain, schema y fixtures; no se edita aquí
       use-cases/                ApplySyncBatch, PullChanges, Snapshot, GrantEntitlement, CreatePendingMovement...
       ports/                    interfaces: SyncRepository, EntitlementRepository, Clock, AuditLog
-    adapters/                   implementaciones de los puertos
-      db/                       esquema Drizzle, scopedDb, withTransaction, repositorios
+    adapters/                   implementaciones de infraestructura de los puertos
+      database/                 esquema Drizzle, scopedDb, withTransaction, repositorios, migrador
       auth/                     Better Auth: configuración, MCP/OAuth, CIMD, allowlist
-      app-store/                verificación de JWS y notificaciones de Apple
+      external/apple/           Sign in with Apple, verificación de JWS y notificaciones del App Store
       config/                   lectura de SSM y del JSON local
+      observability/            logs estructurados y contexto por petición
+                                (sin adapters/cache a propósito: no hay Redis ni KV)
     entrypoints/                lo que habla con el exterior
       http/                     Hono: app.ts, rutas, middlewares (auth, capacidades, errores)
       mcp/                      servidor MCP: herramientas, recursos, scopes
@@ -977,7 +979,7 @@ lo que de verdad distingue; lo demás es lo mínimo que se espera.
 | Fixtures compartidos entre Swift y TypeScript que impiden que las reglas de dinero diverjan                                                              | `src/lib/fixtures` en la web, copiados a API e iOS                | Incremento 8           |
 | Aislamiento multi-tenant que no se puede olvidar, con tests que lo intentan romper                                                                       | `scopedDb` y `tests/isolation`                                 | Incremento 9           |
 | Idempotencia por clave natural en cada escritura, con test de repetición; `Idempotency-Key` reservada en la misma transacción donde no hay clave natural | `applied_events`, `id` en herramientas MCP, `idempotency_keys` | Incrementos 11, 18, 23 |
-| Concurrencia optimista resuelta a propósito: `sync_state`, reintentos solo con SQL dentro, test de dos pushes concurrentes                               | `adapters/db/with-transaction.ts`, `tests/concurrency`         | Incrementos 3 y 11     |
+| Concurrencia optimista resuelta a propósito: `sync_state`, reintentos solo con SQL dentro, test de dos pushes concurrentes                               | `adapters/database/with-transaction.ts`, `tests/concurrency`         | Incrementos 3 y 11     |
 | Inmutabilidad de los logs impuesta por permisos de base de datos, no por convención                                                                      | Migración de roles                                             | Incremento 9           |
 | Decisiones de arquitectura numeradas, cada una con contexto, decisión, alternativas y consecuencias                                                      | `docs/adr/0001-...md` en adelante                              | Incremento 1           |
 | Arquitectura por capas con la regla de dependencias impuesta por el linter                                                                               | `src/core`, `src/adapters`, `src/entrypoints`, `eslint.config` | Incremento 1           |
@@ -989,7 +991,7 @@ lo que de verdad distingue; lo demás es lo mínimo que se espera.
 | Especificación OpenAPI generada desde los mismos esquemas que validan                                                                                    | `docs/openapi.json`, `GET /openapi.json`                       | Incremento 11          |
 | Modelo de amenazas y runbooks de incidente, rollback, restauración y rotación                                                                            | `docs/security.md`, `docs/runbooks`                            | Incrementos 11 y 20    |
 | Servidor OAuth 2.1 conforme a la especificación MCP vigente, con CIMD, consentimiento y revocación                                                       | `adapters/auth` y la pantalla de clientes                      | Incremento 17          |
-| Verificación criptográfica de compras y notificaciones de Apple                                                                                          | `adapters/app-store`                                           | Incrementos 23 y 24    |
+| Verificación criptográfica de compras y notificaciones de Apple                                                                                          | `adapters/external/apple`                                         | Incrementos 23 y 24    |
 | Costo documentado y alarma de presupuesto                                                                                                                | Sección 4 y Terraform                                          | Incremento 1           |
 
 Los ADR previstos:

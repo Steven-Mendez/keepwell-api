@@ -52,10 +52,32 @@ Terraform creates each secret parameter with the placeholder `unset` through a w
 argument, so values never reach the state. After the first deploy of each environment, set them:
 
 ```bash
+put() { aws ssm put-parameter --overwrite --name "/keepwell/$1/$2" --type "$3" --value "$4"; }
 for env in dev prod; do
-  aws ssm put-parameter --overwrite --type SecureString \
-    --name /keepwell/$env/auth_secret --value "$(openssl rand -base64 48)"
+  put $env auth_secret SecureString "$(openssl rand -base64 48)"
+  put $env apple_private_key SecureString "$(awk '{printf "%s\\n", $0}' AuthKey_XXXXXXXXXX.p8)"
+  put $env apple_key_id String XXXXXXXXXX
+  put $env apple_team_id String YYYYYYYYYY
+  put $env apple_services_id String <services id, e.g. app.keepwell.web>
+  put $env apple_bundle_id String <iOS bundle id>
+  put $env allowed_apple_subs String ""   # filled in step 5
 done
 ```
+
+### Sign in with Apple (increment 5)
+
+In the Apple developer portal:
+
+1. Enable Sign in with Apple on the iOS App ID.
+2. Create a **Services ID** for the web, with Sign in with Apple enabled, domain `api.<domain>` and
+   return URL `https://api.<domain>/api/auth/callback/apple` (and the `api.dev.` equivalents).
+3. Create a **key** with Sign in with Apple; download the `.p8` once. Its key ID and the team ID
+   go to SSM above.
+4. Deploy, then try to sign in from the web. You are rejected (registration is closed) and the
+   attempt is recorded in `audit_log` with your Apple `sub`:
+   `select details from audit_log where action = 'signin.rejected' order by at desc limit 1`.
+5. Put that `sub` in `allowed_apple_subs` and sign in again. Configuration is read at cold start:
+   `aws lambda update-function-configuration --function-name keepwell-<env>-api --description "reload $(date +%s)"`
+   recycles the instances.
 
 `GET /health` answers `config: error` until the real values are in place.

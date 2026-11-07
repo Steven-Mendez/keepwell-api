@@ -22,15 +22,27 @@ pnpm build          # dist/lambda-*.zip, what Terraform deploys
 
 ```
 src/
-  core/             business rules: no HTTP, SQL, AWS or auth libraries
-    domain/         literal copy of keepwell-web (see below); never edited here
-    use-cases/      what the API does, written against ports
-    ports/          interfaces the adapters implement
-  adapters/         database, auth, App Store, configuration, logging
-  entrypoints/      Hono app and routes, MCP server, Lambda handlers
-infra/              Terraform: bootstrap (once, by hand), modules, envs/dev and envs/prod
-docs/adr/           architecture decisions
+  core/                 pure business logic: no HTTP, Lambda, SQL, AWS or auth libraries
+    domain/             entities, money rules, Zod schemas: literal copy of keepwell-web (below)
+    use-cases/          ApplySyncBatch, PullChanges, CreatePendingMovement...
+    ports/              interfaces the adapters implement (AuditLog, SyncRepository...)
+  adapters/             infrastructure implementations
+    database/           Drizzle schema, scopedDb, withTransaction, repositories, migrator
+    auth/               Better Auth: sessions, OAuth for MCP, allowlist
+    external/           third parties: Apple (Sign in with Apple, App Store)
+    config/             SSM Parameter Store, or the local JSON in development
+    observability/      structured logs and the per-request context
+  entrypoints/          network and serverless handlers
+    http/               Hono app, routes, middlewares (session, capabilities, errors)
+    jobs/               SQS consumers (account deletion), from increment 7
+    lambda.ts           the HTTP handler; dev.ts runs the same app locally
+infra/                  Terraform: bootstrap (once, by hand), modules, envs/dev and envs/prod
+docs/adr/               architecture decisions
 ```
+
+There is no `adapters/cache` on purpose: no Redis or KV. Idempotency keys live in the database, in
+the same transaction as the effect they protect (see PLAN_API.md, "Principios de backend
+financiero"); a cache would be infrastructure without a problem that asks for it.
 
 Dependencies point inward: `entrypoints` → `adapters` → `core`. ESLint enforces it
 (`eslint.config.mjs`); a forbidden import fails `pnpm check`.

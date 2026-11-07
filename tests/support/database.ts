@@ -1,4 +1,4 @@
-import { createDatabase, APP_ROLE } from "../../src/adapters/db/client"
+import { createDatabase, APP_ROLE } from "../../src/adapters/database/client"
 import { adminUrl, TEST_DATABASE } from "./env"
 
 /** The database as the API sees it: connected as `keepwell_app`, with that role's privileges. */

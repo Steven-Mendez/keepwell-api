@@ -1,6 +1,6 @@
 import { afterAll, describe, expect, it } from "vitest"
 
-import { pingDatabase } from "../../src/adapters/db/health"
+import { pingDatabase } from "../../src/adapters/database/health"
 import { createApp } from "../../src/entrypoints/http/app"
 import { appDatabase } from "../support/database"
 import { captureLogger } from "../support/logger"

@@ -19,6 +19,11 @@ variable "hostname" {
   description = "api.<domain> in prod, api.dev.<domain> in dev"
 }
 
+variable "web_hostname" {
+  type        = string
+  description = "app.<domain> in prod, app.dev.<domain> in dev: the only CORS origin"
+}
+
 variable "lambda_zip" {
   type = string
 }
@@ -45,6 +50,9 @@ module "api" {
     DB_HOST       = module.database.endpoint
     DB_USER       = "keepwell_app"
     CONFIG_PREFIX = "/keepwell/${var.environment}"
+    API_BASE_URL  = "https://${var.hostname}"
+    WEB_ORIGIN    = "https://${var.web_hostname}"
+    COOKIE_DOMAIN = var.domain
   }
 }
 

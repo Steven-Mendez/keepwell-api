@@ -8,6 +8,20 @@
       "when": 1794011788271,
       "tag": "0000_app_role",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1794012252570,
+      "tag": "0001_auth_and_audit",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1794012268711,
+      "tag": "0002_auth_grants",
+      "breakpoints": true
     }
   ]
 }

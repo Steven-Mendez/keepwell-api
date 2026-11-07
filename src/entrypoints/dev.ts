@@ -1,6 +1,6 @@
 import { serve } from "@hono/node-server"
 
-import { APP_ROLE } from "../adapters/db/client"
+import { APP_ROLE } from "../adapters/database/client"
 import { createLogger } from "../adapters/observability/logger"
 import { bootstrap } from "./bootstrap"
 

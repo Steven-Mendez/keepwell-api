@@ -1,6 +1,6 @@
 import { handle } from "hono/aws-lambda"
 
-import { databaseConfigFromEnv } from "../adapters/db/client"
+import { databaseConfigFromEnv } from "../adapters/database/client"
 import { createLogger } from "../adapters/observability/logger"
 import { bootstrap } from "./bootstrap"
 
@@ -8,7 +8,9 @@ import { bootstrap } from "./bootstrap"
 const initStarted = performance.now()
 const version = process.env.APP_VERSION ?? "unknown"
 const logger = createLogger({ version })
-const app = bootstrap({ logger, version, database: databaseConfigFromEnv() })
+const database = databaseConfigFromEnv()
+if (!database) throw new Error("DB_HOST is not set")
+const app = bootstrap({ logger, version, database })
 const honoHandler = handle(app)
 let coldStart = true
 
