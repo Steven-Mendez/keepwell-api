@@ -7,6 +7,7 @@ import {
   Id,
   IsoDateTime,
   PositiveDecimalString,
+  RecordSource,
   TransactionKind,
   TransactionStatus,
   isPositiveDecimal,
@@ -135,6 +136,8 @@ export const Transaction = z.object({
   recurringId: Id.optional(),
   /** Normalized tags (`normalizedTag`), each once; left out when there are none. */
   tags: z.array(z.string()).optional(),
+  /** `mcp` when Claude (or another MCP client) recorded it; absent means `app`. Kept on confirm. */
+  source: RecordSource.optional(),
 })
 export type Transaction = z.infer<typeof Transaction>
 
@@ -178,6 +181,7 @@ export const RecurringRule = z.object({
   note: z.string().optional(),
   /** Copied to each movement it records; left out when there are none. */
   tags: z.array(z.string()).optional(),
+  source: RecordSource.optional(),
 })
 export type RecurringRule = z.infer<typeof RecurringRule>
 
@@ -242,6 +246,8 @@ export const MAX_LOAN_INSTALLMENTS = 600
 
 /** One paid installment and the movement that paid it. */
 export const LoanPayment = z.object({
+  /** `loanPaymentId(loan, number)`; older backups lack it and get it when read. */
+  id: Id.optional(),
   number: z.number().int().min(1),
   paidAt: IsoDateTime,
   transactionId: Id.optional(),
@@ -290,6 +296,8 @@ export const DebtDirection = z.enum(["theyOweMe", "iOwe"])
 export type DebtDirection = z.infer<typeof DebtDirection>
 
 export const DebtRepayment = z.object({
+  /** Older backups lack it and get `legacyRepaymentId` when read. */
+  id: Id.optional(),
   /** In the debt's currency. */
   amount: PositiveDecimalString,
   date: IsoDateTime,

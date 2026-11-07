@@ -12,7 +12,7 @@ import {
 } from "../schema"
 
 // Shared cases for the domain contract. keepwell-web is the source; keepwell-api and keepwell-ios
-// copy `entities.json` verbatim and run it in their own suites, so a rule that changes in one copy
+// copy `entities.json`, `ids.json` and `sync.json` verbatim and run it in their own suites, so a rule that changes in one copy
 // and not in the others fails a test instead of diverging in silence.
 
 /** The schema each sync entity is validated with, keyed like `SyncEntity`. */

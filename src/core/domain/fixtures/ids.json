@@ -1,0 +1,100 @@
+{
+  "$comment": "Name-based ids (UUID v5, SHA-1) every client and the server must compute identically. Source: keepwell-web src/lib/schema/id.ts.",
+  "version": 1,
+  "namespace": "b21aa395-c3f3-574c-b9a1-bf3e47f340c5",
+  "uuidV5": [
+    {
+      "name": "keepwell",
+      "namespace": "6ba7b811-9dad-11d1-80b4-00c04fd430c8",
+      "id": "b21aa395-c3f3-574c-b9a1-bf3e47f340c5"
+    },
+    {
+      "name": "python.org",
+      "namespace": "6ba7b810-9dad-11d1-80b4-00c04fd430c8",
+      "id": "886313e1-3b8a-5372-9b90-0c9aee199e5d"
+    },
+    {
+      "name": "ñandú 💸",
+      "namespace": "b21aa395-c3f3-574c-b9a1-bf3e47f340c5",
+      "id": "a1bfa9e8-7cd6-57e2-baaf-ac8bbe344110"
+    }
+  ],
+  "occurrences": [
+    {
+      "rule": {
+        "id": "55555555-5555-4555-8555-555555555555",
+        "startDate": "2026-01-31T15:00:00.000Z",
+        "frequency": "monthly",
+        "interval": 1
+      },
+      "index": 0,
+      "id": "d7c1cc92-22d7-5cca-9f9e-b865b1ba49c7"
+    },
+    {
+      "rule": {
+        "id": "55555555-5555-4555-8555-555555555555",
+        "startDate": "2026-01-31T15:00:00.000Z",
+        "frequency": "monthly",
+        "interval": 1
+      },
+      "index": 1,
+      "id": "1cb2ebf9-2445-511f-8714-199ea20e7a2f"
+    },
+    {
+      "rule": {
+        "id": "55555555-5555-4555-8555-555555555555",
+        "startDate": "2026-01-31T15:00:00.000Z",
+        "frequency": "monthly",
+        "interval": 1
+      },
+      "index": 11,
+      "id": "c00d1b4e-d96a-554c-9b2d-78fe2f029306"
+    },
+    {
+      "rule": {
+        "id": "55555555-5555-4555-8555-555555555555",
+        "startDate": "2026-01-31T15:00:00.000Z",
+        "frequency": "monthly",
+        "interval": 1
+      },
+      "index": 12,
+      "id": "cf980d10-7cd2-5a61-9414-54d8a4b3e96d"
+    },
+    {
+      "rule": {
+        "id": "55555555-5555-4555-8555-555555555555",
+        "startDate": "2026-01-31T15:00:00.000Z",
+        "frequency": "monthly",
+        "interval": 2
+      },
+      "index": 1,
+      "id": "10a29ae5-c557-5c4f-aef0-af4b6eb6796a"
+    }
+  ],
+  "loanPayments": [
+    {
+      "loanId": "11111111-1111-4111-8111-111111111111",
+      "number": 1,
+      "id": "8cdd1338-11ed-566e-a479-014b1fdce772"
+    },
+    {
+      "loanId": "11111111-1111-4111-8111-111111111111",
+      "number": 2,
+      "id": "49a4ea00-fb9d-59a6-babe-fd219fef8956"
+    },
+    {
+      "loanId": "11111111-1111-4111-8111-111111111111",
+      "number": 600,
+      "id": "421bf0a9-3f6f-5c6c-b6ae-7467d89e963f"
+    }
+  ],
+  "legacyRepayments": [
+    {
+      "debtId": "22222222-2222-4222-8222-222222222222",
+      "index": 0,
+      "date": "2026-11-01T12:00:00.000Z",
+      "amount": "20",
+      "id": "095d1c2e-5f6b-54d4-a19a-619a42c538e3"
+    }
+  ]
+}

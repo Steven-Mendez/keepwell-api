@@ -61,6 +61,10 @@ export type TransactionKind = z.infer<typeof TransactionKind>
 export const TransactionStatus = z.enum(["confirmed", "planned"])
 export type TransactionStatus = z.infer<typeof TransactionStatus>
 
+/** Who created a movement or rule: the person in an app, or an MCP client such as Claude. */
+export const RecordSource = z.enum(["app", "mcp"])
+export type RecordSource = z.infer<typeof RecordSource>
+
 /** Fields the store stamps on every record, mirroring iOS `RecordMetadata`. */
 export const RecordMetadata = z.object({
   createdAt: IsoDateTime,

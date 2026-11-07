@@ -1,4 +1,4 @@
-import { newID } from "../schema/id"
+import { newID, occurrenceId } from "../schema/id"
 import type { CurrencySettings, RecurringFrequency, RecurringRule, Transaction } from "../schema"
 import { MAX_RECURRING_INTERVAL } from "../schema"
 
@@ -117,9 +117,9 @@ export function sourceOf(rule: Pick<RecurringRule, "cardId" | "accountId">): Pay
   return rule.cardId ? { type: "card", id: rule.cardId } : { type: "account", id: rule.accountId }
 }
 
-function occurrenceDraft(rule: RecurringRule, date: Date): TransactionDraft {
+function occurrenceDraft(rule: RecurringRule, date: Date, id: string = newID()): TransactionDraft {
   return {
-    id: newID(),
+    id,
     kind: rule.kind,
     amount: dec(rule.amount),
     currency: rule.currency,
@@ -134,9 +134,17 @@ function occurrenceDraft(rule: RecurringRule, date: Date): TransactionDraft {
   }
 }
 
-/** The movement for one occurrence: today's settings rate, not shared, confirmed or a draft. */
-export function occurrenceTransaction(rule: RecurringRule, date: Date, context: TransactionContext): Transaction {
-  return { ...validatedTransaction(occurrenceDraft(rule, date), context), recurringId: rule.id }
+/**
+ * The movement for one occurrence: today's settings rate, not shared, confirmed or a draft. Its id is
+ * derived from the rule, its schedule and the occurrence index, so two devices (or the server)
+ * producing the same occurrence produce the same row.
+ */
+export function occurrenceTransaction(rule: RecurringRule, date: Date, context: TransactionContext, index?: number): Transaction {
+  const id = index === undefined ? newID() : occurrenceId(rule, index)
+  return {
+    ...validatedTransaction(occurrenceDraft(rule, date, id), context),
+    recurringId: rule.id,
+  }
 }
 
 const occurrenceKey = (ruleId: string, date: Date) => `${ruleId} ${dayKey(date)}`
@@ -154,6 +162,7 @@ export async function materializeRecurring(store: LedgerStore, today: Date = new
     if (!rules.some((rule) => dueOccurrences(rule, today).length > 0)) return []
     const context = await getTransactionContext(store)
     const existing = new Set(context.transactions.flatMap((transaction) => (transaction.recurringId ? [occurrenceKey(transaction.recurringId, new Date(transaction.date))] : [])))
+    const knownIds = new Set(context.transactions.map((transaction) => transaction.id))
     const created: Transaction[] = []
     const advanced: RecurringRule[] = []
     for (const rule of rules) {
@@ -163,8 +172,8 @@ export async function materializeRecurring(store: LedgerStore, today: Date = new
       try {
         const movements = owed
           .slice(-MAX_MATERIALIZED_PER_RULE)
-          .filter((entry) => !existing.has(occurrenceKey(rule.id, entry.date)))
-          .map((entry) => occurrenceTransaction(rule, entry.date, context))
+          .filter((entry) => !existing.has(occurrenceKey(rule.id, entry.date)) && !knownIds.has(occurrenceId(rule, entry.index)))
+          .map((entry) => occurrenceTransaction(rule, entry.date, context, entry.index))
         for (const movement of movements) existing.add(occurrenceKey(rule.id, new Date(movement.date)))
         created.push(...movements)
       } catch {
