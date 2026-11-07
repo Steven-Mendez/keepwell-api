@@ -38,6 +38,7 @@ Create `keepwell-api` on GitHub and set these **variables** (not secrets; none o
 | `AWS_DEPLOY_ROLE_ARN` | `deploy_role_arn` output               |
 | `TF_STATE_BUCKET`     | `state_bucket` output                  |
 | `ALERT_EMAIL`         | where budget and alarm emails go       |
+| `DOMAIN`              | the registrable domain of step 1       |
 
 Protect `main`: pull requests only, `check` and `plan` required.
 

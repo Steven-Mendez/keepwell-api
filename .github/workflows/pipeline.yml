@@ -70,6 +70,7 @@ jobs:
         env:
           TF_VAR_app_version: ${{ github.event.pull_request.head.sha }}
           TF_VAR_alert_email: ${{ vars.ALERT_EMAIL }}
+          TF_VAR_domain: ${{ vars.DOMAIN }}
         run: |
           terraform init -backend-config="bucket=${{ vars.TF_STATE_BUCKET }}"
           # Read-only role: no lock, no writes.
@@ -121,10 +122,11 @@ jobs:
         env:
           TF_VAR_app_version: ${{ github.sha }}
           TF_VAR_alert_email: ${{ vars.ALERT_EMAIL }}
+          TF_VAR_domain: ${{ vars.DOMAIN }}
         run: |
           terraform init -backend-config="bucket=${{ vars.TF_STATE_BUCKET }}"
           terraform apply -auto-approve
-          echo "url=$(terraform output -raw api_endpoint)" >> "$GITHUB_OUTPUT"
+          echo "url=$(terraform output -raw api_url)" >> "$GITHUB_OUTPUT"
       - name: smoke test
         env:
           URL: ${{ steps.apply.outputs.url }}

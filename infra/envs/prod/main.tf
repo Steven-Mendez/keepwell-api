@@ -32,6 +32,14 @@ module "api" {
   app_version = var.app_version
 }
 
+module "dns" {
+  source    = "../../modules/dns"
+  zone_name = var.domain
+  hostname  = "api.${var.domain}"
+  api_id    = module.api.api_id
+  stage_id  = module.api.stage_id
+}
+
 # An abuse shows up on the bill first. Account-wide, so it lives with prod only.
 resource "aws_budgets_budget" "monthly" {
   name         = "keepwell-monthly"

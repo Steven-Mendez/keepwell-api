@@ -17,3 +17,8 @@ variable "alert_email" {
   type        = string
   description = "Receives budget and alarm notifications"
 }
+
+variable "domain" {
+  type        = string
+  description = "Registrable domain; the API answers on api.<domain> and the web on app.<domain>"
+}
