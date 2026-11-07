@@ -52,6 +52,16 @@ jobs:
           PGPASSWORD=postgres psql -h localhost -p 54329 -U postgres -c "alter system set default_transaction_isolation = 'repeatable read'"
           PGPASSWORD=postgres psql -h localhost -p 54329 -U postgres -c "select pg_reload_conf()"
       - run: pnpm check
+      - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
+        with:
+          terraform_wrapper: false
+      - name: terraform fmt and validate
+        run: |
+          terraform -chdir=infra fmt -check -recursive
+          for env in dev prod; do
+            terraform -chdir="infra/envs/$env" init -backend=false -input=false > /dev/null
+            terraform -chdir="infra/envs/$env" validate
+          done
       - run: pnpm build
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:

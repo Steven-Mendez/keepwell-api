@@ -37,3 +37,19 @@ unintended `RENAME` stops there.
 - **Parallel branches.** If two branches each add a migration, the one merged second deletes its
   generated file, rebases on `main` and runs `pnpm db:generate` again, so the journal and snapshot
   stay linear.
+
+## Terraform's part, and what it doesn't do
+
+Terraform owns the cluster, its IAM policies and the parameters; Drizzle owns everything inside the
+database. Terraform never runs SQL (no `local-exec`), and the database roles are created by a
+migration, not by Terraform.
+
+There is no database password and no Secrets Manager entry: DSQL authenticates every connection
+with a short-lived IAM token, so the pipeline's deploy role (`dsql:DbConnectAdmin`) migrates and the
+Lambda roles (`dsql:DbConnect`, mapped to `keepwell_app`) connect, with nothing stored anywhere.
+
+Order on `main`, per environment: migrations, then `terraform apply`. With Lambda, `apply` *is* the
+code deploy, so the schema has to be there before it; migrations are additive, so the running
+version keeps working against the new schema. The one exception is a cluster's very first deploy,
+when migrations run right after the `apply` that creates it. If migrations fail, `apply` doesn't run
+and the live version is untouched.

@@ -8,6 +8,10 @@ terraform {
 
 variable "environment" {
   type = string
+  validation {
+    condition     = contains(["dev", "prod"], var.environment)
+    error_message = "environment is dev or prod."
+  }
 }
 
 variable "domain" {

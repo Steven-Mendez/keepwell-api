@@ -22,9 +22,14 @@ variable "deletion_protection" {
 data "aws_region" "current" {}
 
 # Encrypted at rest with the DSQL-managed key. A customer key in KMS only if a requirement asks.
+# Two locks: AWS refuses to delete a protected cluster, and Terraform refuses to plan its
+# destruction at all. Removing either is a reviewed change on its own.
 resource "aws_dsql_cluster" "this" {
   deletion_protection_enabled = var.deletion_protection
   tags                        = { Name = var.name }
+  lifecycle {
+    prevent_destroy = true
+  }
 }
 
 # The Lambda connects as `keepwell_app`, mapped to this IAM role by the migrator (AWS IAM GRANT).
