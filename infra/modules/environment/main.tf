@@ -47,6 +47,12 @@ variable "time_zone" {
   description = "The person's time zone, for calendar math such as recurring occurrences"
 }
 
+variable "backups" {
+  type        = bool
+  default     = false
+  description = "Daily AWS Backup copies of the cluster (prod only: dev holds test data)"
+}
+
 variable "deletion_protection" {
   type    = bool
   default = true
@@ -85,6 +91,14 @@ module "queue" {
   db_endpoint     = module.database.endpoint
   db_cluster_arn  = module.database.arn
   api_role_name   = module.api.role_name
+  alarm_topic_arn = module.alerts.topic_arn
+}
+
+module "backup" {
+  count           = var.backups ? 1 : 0
+  source          = "../backup"
+  name            = local.name
+  cluster_arn     = module.database.arn
   alarm_topic_arn = module.alerts.topic_arn
 }
 
@@ -137,4 +151,8 @@ output "api_function" {
 
 output "jobs_function" {
   value = "${local.name}-jobs"
+}
+
+output "backup_vault" {
+  value = var.backups ? module.backup[0].vault_name : null
 }
