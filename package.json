@@ -18,7 +18,8 @@
     "db:up": "docker compose up -d --wait postgres",
     "db:migrate": "tsx scripts/migrate.ts",
     "db:generate": "scripts/generate-migration.sh",
-    "test:remote": "vitest run --config vitest.remote.config.ts"
+    "test:remote": "vitest run --config vitest.remote.config.ts",
+    "reconcile": "tsx scripts/reconcile.ts"
   },
   "dependencies": {
     "@aws-sdk/client-sqs": "^3.1164.0",

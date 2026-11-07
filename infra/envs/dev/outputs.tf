@@ -17,3 +17,7 @@ output "api_function" {
 output "jobs_function" {
   value = module.environment.jobs_function
 }
+
+output "jobs_role_arn" {
+  value = module.environment.jobs_role_arn
+}

@@ -10,6 +10,8 @@ export type Database = AwsDsqlDatabase<Schema>
 
 /** The role the API connects as; it has no UPDATE or DELETE on the log tables. */
 export const APP_ROLE = "keepwell_app"
+/** The deletion job's role: it may delete an account's history, which the API role can't. */
+export const JOBS_ROLE = "keepwell_jobs"
 
 export type DatabaseConfig =
   | { kind: "dsql"; host: string; user: string; region?: string; maxConnections?: number }

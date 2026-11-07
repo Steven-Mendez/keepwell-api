@@ -69,7 +69,8 @@ jobs:
           {
             echo "url=$(terraform output -raw api_url)"
             echo "db=$(terraform output -raw db_endpoint)"
-            echo "roles=$(terraform output -raw app_role_arn)"
+            echo "app_role=$(terraform output -raw app_role_arn)"
+            echo "jobs_role=$(terraform output -raw jobs_role_arn)"
             echo "api_fn=$(terraform output -raw api_function)"
             echo "jobs_fn=$(terraform output -raw jobs_function)"
           } >> "$GITHUB_OUTPUT"
@@ -77,7 +78,8 @@ jobs:
       - name: 2. migrate
         env:
           DB_HOST: ${{ steps.out.outputs.db }}
-          APP_IAM_ROLE_ARN: ${{ steps.out.outputs.roles }}
+          APP_IAM_ROLE_ARN: ${{ steps.out.outputs.app_role }}
+          JOBS_IAM_ROLE_ARN: ${{ steps.out.outputs.jobs_role }}
         run: pnpm db:migrate
 
       - name: 3. deploy code

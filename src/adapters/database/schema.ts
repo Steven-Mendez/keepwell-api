@@ -100,3 +100,5 @@ export const auditLog = pgTable(
   },
   (table) => [index("audit_log_user_at_idx").on(table.userId, table.at)]
 )
+
+export * from "./sync-tables"

@@ -4,16 +4,24 @@ import { afterAll, beforeEach, describe, expect, it } from "vitest"
 import { KEPT_AFTER_DELETION, USER_OWNED_TABLES } from "../../src/adapters/database/account-store"
 import { DeleteAccountData } from "../../src/core/use-cases/delete-account-data"
 import { handleJob } from "../../src/entrypoints/jobs/handle-job"
-import { adminDatabase, appDatabase } from "../support/database"
+import { adminDatabase, appDatabase, jobsDatabase } from "../support/database"
+import { DrizzleAccountStore } from "../../src/adapters/database/account-store"
+import { DrizzleAuditLog } from "../../src/adapters/database/audit-log"
 import { captureLogger } from "../support/logger"
 import { signIn, testAuthApp } from "../support/auth"
 
 describe("account deletion", () => {
   const app = appDatabase()
   const admin = adminDatabase()
-  afterAll(() => Promise.all([app.close(), admin.close()]))
+  const jobs = jobsDatabase()
+  afterAll(() => Promise.all([app.close(), admin.close(), jobs.close()]))
+  // The job as it runs in production: its own role.
+  const deletionJob = () => {
+    const { logger } = captureLogger()
+    return new DeleteAccountData(new DrizzleAccountStore(jobs.db, logger), new DrizzleAuditLog(jobs.db))
+  }
   beforeEach(async () => {
-    for (const table of ["sessions", "accounts", "users", "audit_log"]) await admin.db.execute(sql.raw(`delete from ${table}`))
+    for (const table of ["sessions", "accounts", "users", "audit_log", "change_log", "sync_state", "entitlements"]) await admin.db.execute(sql.raw(`delete from ${table}`))
   })
 
   const userIdOf = async (sub: string) =>
@@ -33,17 +41,22 @@ describe("account deletion", () => {
     expect((await http.request("/me", { headers: { cookie: second.cookie } })).status).toBe(401)
     expect(queue.jobs).toEqual([{ type: "delete-account", userId }])
 
-    const { accounts, audit } = testAuthApp(app.db)
-    const result = await new DeleteAccountData(accounts, audit).execute(userId)
+    // Data in every ledger table, plus history, as a synced account has.
+    await admin.db.execute(sql`insert into change_log (user_id, server_seq, entity, entity_id, operation, payload, status, client_id, event_id) values (${userId}, 1, 'category', 'groceries', 'create', '{}', 'applied', 'c', 'e')`)
+    await admin.db.execute(sql`insert into sync_state (user_id, last_seq) values (${userId}, 1)`)
+    await admin.db.execute(sql`insert into entitlements (id, user_id, plan, source, reference) values ('ent-1', ${userId}, 'supporter', 'app_store', 'otx-1')`)
+    const result = await deletionJob().execute(userId)
     expect(result.status).toBe("deleted")
 
-    for (const table of ["users", "sessions", "accounts"]) {
+    for (const table of ["users", "sessions", "accounts", "change_log", "sync_state", "entitlements"]) {
       const column = table === "users" ? "id" : "user_id"
       const rows = await admin.db.execute(sql.raw(`select 1 from ${table} where ${column} = '${userId}'`))
       expect(rows.rows, table).toEqual([])
     }
     const actions = (await admin.db.execute<{ action: string }>(sql`select action from audit_log where target = ${userId}`)).rows
     expect(actions.map((r) => r.action)).toEqual(["account.deleted"])
+    // The App Store reference stays, without the person, for the accounting period.
+    expect((await admin.db.execute(sql`select user_id, reference from entitlements where id = 'ent-1'`)).rows).toEqual([{ user_id: null, reference: "otx-1" }])
   })
 
   it("can't be signed back into while it waits for the job", async () => {
@@ -56,20 +69,20 @@ describe("account deletion", () => {
   })
 
   it("is idempotent: a redelivered job finishes or does nothing, and a second request is harmless", async () => {
-    const { app: http, accounts, audit } = testAuthApp(app.db, {}, { runJobs: false })
+    const { app: http } = testAuthApp(app.db, {}, { runJobs: false })
     const { cookie } = await signIn(http, "000001.author")
     const userId = await userIdOf("000001.author")
     await http.request("/me", { method: "DELETE", headers: { cookie, origin: "http://localhost:3000" } })
-    const job = new DeleteAccountData(accounts, audit)
+    const job = deletionJob()
     await job.execute(userId)
     expect(await job.execute(userId)).toEqual({ deletedRows: 0, status: "deleted" })
   })
 
   it("refuses to erase an account nobody asked to delete", async () => {
-    const { app: http, accounts, audit } = testAuthApp(app.db, {}, { runJobs: false })
+    const { app: http } = testAuthApp(app.db, {}, { runJobs: false })
     await signIn(http, "000001.author")
     const userId = await userIdOf("000001.author")
-    expect(await new DeleteAccountData(accounts, audit).execute(userId)).toEqual({ deletedRows: 0, status: "not_marked" })
+    expect(await deletionJob().execute(userId)).toEqual({ deletedRows: 0, status: "not_marked" })
     expect((await admin.db.execute(sql`select 1 from users where id = ${userId}`)).rows).toHaveLength(1)
   })
 

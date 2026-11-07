@@ -115,8 +115,13 @@ output "db_endpoint" {
 }
 
 output "app_role_arn" {
-  value       = join(",", [module.api.role_arn, module.queue.jobs_role_arn])
-  description = "IAM roles mapped to keepwell_app by the migrator: the API and the jobs consumer"
+  value       = module.api.role_arn
+  description = "Mapped to the keepwell_app database role by the migrator"
+}
+
+output "jobs_role_arn" {
+  value       = module.queue.jobs_role_arn
+  description = "Mapped to the keepwell_jobs database role by the migrator"
 }
 
 output "api_function" {

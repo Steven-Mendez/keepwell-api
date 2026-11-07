@@ -1,27 +1,44 @@
 import { and, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm"
-import type { PgTable } from "drizzle-orm/pg-core"
 
 import type { AccountStore } from "../../core/ports/account-store"
 import type { Logger } from "../observability/logger"
 import type { Database } from "./client"
-import { accounts, sessions, users } from "./schema"
+import { sessions, users } from "./schema"
 import { withTransaction } from "./with-transaction"
 
 /**
- * Every table that holds a user's rows, erased in this order by account deletion. A table that gets
- * a `user_id` column is added here in the same commit; tests/database/account-deletion.test.ts
- * fails when a table with `user_id` is missing from this list or from KEPT_AFTER_DELETION.
+ * Every table that holds a user's rows, erased in this order by the deletion job, with the column
+ * that tells its rows apart within a user. A table that gets a `user_id` column is added here in the
+ * same commit; tests/auth/account-deletion.test.ts fails when one is missing.
  */
-export const USER_OWNED_TABLES: { name: string; table: PgTable; userIdColumn: string }[] = [
-  { name: "sessions", table: sessions, userIdColumn: "user_id" },
-  { name: "accounts", table: accounts, userIdColumn: "user_id" },
+export const USER_OWNED_TABLES: { name: string; key: string }[] = [
+  { name: "sessions", key: "id" },
+  { name: "accounts", key: "id" },
+  { name: "transactions", key: "id" },
+  { name: "recurring_rules", key: "id" },
+  { name: "loan_payments", key: "id" },
+  { name: "loans", key: "id" },
+  { name: "personal_debt_repayments", key: "id" },
+  { name: "personal_debts", key: "id" },
+  { name: "savings_goals", key: "id" },
+  { name: "categorization_rules", key: "id" },
+  { name: "cards", key: "id" },
+  { name: "ledger_accounts", key: "id" },
+  { name: "categories", key: "id" },
+  { name: "settings", key: "id" },
+  { name: "change_log", key: "server_seq" },
+  { name: "applied_events", key: "event_id" },
+  { name: "clients", key: "client_id" },
+  { name: "idempotency_keys", key: "key" },
+  { name: "sync_state", key: "user_id" },
 ]
 
 /**
- * Tables that keep rows of a deleted account on purpose: `audit_log` is insert-only for the app
- * role (security record, ADR 0004). Documented in the privacy policy.
+ * Tables that keep something of a deleted account on purpose: `audit_log` is insert-only (security
+ * record, ADR 0004) and `entitlements` keeps the App Store reference without `user_id` for the
+ * accounting period. Documented in the privacy policy.
  */
-export const KEPT_AFTER_DELETION = ["audit_log", "users"]
+export const KEPT_AFTER_DELETION = ["audit_log", "users", "entitlements"]
 
 export class DrizzleAccountStore implements AccountStore {
   constructor(
@@ -48,20 +65,25 @@ export class DrizzleAccountStore implements AccountStore {
   }
 
   async eraseNextBatch(userId: string, batchSize: number) {
-    for (const { name, table, userIdColumn } of USER_OWNED_TABLES) {
+    for (const { name, key } of USER_OWNED_TABLES) {
+      const table = sql.identifier(name)
+      const column = sql.identifier(key)
       const deleted = await withTransaction(this.db, this.log, async (tx) => {
-        const ids = await tx.execute<{ id: string }>(
-          sql`select id from ${table} where ${sql.identifier(userIdColumn)} = ${userId} limit ${batchSize}`
+        const keys = await tx.execute<{ key: string }>(sql`select ${column}::text as key from ${table} where user_id = ${userId} limit ${batchSize}`)
+        if (keys.rows.length === 0) return 0
+        await tx.execute(
+          sql`delete from ${table} where user_id = ${userId} and ${column}::text in (${sql.join(keys.rows.map((r) => sql`${r.key}`), sql`, `)})`
         )
-        if (ids.rows.length === 0) return 0
-        await tx.execute(sql`delete from ${table} where id in (${sql.join(ids.rows.map((r) => sql`${r.id}`), sql`, `)})`)
-        return ids.rows.length
+        return keys.rows.length
       })
       if (deleted > 0) return { table: name, deleted, done: false }
     }
+    // Plan grants keep their App Store reference for the accounting period, without the person.
+    await withTransaction(this.db, this.log, (tx) => tx.execute(sql`update entitlements set user_id = null where user_id = ${userId}`))
     const removed = await withTransaction(this.db, this.log, async (tx) =>
       tx.delete(users).where(and(inArray(users.id, [userId]), isNotNull(users.deletionRequestedAt))).returning({ id: users.id })
     )
     return { table: "users", deleted: removed.length, done: true }
   }
+
 }

@@ -134,7 +134,7 @@ resource "aws_lambda_function" "jobs" {
   environment {
     variables = {
       DB_HOST      = var.db_endpoint
-      DB_USER      = "keepwell_app"
+      DB_USER      = "keepwell_jobs"
       NODE_OPTIONS = "--enable-source-maps"
     }
   }

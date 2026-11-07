@@ -17,10 +17,9 @@ const { db, close } = host
 
 try {
   await runMigrations(db, host ? "dsql" : "postgres", log)
-  // Comma-separated: the API and the jobs consumer both log in as keepwell_app.
-  for (const arn of (process.env.APP_IAM_ROLE_ARN ?? "").split(",").filter(Boolean)) {
-    if (host) await grantIamRole(db, arn, log)
-  }
+  // Each Lambda logs in as its own database role.
+  if (host && process.env.APP_IAM_ROLE_ARN) await grantIamRole(db, process.env.APP_IAM_ROLE_ARN, log, "keepwell_app")
+  if (host && process.env.JOBS_IAM_ROLE_ARN) await grantIamRole(db, process.env.JOBS_IAM_ROLE_ARN, log, "keepwell_jobs")
 } finally {
   await close()
 }

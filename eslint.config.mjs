@@ -32,5 +32,20 @@ export default tseslint.config(
     "adapters",
     ["**/entrypoints/**", "hono", "hono/*"],
     "adapters implement core ports and never import entrypoints or the HTTP framework."
-  )
+  ),
+  {
+    // Repositories get a ScopedDb (adapters/database/scoped-db.ts), never the raw client: a query
+    // without user_id can't be written there.
+    files: ["src/adapters/database/repositories/**/*.ts"],
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        {
+          patterns: [
+            { group: ["../client", "../with-transaction", "**/database/client"], message: "Use the ScopedDb you are given; the raw client bypasses user isolation." },
+          ],
+        },
+      ],
+    },
+  }
 )

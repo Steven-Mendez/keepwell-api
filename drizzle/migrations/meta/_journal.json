@@ -29,6 +29,20 @@
       "when": 1794012935452,
       "tag": "0003_account_deletion",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1794014497806,
+      "tag": "0004_ledger_and_sync_tables",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1794014508647,
+      "tag": "0005_ledger_grants",
+      "breakpoints": true
     }
   ]
 }
