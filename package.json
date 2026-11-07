@@ -20,7 +20,8 @@
     "db:generate": "scripts/generate-migration.sh",
     "test:remote": "vitest run --config vitest.remote.config.ts",
     "reconcile": "tsx scripts/reconcile.ts",
-    "grant": "tsx scripts/grant.ts"
+    "grant": "tsx scripts/grant.ts",
+    "openapi": "tsx scripts/openapi.ts"
   },
   "dependencies": {
     "@aws-sdk/client-sqs": "^3.1164.0",
@@ -45,6 +46,7 @@
     "drizzle-kit": "^0.31.11",
     "esbuild": "^0.28.2",
     "eslint": "^9.39.5",
+    "fast-check": "^4.10.2",
     "tsx": "^4.23.15",
     "typescript": "^5.9.3",
     "typescript-eslint": "^8.72.1",

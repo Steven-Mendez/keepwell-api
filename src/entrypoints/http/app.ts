@@ -6,6 +6,9 @@ import type { Auth } from "../../adapters/auth/auth"
 import type { Logger } from "../../adapters/observability/logger"
 import type { RequestAccountDeletion } from "../../core/use-cases/request-account-deletion"
 import type { ResolveCapabilities } from "../../core/use-cases/resolve-capabilities"
+import type { SyncRepository } from "../../core/ports/sync-repository"
+import { syncRoutes } from "./routes/sync"
+import { openApiDocument } from "./openapi"
 import { ApiError, errorBody, onError } from "./errors"
 import { requestContext } from "./middlewares/request-context"
 import { securityHeaders } from "./middlewares/security-headers"
@@ -27,6 +30,8 @@ export interface AppDependencies {
   webOrigin?: string
   requestDeletion?: Promise<RequestAccountDeletion>
   capabilities?: Promise<ResolveCapabilities>
+  sync?: SyncRepository
+  clock?: () => number
 }
 
 /** Builds the whole HTTP surface from its dependencies, so tests and Lambda wire the same app. */
@@ -58,9 +63,13 @@ export function createApp(deps: AppDependencies) {
   app.notFound((c) => c.json(errorBody(c, "not_found", "No such route"), 404))
 
   app.route("/", healthRoutes({ version: deps.version, checks: deps.healthChecks ?? [] }))
+  app.get("/openapi.json", (c) => c.json(openApiDocument()))
   if (deps.auth) {
     app.route("/", authRoutes(deps.auth))
     app.route("/", meRoutes(deps.auth, { requestDeletion: deps.requestDeletion, capabilities: deps.capabilities }))
+    if (deps.capabilities && deps.sync) {
+      app.route("/", syncRoutes({ auth: deps.auth, capabilities: deps.capabilities, repository: deps.sync, clock: deps.clock }))
+    }
   }
   return app
 }

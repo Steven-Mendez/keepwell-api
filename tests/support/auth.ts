@@ -11,6 +11,7 @@ import { InlineJobQueue } from "../../src/adapters/queue/sqs-job-queue"
 import { DeleteAccountData } from "../../src/core/use-cases/delete-account-data"
 import { RequestAccountDeletion } from "../../src/core/use-cases/request-account-deletion"
 import { createApp } from "../../src/entrypoints/http/app"
+import { createSyncRepository } from "../../src/adapters/database/sync-store"
 import { DrizzleEntitlementRepository } from "../../src/adapters/database/entitlements"
 import { CachedPlansSource } from "../../src/adapters/config/plans-source"
 import { CLOSED_PLANS, type PlansConfig } from "../../src/core/capabilities"
@@ -59,7 +60,7 @@ async function verify(token: string) {
 /** Plans as at launch: sync for everyone during early access, MCP with the coffee. */
 export const LAUNCH_PLANS: PlansConfig = { ...CLOSED_PLANS, early_access: { cloud_sync: true } }
 
-export function testAuthApp(db: Database, config: Partial<AppConfig> = {}, options: { runJobs?: boolean; plans?: () => PlansConfig } = {}) {
+export function testAuthApp(db: Database, config: Partial<AppConfig> = {}, options: { runJobs?: boolean; plans?: () => PlansConfig; clock?: () => number } = {}) {
   const { logger, lines } = captureLogger()
   const audit = new DrizzleAuditLog(db)
   const accounts = new DrizzleAccountStore(db, logger)
@@ -77,7 +78,7 @@ export function testAuthApp(db: Database, config: Partial<AppConfig> = {}, optio
   const plans = options.plans ?? (() => LAUNCH_PLANS)
   const entitlements = new DrizzleEntitlementRepository(db)
   const capabilities = Promise.resolve(new ResolveCapabilities(entitlements, new CachedPlansSource(async () => JSON.stringify(plans()), logger, 0)))
-  const app = createApp({ logger, version: "test", auth: Promise.resolve(auth), webOrigin: "http://localhost:3000", requestDeletion, capabilities })
+  const app = createApp({ logger, version: "test", auth: Promise.resolve(auth), webOrigin: "http://localhost:3000", requestDeletion, capabilities, sync: createSyncRepository(db, logger), clock: options.clock })
   return { app, auth, lines, queue, accounts, audit, entitlements, capabilities }
 }
 

@@ -36,18 +36,24 @@ cursor. One transaction with optimistic-concurrency retry:
 2. Per event: if its `event_id` is in `applied_events`, return the stored result. Otherwise validate;
    an invalid event is `rejected` with the reason and the batch goes on. A valid one is applied by
    the rules below, written to `change_log` with its `server_seq`, and recorded in `applied_events`.
-3. The answer lists every `event_id` as `applied`, `stale` or `rejected`. The client removes all
-   three from its outbox and keeps rejected ones in a list visible in settings. If time runs out the
-   server answers with what it committed and the client resends the rest.
+3. The answer lists every `event_id` as `applied` (with the stored `updated_at`), `stale` (with the
+   row the server keeps, `current`) or `rejected` (with the reason). A resent event also gets
+   `current`. The client removes all three from its outbox, adopts `updated_at` or `current` unless
+   it has a newer pending change for that row, and keeps rejected ones in a list visible in
+   settings. If time runs out the server answers with what it committed and the client resends the
+   rest.
 
-**Conflict rules**, per row: a tombstone is final (no update or create after it revives the row); a
-delete always applies; otherwise the later `updated_at` wins, with `updated_at` capped at the
-server's clock. A losing event is `stale` and still logged.
+**Conflict rules**, per row (`src/core/sync/conflict.ts`): a tombstone is final (no update or
+create after it revives the row); a delete always applies; otherwise the later `updated_at` wins,
+with `updated_at` capped at the server's clock and ties going to the event that arrives later. A
+losing event is `stale` and still logged.
 
-**Pull** (`GET /sync/pull?cursor=n&limit=500`): changes with `server_seq > n`, without the caller's
-own `client_id`, and `next_cursor`. Because every write goes through `sync_state`, seeing `n` means
-no transaction with a lower sequence is still in flight. The client applies through `applyRemote`
-with the same rules and saves the cursor only after the batch is applied.
+**Pull** (`GET /sync/pull?cursor=n&limit=500`): changes with `server_seq > n`, the caller's own
+included, and `next_cursor`. Because every write goes through `sync_state`, seeing `n` means no
+transaction with a lower sequence is still in flight. The client applies each pulled row as the
+server's truth, through `applyRemote` (no outbox write, no echo), except rows with a pending local
+change, which its next push will settle; a local tombstone stays final. It saves the cursor only
+after the batch is applied.
 
 **Snapshot** (`GET /sync/snapshot?entity=…&after=<id>&limit=500`): current rows of one table by id,
 plus the `server_seq` it reflects. A new installation, or one that lost its cursor, loads the
@@ -57,6 +63,20 @@ snapshot and continues with `pull` from there.
 debounce. No websockets or push notifications in the first version. Without the `cloud_sync`
 capability the app keeps working locally and the outbox grows; the first push after gaining it
 uploads everything.
+
+## What the convergence test found
+
+The first version of this record said pulls skip the caller's own changes and ties keep what is
+stored. The property-based test (`tests/convergence`) disproved both within minutes:
+
+- **Ties.** A device whose clock runs ahead makes two quick edits; both are capped to the same
+  server "now" and the newer one lost the tie. Ties now go to the later arrival, the only order
+  every device agrees on.
+- **Skipping own changes.** A device already held its newer version from the push answer, then
+  pulled an older change from another device without its own later one, and applied the older
+  over the newer. Pulls now include own changes; applying them costs bandwidth, not correctness.
+- **The device never learns what the server decided.** The push answer now carries the stored
+  `updated_at` and, for stale events, the row that won.
 
 ## Accepted limitations
 

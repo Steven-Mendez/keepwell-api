@@ -17,7 +17,7 @@ type Row = Record<string, unknown>
  */
 export interface ScopedDb {
   readonly userId: string
-  select<T extends UserTable>(table: T, where?: SQL): Promise<Row[]>
+  select<T extends UserTable>(table: T, where?: SQL, options?: { orderBy?: SQL | AnyPgColumn; limit?: number }): Promise<Row[]>
   insert<T extends UserTable>(table: T, rows: Row[]): Promise<void>
   update<T extends UserTable>(table: T, values: Row, where: SQL): Promise<number>
   delete<T extends UserTable>(table: T, where: SQL): Promise<number>
@@ -32,8 +32,11 @@ export function scopedDb(handle: Database | Transaction, userId: string): Scoped
   }
   return {
     userId,
-    async select(table, where) {
-      return (await handle.select().from(table as PgTable).where(mine(table, where))) as Row[]
+    async select(table, where, options = {}) {
+      const query = handle.select().from(table as PgTable).where(mine(table, where)).$dynamic()
+      if (options.orderBy) query.orderBy(options.orderBy)
+      if (options.limit !== undefined) query.limit(options.limit)
+      return (await query) as Row[]
     },
     async insert(table, rows) {
       if (rows.length === 0) return

@@ -4,6 +4,7 @@ import { configSourceFromEnv, loadConfig, type AppConfig } from "../adapters/con
 import { DrizzleAccountStore } from "../adapters/database/account-store"
 import { DrizzleAuditLog } from "../adapters/database/audit-log"
 import { DrizzleEntitlementRepository } from "../adapters/database/entitlements"
+import { createSyncRepository } from "../adapters/database/sync-store"
 import { CachedPlansSource, filePlansLoader, ssmPlansLoader } from "../adapters/config/plans-source"
 import { ResolveCapabilities } from "../core/use-cases/resolve-capabilities"
 import { createDatabase, type Database, type DatabaseConfig } from "../adapters/database/client"
@@ -81,5 +82,5 @@ export function bootstrap(options: { logger: Logger; version: string; database: 
     { name: "db", run: () => pingDatabase(db) },
     { name: "config", run: async () => void (await auth) },
   ]
-  return createApp({ logger, version, healthChecks, auth, webOrigin: urls.webOrigin, requestDeletion, capabilities })
+  return createApp({ logger, version, healthChecks, auth, webOrigin: urls.webOrigin, requestDeletion, capabilities, sync: createSyncRepository(db, logger) })
 }
