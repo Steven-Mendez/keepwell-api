@@ -70,6 +70,10 @@ export class DrizzleAccountStore implements AccountStore {
   }
 
   async eraseNextBatch(userId: string, batchSize: number) {
+    // Before `accounts` goes: it is the only link from the person to the invitation they used.
+    await this.db.execute(
+      sql`update invitations set redeemed_by = null where redeemed_by in (select account_id from accounts where user_id = ${userId} and provider_id = 'apple')`
+    )
     for (const { name, key } of USER_OWNED_TABLES) {
       const table = sql.identifier(name)
       const column = sql.identifier(key)

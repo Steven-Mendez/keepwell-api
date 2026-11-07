@@ -19,6 +19,7 @@ import { ReadLedger } from "../../src/core/use-cases/read-ledger"
 import { McpConnections } from "../../src/adapters/auth/mcp-connections"
 import { ChangeLogWriteCounter } from "../../src/adapters/database/repositories/mcp-write-counter"
 import { CreatePending } from "../../src/core/use-cases/create-pending"
+import { DrizzleInvitationStore } from "../../src/adapters/database/invitation-store"
 import { DrizzlePurchaseStore } from "../../src/adapters/database/purchase-store"
 import type { AppStoreVerifier } from "../../src/core/ports/app-store"
 import { HandleAppStoreNotification, RedeemPurchase } from "../../src/core/use-cases/redeem-purchase"
@@ -102,7 +103,7 @@ export function testAuthApp(db: Database, config: Partial<AppConfig> = {}, optio
     redeem: Promise.resolve(new RedeemPurchase(verifier, purchases, audit, { "app.keepwell.coffee": "supporter" }, options.acceptSandbox ?? false)),
     notifications: Promise.resolve(new HandleAppStoreNotification(verifier, purchases, audit)),
   }
-  const app = createApp({ logger, version: "test", auth: Promise.resolve(auth), webOrigin: "http://localhost:3000", requestDeletion, capabilities, sync, clock: options.clock, mcp, switches: { current: async () => options.switches?.() ?? NORMAL_SWITCHES }, appStore })
+  const app = createApp({ logger, version: "test", auth: Promise.resolve(auth), webOrigin: "http://localhost:3000", requestDeletion, capabilities, sync, clock: options.clock, mcp, switches: { current: async () => options.switches?.() ?? NORMAL_SWITCHES }, appStore, invitations: { store: new DrizzleInvitationStore(db), secure: false, now: options.now } })
   return { app, auth, lines, queue, accounts, audit, entitlements, capabilities }
 }
 

@@ -21,6 +21,7 @@
     "test:remote": "vitest run --config vitest.remote.config.ts",
     "reconcile": "tsx scripts/reconcile.ts",
     "grant": "tsx scripts/grant.ts",
+    "invite": "tsx scripts/invite.ts",
     "openapi": "tsx scripts/openapi.ts"
   },
   "dependencies": {

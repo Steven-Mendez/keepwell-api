@@ -223,3 +223,18 @@ export const appStoreNotifications = pgTable("app_store_notifications", {
   original_transaction_id: text("original_transaction_id"),
   received_at: timestamp("received_at", { withTimezone: true }).defaultNow().notNull(),
 })
+
+/**
+ * Single-use invitations. Only the SHA-256 of the code is stored, so a database read does not hand
+ * out working codes. `redeemed_by` is the Apple `sub` that used it: the same person retrying a
+ * failed sign-in uses it again, nobody else can. Erased with the account.
+ */
+export const invitations = pgTable("invitations", {
+  id: text("id").primaryKey(),
+  code_hash: text("code_hash").notNull().unique(),
+  note: text("note"),
+  expires_at: timestamp("expires_at", { withTimezone: true }).notNull(),
+  redeemed_at: timestamp("redeemed_at", { withTimezone: true }),
+  redeemed_by: text("redeemed_by"),
+  created_at: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+})

@@ -100,3 +100,21 @@ sends a confirmation email after the first deploy; confirm it, or alarms go nowh
    matches it byte for byte.
 
 dev accepts Sandbox purchases; prod refuses them (`APP_STORE_SANDBOX`).
+
+### Invitations (increment 26)
+
+Registration stays closed: the allowlist in SSM (`allowed_apple_subs`), people who already have an
+account, and single-use invitations.
+
+```sh
+DB_HOST=<cluster endpoint> AWS_REGION=us-east-1 pnpm invite 7 "for Ana"   # prints the code once
+```
+
+The person types the code on the iPhone (sent as `x-keepwell-invitation` with the Apple ID token) or
+on the web (`POST /invitations/claim` keeps it in a 30-minute cookie for Apple's redirect). The code
+is consumed when the account is created; only its SHA-256 is stored.
+
+**Before the first external user**, put CloudFront with AWS WAF (AWS managed common rules and a
+rate-based rule per IP) in front of the HTTP API. Not built while the only users are the author and
+invited friends: API Gateway throttling, the 401/403 alarm and invite-only registration cover that
+stage, and WAF costs a fixed monthly fee. Section 5 of PLAN_API.md is the checklist to complete first.

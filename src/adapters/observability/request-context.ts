@@ -5,6 +5,8 @@ export interface RequestInfo {
   requestId: string
   ip: string | null
   userAgent: string | null
+  /** Invitation code brought to a first sign-in: header from the iPhone, cookie from the web. */
+  invitation?: string | null
 }
 
 const storage = new AsyncLocalStorage<RequestInfo>()

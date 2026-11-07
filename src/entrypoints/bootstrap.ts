@@ -25,6 +25,7 @@ import type { JobQueue } from "../core/ports/job-queue"
 import { DeleteAccountData } from "../core/use-cases/delete-account-data"
 import { RequestAccountDeletion } from "../core/use-cases/request-account-deletion"
 import { createApp } from "./http/app"
+import { DrizzleInvitationStore } from "../adapters/database/invitation-store"
 import type { HealthCheck } from "./http/routes/health"
 
 export interface Urls {
@@ -114,9 +115,11 @@ export function bootstrap(options: { logger: Logger; version: string; database: 
     notifications: verifier.then((v) => new HandleAppStoreNotification(v, purchases, audit)),
   }
 
+  const invitations = { store: new DrizzleInvitationStore(db), secure: urls.apiBaseUrl.startsWith("https://"), cookieDomain: urls.cookieDomain }
+
   const healthChecks: HealthCheck[] = [
     { name: "db", run: () => pingDatabase(db) },
     { name: "config", run: async () => void (await auth) },
   ]
-  return createApp({ logger, version, healthChecks, auth, webOrigin: urls.webOrigin, requestDeletion, capabilities, sync, mcp, switches, appStore })
+  return createApp({ logger, version, healthChecks, auth, webOrigin: urls.webOrigin, requestDeletion, capabilities, sync, mcp, switches, appStore, invitations })
 }

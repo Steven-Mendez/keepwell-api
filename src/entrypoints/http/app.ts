@@ -20,6 +20,8 @@ import { ApiError, errorBody, onError } from "./errors"
 import { requestContext } from "./middlewares/request-context"
 import { securityHeaders } from "./middlewares/security-headers"
 import { authRoutes } from "./routes/auth"
+import { invitationRoutes } from "./routes/invitations"
+import type { InvitationStore } from "../../core/ports/invitations"
 import { healthRoutes, type HealthCheck } from "./routes/health"
 import { meRoutes } from "./routes/me"
 import type { AppEnv } from "./types"
@@ -40,6 +42,8 @@ export interface AppDependencies {
   sync?: SyncRepository
   clock?: () => number
   switches?: SwitchesSource
+  /** Invitation check for the web's first sign-in. */
+  invitations?: { store: InvitationStore; secure: boolean; cookieDomain?: string; now?: () => Date }
   appStore?: { redeem: Promise<RedeemPurchase>; notifications: Promise<HandleAppStoreNotification> }
   /** The MCP server's data access; with it, /mcp is mounted. */
   mcp?: { readLedger: ReadLedger; baseURL: string; now?: () => Date; connections?: McpConnections; createPending?: CreatePending }
@@ -56,7 +60,7 @@ export function createApp(deps: AppDependencies) {
         origin: deps.webOrigin,
         credentials: true,
         allowMethods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-        allowHeaders: ["content-type", "idempotency-key"],
+        allowHeaders: ["content-type", "idempotency-key", "x-keepwell-invitation"],
         exposeHeaders: ["x-request-id"],
         maxAge: 600,
       })
@@ -82,6 +86,7 @@ export function createApp(deps: AppDependencies) {
       app.route("/", syncRoutes({ auth: deps.auth, capabilities: deps.capabilities, repository: deps.sync, clock: deps.clock, switches: deps.switches }))
     }
     if (deps.appStore) app.route("/", appStoreRoutes({ auth: deps.auth, ...deps.appStore }))
+    if (deps.invitations) app.route("/", invitationRoutes({ invitations: deps.invitations.store, secure: deps.invitations.secure, cookieDomain: deps.invitations.cookieDomain, now: deps.invitations.now }))
     if (deps.capabilities && deps.mcp) {
       app.route("/", wellKnownRoutes(deps.auth, deps.mcp.baseURL))
       app.route("/", mcpRoutes({ auth: deps.auth, capabilities: deps.capabilities, switches: deps.switches, ...deps.mcp }))

@@ -105,3 +105,14 @@ damage is bounded:
 - The webhook is unauthenticated by design; trust comes from the signed payload. Notifications
   are recorded by `notificationUUID`, so a resend is a no-op. REFUND and REVOKE remove the plan.
 - 401/403 answers feed a metric; more than 50 in 10 minutes alerts.
+
+## Registration
+
+- Closed. Admitted: the allowlist (the author), anyone who already has an Apple account here, and
+  a new person with an open invitation. Every refusal is audited with its reason.
+- Invitations: 100-bit codes, single use, expiring (1–90 days), stored as SHA-256 only. Consumed
+  atomically when the account is created; the same Apple identity can retry, nobody else can.
+  Unknown, used and expired codes get the same answer.
+- Deleting the account forgets which Apple identity used the invitation.
+- CloudFront + WAF with a per-IP rate rule goes in front of the API before anyone outside the
+  invited circle can reach registration (BOOTSTRAP.md, increment 26).

@@ -9,6 +9,9 @@ import { APIError, createAuthMiddleware } from "better-auth/api"
 import { and, eq, isNotNull } from "drizzle-orm"
 
 import type { AuditLog } from "../../core/ports/audit-log"
+import { AdmitSignIn, NotInvited } from "../../core/use-cases/admit-sign-in"
+import { DrizzleInvitationStore } from "../database/invitation-store"
+import { currentRequest } from "../observability/request-context"
 import type { AppConfig } from "../config/config"
 import type { Database } from "../database/client"
 import * as schema from "../database/schema"
@@ -51,11 +54,11 @@ export function allowedRedirectUri(uri: string): boolean {
 /**
  * Better Auth with Sign in with Apple only. The web signs in through the redirect flow (audience:
  * the Services ID); the iPhone sends the ID token from the native sheet (audience: the bundle ID).
- * Registration is closed to an allowlist of Apple identifiers.
+ * Registration is closed: the allowlist, returning people, and invitations (core/use-cases/admit-sign-in).
  */
 export function createAuth(options: AuthOptions) {
   const { config, audit } = options
-  const allowed = new Set(config.allowed_apple_subs)
+  const admission = new AdmitSignIn(new Set(config.allowed_apple_subs), new DrizzleInvitationStore(options.db), audit)
 
   return betterAuth({
     appName: "Keepwell",
@@ -99,10 +102,14 @@ export function createAuth(options: AuthOptions) {
         ...(options.verifyAppleIdToken ? { verifyIdToken: options.verifyAppleIdToken } : {}),
         // Runs on every Apple sign-in, new or returning, before any row is written.
         mapProfileToUser: async (profile: { sub?: string }) => {
-          const sub = profile.sub ?? ""
-          if (!allowed.has(sub)) {
-            await audit.record({ action: "signin.rejected", details: { provider: "apple", reason: "not_allowed", apple_sub: sub } })
-            throw new APIError("FORBIDDEN", { code: "NOT_INVITED", message: "Keepwell accounts are invite-only for now." })
+          try {
+            await admission.execute(profile.sub ?? "", currentRequest()?.invitation ?? null)
+          } catch (error) {
+            if (error instanceof NotInvited) {
+              const code = error.reason === "invalid_invitation" ? "INVALID_INVITATION" : "NOT_INVITED"
+              throw new APIError("FORBIDDEN", { code, message: error.message })
+            }
+            throw error
           }
           return {}
         },

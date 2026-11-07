@@ -85,6 +85,20 @@
       "when": 1794019533358,
       "tag": "0011_app_store_grants",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1794019889995,
+      "tag": "0012_invitations",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1794019907388,
+      "tag": "0013_invitation_grants",
+      "breakpoints": true
     }
   ]
 }
