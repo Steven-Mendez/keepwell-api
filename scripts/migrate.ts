@@ -10,9 +10,10 @@ const host = process.env.DB_HOST
 const url = process.env.DATABASE_URL
 if (!host && !url) throw new Error("Set DB_HOST (DSQL) or DATABASE_URL (Postgres)")
 
+// One connection: statements run one at a time and the tracking table is never raced.
 const { db, close } = host
-  ? createDatabase({ kind: "dsql", host, user: "admin", region: process.env.AWS_REGION }, log)
-  : createDatabase({ kind: "postgres", url: url! }, log)
+  ? createDatabase({ kind: "dsql", host, user: "admin", region: process.env.AWS_REGION, maxConnections: 1 }, log)
+  : createDatabase({ kind: "postgres", url: url!, maxConnections: 1 }, log)
 
 try {
   await runMigrations(db, host ? "dsql" : "postgres", log)

@@ -12,9 +12,9 @@ export type Database = AwsDsqlDatabase<Schema>
 export const APP_ROLE = "keepwell_app"
 
 export type DatabaseConfig =
-  | { kind: "dsql"; host: string; user: string; region?: string }
+  | { kind: "dsql"; host: string; user: string; region?: string; maxConnections?: number }
   /** Local Postgres. `role` switches the session to the app role so permissions match DSQL. */
-  | { kind: "postgres"; url: string; role?: string }
+  | { kind: "postgres"; url: string; role?: string; maxConnections?: number }
 
 /** Reads the connection from the environment: DSQL under Lambda, a URL in development and tests. */
 export function databaseConfigFromEnv(env: NodeJS.ProcessEnv = process.env): DatabaseConfig | undefined {
@@ -36,14 +36,14 @@ export function createDatabase(config: DatabaseConfig, logger?: Logger): { db: D
           user: config.user,
           region: config.region,
           database: "postgres",
-          max: 2,
+          max: config.maxConnections ?? 2,
           idleTimeoutMillis: 5 * 60_000,
           maxLifetimeSeconds: 55 * 60,
           connectionTimeoutMillis: 5_000,
         })
       : new pg.Pool({
           connectionString: config.url,
-          max: 10,
+          max: config.maxConnections ?? 10,
           maxLifetimeSeconds: 55 * 60,
           // A startup parameter, so the role is in place before the first query on every connection.
           ...(config.role ? { options: `-c role=${config.role}` } : {}),

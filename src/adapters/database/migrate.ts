@@ -7,7 +7,7 @@ import { readMigrationFiles } from "drizzle-orm/migrator"
 import type { Logger } from "../observability/logger"
 import type { Database } from "./client"
 
-export const MIGRATIONS_FOLDER = new URL("../../../drizzle", import.meta.url).pathname
+export const MIGRATIONS_FOLDER = new URL("../../../drizzle/migrations", import.meta.url).pathname
 
 /**
  * Applies pending migrations one statement at a time.
