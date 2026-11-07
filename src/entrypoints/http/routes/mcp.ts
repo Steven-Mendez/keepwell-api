@@ -7,6 +7,8 @@ import type { McpConnections } from "../../../adapters/auth/mcp-connections"
 import type { ResolveCapabilities } from "../../../core/use-cases/resolve-capabilities"
 import type { ReadLedger } from "../../../core/use-cases/read-ledger"
 import { createMcpServer } from "../../mcp/server"
+import { registerWriteTools } from "../../mcp/write-tools"
+import type { CreatePending } from "../../../core/use-cases/create-pending"
 import { ApiError, errorBody } from "../errors"
 import { requireSession } from "../middlewares/session"
 import type { AppEnv } from "../types"
@@ -16,6 +18,8 @@ export interface McpDeps {
   capabilities: Promise<ResolveCapabilities>
   readLedger: ReadLedger
   connections?: McpConnections
+  /** The write tools; without it, /mcp is read-only for everyone. */
+  createPending?: CreatePending
   /** Public URL of the API: the resource is `${baseURL}/mcp`. */
   baseURL: string
   now?: () => Date
@@ -51,6 +55,10 @@ export function mcpRoutes(deps: McpDeps) {
       now: deps.now ?? (() => new Date()),
       log: c.get("log"),
       clientId: caller.clientId,
+      // Write tools exist only for a token that was granted `write`.
+      ...(deps.createPending && caller.scopes.includes("write")
+        ? { registerWrites: (server) => registerWriteTools(server, { create: deps.createPending!, userId: caller.userId, clientId: caller.clientId, log: c.get("log") }) }
+        : {}),
     })
     const transport = new WebStandardStreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true })
     await server.connect(transport)

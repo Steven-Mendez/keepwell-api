@@ -11,6 +11,7 @@ import { syncRoutes } from "./routes/sync"
 import { mcpRoutes, wellKnownRoutes } from "./routes/mcp"
 import type { McpConnections } from "../../adapters/auth/mcp-connections"
 import type { ReadLedger } from "../../core/use-cases/read-ledger"
+import type { CreatePending } from "../../core/use-cases/create-pending"
 import { openApiDocument } from "./openapi"
 import { ApiError, errorBody, onError } from "./errors"
 import { requestContext } from "./middlewares/request-context"
@@ -36,7 +37,7 @@ export interface AppDependencies {
   sync?: SyncRepository
   clock?: () => number
   /** The MCP server's data access; with it, /mcp is mounted. */
-  mcp?: { readLedger: ReadLedger; baseURL: string; now?: () => Date; connections?: McpConnections }
+  mcp?: { readLedger: ReadLedger; baseURL: string; now?: () => Date; connections?: McpConnections; createPending?: CreatePending }
 }
 
 /** Builds the whole HTTP surface from its dependencies, so tests and Lambda wire the same app. */

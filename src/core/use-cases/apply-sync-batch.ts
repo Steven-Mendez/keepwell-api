@@ -1,4 +1,4 @@
-import { validateSyncEvent, type SyncEntity, type SyncEvent, type SyncRow } from "../domain/schema"
+import { validateSyncEvent, type RecordSource, type SyncEntity, type SyncEvent, type SyncRow } from "../domain/schema"
 import type { EventResult, SyncRepository } from "../ports/sync-repository"
 import { decide, type StoredRow } from "../sync/conflict"
 
@@ -40,7 +40,8 @@ export class ApplySyncBatch {
     private readonly clock: () => number = () => Date.now()
   ) {}
 
-  async execute(input: { userId: string; clientId: string; platform: string; events: unknown[]; deadline: number }): Promise<PushOutcome> {
+  /** `createdBy` is `mcp` only for rows the MCP tools write; sync always creates `app` rows. */
+  async execute(input: { userId: string; clientId: string; platform: string; events: unknown[]; deadline: number; createdBy?: RecordSource }): Promise<PushOutcome> {
     const { userId, clientId } = input
     const outcome: PushOutcome = { results: [], partial: false, metrics: { applied: 0, stale: 0, rejected: 0, replayed: 0 } }
     await this.repository.touchClient(userId, clientId, input.platform)
@@ -76,7 +77,7 @@ export class ApplySyncBatch {
           const event: SyncEvent = check.event
           const entity: SyncEntity = event.entity
           const existing = await unit.currentRow(entity, event.entity_id)
-          const decision = decide(entity, existing, check.row as SyncRow, now)
+          const decision = decide(entity, existing, check.row as SyncRow, now, input.createdBy ?? "app")
           const serverSeq = seq++
           if (decision.result === "applied") {
             await unit.writeRow(entity, decision.row, existing !== undefined)

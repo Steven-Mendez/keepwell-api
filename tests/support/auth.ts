@@ -17,6 +17,8 @@ import { scopedDb } from "../../src/adapters/database/scoped-db"
 import { ApplySyncBatch } from "../../src/core/use-cases/apply-sync-batch"
 import { ReadLedger } from "../../src/core/use-cases/read-ledger"
 import { McpConnections } from "../../src/adapters/auth/mcp-connections"
+import { ChangeLogWriteCounter } from "../../src/adapters/database/repositories/mcp-write-counter"
+import { CreatePending } from "../../src/core/use-cases/create-pending"
 import { DrizzleEntitlementRepository } from "../../src/adapters/database/entitlements"
 import { CachedPlansSource } from "../../src/adapters/config/plans-source"
 import { CLOSED_PLANS, type PlansConfig } from "../../src/core/capabilities"
@@ -86,7 +88,10 @@ export function testAuthApp(db: Database, config: Partial<AppConfig> = {}, optio
   const capabilities = Promise.resolve(new ResolveCapabilities(entitlements, new CachedPlansSource(async () => JSON.stringify(plans()), logger, 0)))
   const sync = createSyncRepository(db, logger)
   const now = options.now ?? (() => new Date())
-  const mcp = { readLedger: new ReadLedger(new ScopedLedgerReader((userId) => scopedDb(db, userId)), new ApplySyncBatch(sync), now), baseURL, now, connections: new McpConnections(db, audit) }
+  const writer = new ApplySyncBatch(sync)
+  const readLedger = new ReadLedger(new ScopedLedgerReader((userId) => scopedDb(db, userId)), writer, now)
+  const createPending = new CreatePending({ ledger: readLedger, writer, counter: new ChangeLogWriteCounter((userId) => scopedDb(db, userId)), clock: now })
+  const mcp = { readLedger, baseURL, now, connections: new McpConnections(db, audit), createPending }
   const app = createApp({ logger, version: "test", auth: Promise.resolve(auth), webOrigin: "http://localhost:3000", requestDeletion, capabilities, sync, clock: options.clock, mcp })
   return { app, auth, lines, queue, accounts, audit, entitlements, capabilities }
 }

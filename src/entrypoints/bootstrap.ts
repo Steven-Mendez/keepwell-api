@@ -9,6 +9,8 @@ import { ScopedLedgerReader } from "../adapters/database/repositories/ledger-rea
 import { scopedDb } from "../adapters/database/scoped-db"
 import { ApplySyncBatch } from "../core/use-cases/apply-sync-batch"
 import { McpConnections } from "../adapters/auth/mcp-connections"
+import { ChangeLogWriteCounter } from "../adapters/database/repositories/mcp-write-counter"
+import { CreatePending } from "../core/use-cases/create-pending"
 import { ReadLedger } from "../core/use-cases/read-ledger"
 import { CachedPlansSource, filePlansLoader, ssmPlansLoader } from "../adapters/config/plans-source"
 import { ResolveCapabilities } from "../core/use-cases/resolve-capabilities"
@@ -84,10 +86,13 @@ export function bootstrap(options: { logger: Logger; version: string; database: 
   const capabilities = Promise.resolve(new ResolveCapabilities(new DrizzleEntitlementRepository(db), new CachedPlansSource(plansLoader, logger)))
 
   const sync = createSyncRepository(db, logger)
+  const writer = new ApplySyncBatch(sync)
+  const readLedger = new ReadLedger(new ScopedLedgerReader((userId) => scopedDb(db, userId)), writer)
   const mcp = {
-    readLedger: new ReadLedger(new ScopedLedgerReader((userId) => scopedDb(db, userId)), new ApplySyncBatch(sync)),
+    readLedger,
     baseURL: urls.apiBaseUrl,
     connections: new McpConnections(db, audit),
+    createPending: new CreatePending({ ledger: readLedger, writer, counter: new ChangeLogWriteCounter((userId) => scopedDb(db, userId)) }),
   }
 
   const healthChecks: HealthCheck[] = [
