@@ -32,6 +32,14 @@ variable "app_version" {
   type = string
 }
 
+variable "jobs_zip" {
+  type = string
+}
+
+variable "alert_email" {
+  type = string
+}
+
 variable "deletion_protection" {
   type    = bool
   default = true
@@ -53,7 +61,25 @@ module "api" {
     API_BASE_URL  = "https://${var.hostname}"
     WEB_ORIGIN    = "https://${var.web_hostname}"
     COOKIE_DOMAIN = var.domain
+    QUEUE_URL     = module.queue.queue_url
   }
+}
+
+module "alerts" {
+  source = "../alerts"
+  name   = local.name
+  email  = var.alert_email
+}
+
+module "queue" {
+  source          = "../queue"
+  name            = local.name
+  jobs_zip        = var.jobs_zip
+  app_version     = var.app_version
+  db_endpoint     = module.database.endpoint
+  db_cluster_arn  = module.database.arn
+  api_role_name   = module.api.role_name
+  alarm_topic_arn = module.alerts.topic_arn
 }
 
 module "parameters" {
@@ -90,5 +116,6 @@ output "db_endpoint" {
 }
 
 output "app_role_arn" {
-  value = module.api.role_arn
+  value       = join(",", [module.api.role_arn, module.queue.jobs_role_arn])
+  description = "IAM roles mapped to keepwell_app by the migrator: the API and the jobs consumer"
 }

@@ -4,6 +4,7 @@ import { cors } from "hono/cors"
 
 import type { Auth } from "../../adapters/auth/auth"
 import type { Logger } from "../../adapters/observability/logger"
+import type { RequestAccountDeletion } from "../../core/use-cases/request-account-deletion"
 import { ApiError, errorBody, onError } from "./errors"
 import { requestContext } from "./middlewares/request-context"
 import { securityHeaders } from "./middlewares/security-headers"
@@ -23,6 +24,7 @@ export interface AppDependencies {
   auth?: Promise<Auth>
   /** The only origin allowed by CORS, with credentials. No wildcards. */
   webOrigin?: string
+  requestDeletion?: Promise<RequestAccountDeletion>
 }
 
 /** Builds the whole HTTP surface from its dependencies, so tests and Lambda wire the same app. */
@@ -56,7 +58,7 @@ export function createApp(deps: AppDependencies) {
   app.route("/", healthRoutes({ version: deps.version, checks: deps.healthChecks ?? [] }))
   if (deps.auth) {
     app.route("/", authRoutes(deps.auth))
-    app.route("/", meRoutes(deps.auth))
+    app.route("/", meRoutes(deps.auth, { requestDeletion: deps.requestDeletion }))
   }
   return app
 }

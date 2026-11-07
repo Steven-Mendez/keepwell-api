@@ -81,3 +81,8 @@ In the Apple developer portal:
    recycles the instances.
 
 `GET /health` answers `config: error` until the real values are in place.
+
+### Alerts (increment 7 onward)
+
+Each environment creates an SNS topic `keepwell-<env>-alerts` subscribed to `ALERT_EMAIL`. AWS
+sends a confirmation email after the first deploy; confirm it, or alarms go nowhere.

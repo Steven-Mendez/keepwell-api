@@ -16,7 +16,10 @@ const { db, close } = host
 
 try {
   await runMigrations(db, host ? "dsql" : "postgres", log)
-  if (host && process.env.APP_IAM_ROLE_ARN) await grantIamRole(db, process.env.APP_IAM_ROLE_ARN, log)
+  // Comma-separated: the API and the jobs consumer both log in as keepwell_app.
+  for (const arn of (process.env.APP_IAM_ROLE_ARN ?? "").split(",").filter(Boolean)) {
+    if (host) await grantIamRole(db, arn, log)
+  }
 } finally {
   await close()
 }

@@ -6,7 +6,7 @@ import { join } from "node:path"
 
 import { build } from "esbuild"
 
-const entries = { api: "src/entrypoints/lambda.ts" }
+const entries = { api: "src/entrypoints/lambda.ts", jobs: "src/entrypoints/jobs.ts" }
 const out = "dist"
 rmSync(out, { recursive: true, force: true })
 

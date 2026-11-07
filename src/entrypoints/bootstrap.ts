@@ -1,10 +1,15 @@
 import { appleClientSecret } from "../adapters/external/apple/client-secret"
 import { createAuth, type Auth } from "../adapters/auth/auth"
 import { configSourceFromEnv, loadConfig, type AppConfig } from "../adapters/config/config"
+import { DrizzleAccountStore } from "../adapters/database/account-store"
 import { DrizzleAuditLog } from "../adapters/database/audit-log"
 import { createDatabase, type Database, type DatabaseConfig } from "../adapters/database/client"
 import { pingDatabase } from "../adapters/database/health"
 import type { Logger } from "../adapters/observability/logger"
+import { InlineJobQueue, SqsJobQueue } from "../adapters/queue/sqs-job-queue"
+import type { JobQueue } from "../core/ports/job-queue"
+import { DeleteAccountData } from "../core/use-cases/delete-account-data"
+import { RequestAccountDeletion } from "../core/use-cases/request-account-deletion"
 import { createApp } from "./http/app"
 import type { HealthCheck } from "./http/routes/health"
 
@@ -58,9 +63,18 @@ export function bootstrap(options: { logger: Logger; version: string; database: 
   const auth = config.then((loaded) => buildAuth(db, loaded, urls))
   auth.catch((error: unknown) => logger.error({ err: error }, "configuration failed to load"))
 
+  // Under Lambda the queue is SQS; locally the job runs in-process right after the request.
+  const accounts = new DrizzleAccountStore(db, logger)
+  const audit = new DrizzleAuditLog(db)
+  const env = options.env ?? process.env
+  const queue: JobQueue = env.QUEUE_URL
+    ? new SqsJobQueue(env.QUEUE_URL)
+    : new InlineJobQueue((job) => new DeleteAccountData(accounts, audit).execute(job.userId))
+  const requestDeletion = auth.then(() => new RequestAccountDeletion(accounts, queue, audit))
+
   const healthChecks: HealthCheck[] = [
     { name: "db", run: () => pingDatabase(db) },
     { name: "config", run: async () => void (await auth) },
   ]
-  return createApp({ logger, version, healthChecks, auth, webOrigin: urls.webOrigin })
+  return createApp({ logger, version, healthChecks, auth, webOrigin: urls.webOrigin, requestDeletion })
 }

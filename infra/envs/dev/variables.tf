@@ -8,10 +8,20 @@ variable "lambda_zip" {
   default = "../../../dist/lambda-api.zip"
 }
 
+variable "jobs_zip" {
+  type    = string
+  default = "../../../dist/lambda-jobs.zip"
+}
+
 variable "app_version" {
   type = string
 }
 
 variable "domain" {
   type = string
+}
+
+variable "alert_email" {
+  type        = string
+  description = "Receives alarm notifications"
 }

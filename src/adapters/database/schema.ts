@@ -22,6 +22,11 @@ export const users = pgTable("users", {
   image: text("image"),
   createdAt: createdAt(),
   updatedAt: updatedAt(),
+  /**
+   * Set when the person asks to delete the account. From then on no session can be created and the
+   * deletion job erases their data in batches; the row itself goes last.
+   */
+  deletionRequestedAt: timestamp("deletion_requested_at", { withTimezone: true }),
 })
 
 export const sessions = pgTable(

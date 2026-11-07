@@ -1,6 +1,7 @@
 import { betterAuth } from "better-auth"
 import { drizzleAdapter } from "better-auth/adapters/drizzle"
 import { APIError } from "better-auth/api"
+import { and, eq, isNotNull } from "drizzle-orm"
 
 import type { AuditLog } from "../../core/ports/audit-log"
 import type { AppConfig } from "../config/config"
@@ -80,6 +81,16 @@ export function createAuth(options: AuthOptions) {
     databaseHooks: {
       session: {
         create: {
+          // An account waiting for deletion can't get a session back, not even through Apple.
+          before: async (session) => {
+            const marked = await options.db
+              .select({ id: schema.users.id })
+              .from(schema.users)
+              .where(and(eq(schema.users.id, session.userId), isNotNull(schema.users.deletionRequestedAt)))
+            if (marked.length > 0) {
+              throw new APIError("FORBIDDEN", { code: "ACCOUNT_DELETED", message: "This account is being deleted." })
+            }
+          },
           after: async (session) => {
             await audit.record({ action: "session.created", userId: session.userId, tokenId: session.id })
           },

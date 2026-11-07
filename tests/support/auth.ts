@@ -6,6 +6,10 @@ import { createAuth } from "../../src/adapters/auth/auth"
 import type { AppConfig } from "../../src/adapters/config/config"
 import { DrizzleAuditLog } from "../../src/adapters/database/audit-log"
 import type { Database } from "../../src/adapters/database/client"
+import { DrizzleAccountStore } from "../../src/adapters/database/account-store"
+import { InlineJobQueue } from "../../src/adapters/queue/sqs-job-queue"
+import { DeleteAccountData } from "../../src/core/use-cases/delete-account-data"
+import { RequestAccountDeletion } from "../../src/core/use-cases/request-account-deletion"
 import { createApp } from "../../src/entrypoints/http/app"
 import { captureLogger } from "./logger"
 
@@ -48,8 +52,11 @@ async function verify(token: string) {
   }
 }
 
-export function testAuthApp(db: Database, config: Partial<AppConfig> = {}) {
+export function testAuthApp(db: Database, config: Partial<AppConfig> = {}, options: { runJobs?: boolean } = {}) {
   const { logger, lines } = captureLogger()
+  const audit = new DrizzleAuditLog(db)
+  const accounts = new DrizzleAccountStore(db, logger)
+  const queue = new InlineJobQueue(options.runJobs === false ? undefined : (job) => new DeleteAccountData(accounts, audit).execute(job.userId))
   const auth = createAuth({
     db,
     config: { ...TEST_CONFIG, ...config },
@@ -59,8 +66,9 @@ export function testAuthApp(db: Database, config: Partial<AppConfig> = {}) {
     appleClientSecret: "unused-in-tests",
     verifyAppleIdToken: verify,
   })
-  const app = createApp({ logger, version: "test", auth: Promise.resolve(auth), webOrigin: "http://localhost:3000" })
-  return { app, auth, lines }
+  const requestDeletion = Promise.resolve(new RequestAccountDeletion(accounts, queue, audit))
+  const app = createApp({ logger, version: "test", auth: Promise.resolve(auth), webOrigin: "http://localhost:3000", requestDeletion })
+  return { app, auth, lines, queue, accounts, audit }
 }
 
 /** Signs in through the native-app path and returns the session cookie. */

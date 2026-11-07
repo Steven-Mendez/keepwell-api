@@ -8,6 +8,11 @@ variable "lambda_zip" {
   default = "../../../dist/lambda-api.zip"
 }
 
+variable "jobs_zip" {
+  type    = string
+  default = "../../../dist/lambda-jobs.zip"
+}
+
 variable "app_version" {
   type        = string
   description = "Commit SHA being deployed"
