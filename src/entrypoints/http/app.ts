@@ -13,6 +13,8 @@ import type { McpConnections } from "../../adapters/auth/mcp-connections"
 import type { ReadLedger } from "../../core/use-cases/read-ledger"
 import type { CreatePending } from "../../core/use-cases/create-pending"
 import type { SwitchesSource } from "../../core/switches"
+import type { HandleAppStoreNotification, RedeemPurchase } from "../../core/use-cases/redeem-purchase"
+import { appStoreRoutes } from "./routes/app-store"
 import { openApiDocument } from "./openapi"
 import { ApiError, errorBody, onError } from "./errors"
 import { requestContext } from "./middlewares/request-context"
@@ -38,6 +40,7 @@ export interface AppDependencies {
   sync?: SyncRepository
   clock?: () => number
   switches?: SwitchesSource
+  appStore?: { redeem: Promise<RedeemPurchase>; notifications: Promise<HandleAppStoreNotification> }
   /** The MCP server's data access; with it, /mcp is mounted. */
   mcp?: { readLedger: ReadLedger; baseURL: string; now?: () => Date; connections?: McpConnections; createPending?: CreatePending }
 }
@@ -78,6 +81,7 @@ export function createApp(deps: AppDependencies) {
     if (deps.capabilities && deps.sync) {
       app.route("/", syncRoutes({ auth: deps.auth, capabilities: deps.capabilities, repository: deps.sync, clock: deps.clock, switches: deps.switches }))
     }
+    if (deps.appStore) app.route("/", appStoreRoutes({ auth: deps.auth, ...deps.appStore }))
     if (deps.capabilities && deps.mcp) {
       app.route("/", wellKnownRoutes(deps.auth, deps.mcp.baseURL))
       app.route("/", mcpRoutes({ auth: deps.auth, capabilities: deps.capabilities, switches: deps.switches, ...deps.mcp }))

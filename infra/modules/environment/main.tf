@@ -47,6 +47,22 @@ variable "time_zone" {
   description = "The person's time zone, for calendar math such as recurring occurrences"
 }
 
+variable "app_store_products" {
+  type        = map(string)
+  default     = { "app.keepwell.coffee" = "supporter" }
+  description = "App Store product id → plan it grants"
+  validation {
+    condition     = alltrue([for plan in values(var.app_store_products) : contains(["free", "supporter"], plan)])
+    error_message = "Each product must grant a known plan (free or supporter)."
+  }
+}
+
+variable "app_store_app_id" {
+  type        = string
+  default     = ""
+  description = "Apple ID of the app in App Store Connect; required to verify Production purchases"
+}
+
 variable "backups" {
   type        = bool
   default     = false
@@ -66,6 +82,8 @@ module "api" {
   source     = "../api"
   name       = local.name
   lambda_zip = var.lambda_zip
+  # Without it the module creates no alarms at all.
+  alarm_topic_arn = module.alerts.topic_arn
   environment = {
     DB_HOST            = module.database.endpoint
     DB_USER            = "keepwell_app"
@@ -75,6 +93,10 @@ module "api" {
     COOKIE_DOMAIN      = var.domain
     QUEUE_URL          = module.queue.queue_url
     KEEPWELL_TIME_ZONE = var.time_zone
+    APP_STORE_PRODUCTS = jsonencode(var.app_store_products)
+    APP_STORE_APP_ID   = var.app_store_app_id
+    # TestFlight and Xcode purchases are Sandbox; only prod refuses them.
+    APP_STORE_SANDBOX = tostring(var.environment != "prod")
   }
 }
 

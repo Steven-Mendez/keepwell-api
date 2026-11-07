@@ -71,6 +71,20 @@
       "when": 1794019156117,
       "tag": "0009_passkey_grants",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1794019531947,
+      "tag": "0010_app_store",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1794019533358,
+      "tag": "0011_app_store_grants",
+      "breakpoints": true
     }
   ]
 }

@@ -19,6 +19,9 @@ import { ReadLedger } from "../../src/core/use-cases/read-ledger"
 import { McpConnections } from "../../src/adapters/auth/mcp-connections"
 import { ChangeLogWriteCounter } from "../../src/adapters/database/repositories/mcp-write-counter"
 import { CreatePending } from "../../src/core/use-cases/create-pending"
+import { DrizzlePurchaseStore } from "../../src/adapters/database/purchase-store"
+import type { AppStoreVerifier } from "../../src/core/ports/app-store"
+import { HandleAppStoreNotification, RedeemPurchase } from "../../src/core/use-cases/redeem-purchase"
 import { DrizzleEntitlementRepository } from "../../src/adapters/database/entitlements"
 import { CachedPlansSource } from "../../src/adapters/config/plans-source"
 import { CLOSED_PLANS, type PlansConfig } from "../../src/core/capabilities"
@@ -68,7 +71,7 @@ async function verify(token: string) {
 /** Plans as at launch: sync for everyone during early access, MCP with the coffee. */
 export const LAUNCH_PLANS: PlansConfig = { ...CLOSED_PLANS, early_access: { cloud_sync: true } }
 
-export function testAuthApp(db: Database, config: Partial<AppConfig> = {}, options: { runJobs?: boolean; plans?: () => PlansConfig; clock?: () => number; now?: () => Date; baseURL?: string; switches?: () => Switches } = {}) {
+export function testAuthApp(db: Database, config: Partial<AppConfig> = {}, options: { runJobs?: boolean; plans?: () => PlansConfig; clock?: () => number; now?: () => Date; baseURL?: string; switches?: () => Switches; appStoreVerifier?: AppStoreVerifier; acceptSandbox?: boolean } = {}) {
   const baseURL = options.baseURL ?? "http://localhost:3001"
   const { logger, lines } = captureLogger()
   const audit = new DrizzleAuditLog(db)
@@ -93,7 +96,13 @@ export function testAuthApp(db: Database, config: Partial<AppConfig> = {}, optio
   const readLedger = new ReadLedger(new ScopedLedgerReader((userId) => scopedDb(db, userId)), writer, now)
   const createPending = new CreatePending({ ledger: readLedger, writer, counter: new ChangeLogWriteCounter((userId) => scopedDb(db, userId)), clock: now })
   const mcp = { readLedger, baseURL, now, connections: new McpConnections(db, audit), createPending }
-  const app = createApp({ logger, version: "test", auth: Promise.resolve(auth), webOrigin: "http://localhost:3000", requestDeletion, capabilities, sync, clock: options.clock, mcp, switches: { current: async () => options.switches?.() ?? NORMAL_SWITCHES } })
+  const purchases = new DrizzlePurchaseStore(db, logger)
+  const verifier = options.appStoreVerifier ?? { transaction: async () => Promise.reject(new Error("no verifier")), notification: async () => Promise.reject(new Error("no verifier")) }
+  const appStore = {
+    redeem: Promise.resolve(new RedeemPurchase(verifier, purchases, audit, { "app.keepwell.coffee": "supporter" }, options.acceptSandbox ?? false)),
+    notifications: Promise.resolve(new HandleAppStoreNotification(verifier, purchases, audit)),
+  }
+  const app = createApp({ logger, version: "test", auth: Promise.resolve(auth), webOrigin: "http://localhost:3000", requestDeletion, capabilities, sync, clock: options.clock, mcp, switches: { current: async () => options.switches?.() ?? NORMAL_SWITCHES }, appStore })
   return { app, auth, lines, queue, accounts, audit, entitlements, capabilities }
 }
 

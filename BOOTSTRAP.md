@@ -86,3 +86,17 @@ In the Apple developer portal:
 
 Each environment creates an SNS topic `keepwell-<env>-alerts` subscribed to `ALERT_EMAIL`. AWS
 sends a confirmation email after the first deploy; confirm it, or alarms go nowhere.
+
+### App Store (increments 23–25)
+
+1. In App Store Connect create the non-consumable product `app.keepwell.coffee` ("Invítame un café").
+   Another id needs `app_store_products` in the environment module (product id → plan).
+2. Set `app_store_app_id` to the app's Apple ID (App Information → Apple ID). Without it
+   Production purchases cannot be verified; Sandbox ones (dev, TestFlight) can.
+3. App Store Server Notifications V2: Production URL `https://api.<domain>/webhooks/app-store`,
+   Sandbox URL `https://api.dev.<domain>/webhooks/app-store`. Use "Request a Test Notification"
+   and look for `app_store.notification` in the logs.
+4. Apple's root certificate lives in `certs/` with its fingerprint; a test checks the copy in code
+   matches it byte for byte.
+
+dev accepts Sandbox purchases; prod refuses them (`APP_STORE_SANDBOX`).

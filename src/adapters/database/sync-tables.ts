@@ -195,3 +195,31 @@ export const entitlements = pgTable(
   (table) => [index("entitlements_user_idx").on(table.user_id)]
 )
 
+
+/**
+ * Every App Store purchase verified for an account. One original transaction belongs to one account:
+ * a second account presenting the same receipt is refused. Kept without user_id after deletion.
+ */
+export const appStoreTransactions = pgTable(
+  "app_store_transactions",
+  {
+    original_transaction_id: text("original_transaction_id").primaryKey(),
+    user_id: text("user_id"),
+    product_id: text("product_id").notNull(),
+    environment: text("environment").notNull(),
+    purchased_at: timestamp("purchased_at", { withTimezone: true }).notNull(),
+    revoked_at: timestamp("revoked_at", { withTimezone: true }),
+    last_notification_at: timestamp("last_notification_at", { withTimezone: true }),
+    created_at: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [index("app_store_transactions_user_idx").on(table.user_id)]
+)
+
+/** Each App Store Server Notification received, so a resent one is applied once. */
+export const appStoreNotifications = pgTable("app_store_notifications", {
+  notification_uuid: text("notification_uuid").primaryKey(),
+  type: text("type").notNull(),
+  subtype: text("subtype"),
+  original_transaction_id: text("original_transaction_id"),
+  received_at: timestamp("received_at", { withTimezone: true }).defaultNow().notNull(),
+})

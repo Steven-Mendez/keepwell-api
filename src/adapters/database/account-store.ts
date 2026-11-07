@@ -43,7 +43,7 @@ export const USER_OWNED_TABLES: { name: string; key: string }[] = [
  * record, ADR 0004) and `entitlements` keeps the App Store reference without `user_id` for the
  * accounting period. Documented in the privacy policy.
  */
-export const KEPT_AFTER_DELETION = ["audit_log", "users", "entitlements"]
+export const KEPT_AFTER_DELETION = ["audit_log", "users", "entitlements", "app_store_transactions"]
 
 export class DrizzleAccountStore implements AccountStore {
   constructor(
@@ -84,7 +84,10 @@ export class DrizzleAccountStore implements AccountStore {
       if (deleted > 0) return { table: name, deleted, done: false }
     }
     // Plan grants keep their App Store reference for the accounting period, without the person.
-    await withTransaction(this.db, this.log, (tx) => tx.execute(sql`update entitlements set user_id = null where user_id = ${userId}`))
+    await withTransaction(this.db, this.log, async (tx) => {
+      await tx.execute(sql`update entitlements set user_id = null where user_id = ${userId}`)
+      await tx.execute(sql`update app_store_transactions set user_id = null where user_id = ${userId}`)
+    })
     const removed = await withTransaction(this.db, this.log, async (tx) =>
       tx.delete(users).where(and(inArray(users.id, [userId]), isNotNull(users.deletionRequestedAt))).returning({ id: users.id })
     )

@@ -93,7 +93,15 @@ damage is bounded:
 - CloudWatch alarms: 5xx rate, Lambda errors, p95 duration, messages in the dead-letter queue; a 10 USD
   monthly budget alarm.
 
-## Still to come (by increment)
+## Purchases
 
-- Emergency switches `mcp_enabled` and `read_only` (21); passkeys (22).
-- App Store purchase and notification verification (23, 24); alarm on 401/403 spikes (24).
+- A plan is granted only from a transaction signed by Apple: Apple's library checks the signature,
+  the chain to Apple Root CA G3 (pinned in code, checked against `certs/`), bundle id and
+  environment. The client never says "I paid".
+- Sandbox transactions are refused in prod. Unknown products grant nothing.
+- `Idempotency-Key` (UUID) is required; a key reused for another body answers 422, a retry
+  answers the first result. A purchase is granted once (`original_transaction_id` unique); the
+  same receipt on a second account answers 409 and is audited, it never moves the plan.
+- The webhook is unauthenticated by design; trust comes from the signed payload. Notifications
+  are recorded by `notificationUUID`, so a resend is a no-op. REFUND and REVOKE remove the plan.
+- 401/403 answers feed a metric; more than 50 in 10 minutes alerts.

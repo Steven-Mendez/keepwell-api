@@ -53,3 +53,44 @@ resource "aws_cloudwatch_metric_alarm" "api" {
   alarm_actions       = [var.alarm_topic_arn]
   ok_actions          = [var.alarm_topic_arn]
 }
+
+# Refusals are normal one at a time (an expired session, a forged webhook) and worrying in bulk:
+# a burst means someone is probing the API or the webhook, or a client shipped with broken auth.
+resource "aws_cloudwatch_log_metric_filter" "refusals" {
+  count          = var.alarm_topic_arn == null ? 0 : 1
+  name           = "${var.name}-refusals"
+  log_group_name = aws_cloudwatch_log_group.access.name
+  pattern        = "{ ($.status = \"401\") || ($.status = \"403\") }"
+  metric_transformation {
+    name          = "Refusals"
+    namespace     = "Keepwell/${var.name}"
+    value         = "1"
+    default_value = "0"
+  }
+}
+
+resource "aws_cloudwatch_metric_alarm" "refusals" {
+  count               = var.alarm_topic_arn == null ? 0 : 1
+  alarm_name          = "${var.name}-refusals"
+  alarm_description   = "More than ${var.refusal_threshold} answers of 401/403 in 10 minutes"
+  namespace           = "Keepwell/${var.name}"
+  metric_name         = "Refusals"
+  statistic           = "Sum"
+  period              = 600
+  evaluation_periods  = 1
+  threshold           = var.refusal_threshold
+  comparison_operator = "GreaterThanThreshold"
+  treat_missing_data  = "notBreaching"
+  alarm_actions       = [var.alarm_topic_arn]
+  ok_actions          = [var.alarm_topic_arn]
+}
+
+variable "refusal_threshold" {
+  type        = number
+  default     = 50
+  description = "401/403 answers in 10 minutes above which someone should look"
+  validation {
+    condition     = var.refusal_threshold > 0
+    error_message = "refusal_threshold must be positive."
+  }
+}

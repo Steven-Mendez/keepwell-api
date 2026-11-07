@@ -8,6 +8,9 @@ import { createSyncRepository } from "../adapters/database/sync-store"
 import { ScopedLedgerReader } from "../adapters/database/repositories/ledger-reader"
 import { scopedDb } from "../adapters/database/scoped-db"
 import { ApplySyncBatch } from "../core/use-cases/apply-sync-batch"
+import { AppleAppStoreVerifier } from "../adapters/external/apple/app-store"
+import { DrizzlePurchaseStore } from "../adapters/database/purchase-store"
+import { HandleAppStoreNotification, RedeemPurchase } from "../core/use-cases/redeem-purchase"
 import { McpConnections } from "../adapters/auth/mcp-connections"
 import { ChangeLogWriteCounter } from "../adapters/database/repositories/mcp-write-counter"
 import { CreatePending } from "../core/use-cases/create-pending"
@@ -99,9 +102,21 @@ export function bootstrap(options: { logger: Logger; version: string; database: 
     createPending: new CreatePending({ ledger: readLedger, writer, counter: new ChangeLogWriteCounter((userId) => scopedDb(db, userId)) }),
   }
 
+  // The coffee (increment 23): productId → plan from the environment, Apple's bundle id from config.
+  const products = JSON.parse(env.APP_STORE_PRODUCTS ?? "{}") as Record<string, string>
+  const acceptSandbox = env.APP_STORE_SANDBOX === "true"
+  const purchases = new DrizzlePurchaseStore(db, logger)
+  const verifier = config.then(
+    (loaded) => new AppleAppStoreVerifier({ bundleId: loaded.apple_bundle_id, appAppleId: env.APP_STORE_APP_ID ? Number(env.APP_STORE_APP_ID) : undefined, acceptSandbox })
+  )
+  const appStore = {
+    redeem: verifier.then((v) => new RedeemPurchase(v, purchases, audit, products, acceptSandbox)),
+    notifications: verifier.then((v) => new HandleAppStoreNotification(v, purchases, audit)),
+  }
+
   const healthChecks: HealthCheck[] = [
     { name: "db", run: () => pingDatabase(db) },
     { name: "config", run: async () => void (await auth) },
   ]
-  return createApp({ logger, version, healthChecks, auth, webOrigin: urls.webOrigin, requestDeletion, capabilities, sync, mcp, switches })
+  return createApp({ logger, version, healthChecks, auth, webOrigin: urls.webOrigin, requestDeletion, capabilities, sync, mcp, switches, appStore })
 }
