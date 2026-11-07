@@ -37,6 +37,24 @@ variable "capabilities" {
   }
 }
 
+variable "switches" {
+  description = "Emergency switches (docs/runbooks/incident.md). Normal: MCP on, writes allowed."
+  type = object({
+    mcp_enabled = bool
+    read_only   = bool
+  })
+  default = { mcp_enabled = true, read_only = false }
+}
+
+# Reread by the API within 30 seconds. During an incident it can also be flipped by hand with
+# put-parameter; the next apply puts back what is versioned here.
+resource "aws_ssm_parameter" "switches" {
+  name        = "${var.prefix}/switches"
+  type        = "String"
+  value       = jsonencode(var.switches)
+  description = "Emergency switches"
+}
+
 # Changing it is a terraform apply of seconds; the API rereads it within a minute.
 resource "aws_ssm_parameter" "capabilities" {
   name        = "${var.prefix}/capabilities"

@@ -12,7 +12,7 @@ import { McpConnections } from "../adapters/auth/mcp-connections"
 import { ChangeLogWriteCounter } from "../adapters/database/repositories/mcp-write-counter"
 import { CreatePending } from "../core/use-cases/create-pending"
 import { ReadLedger } from "../core/use-cases/read-ledger"
-import { CachedPlansSource, filePlansLoader, ssmPlansLoader } from "../adapters/config/plans-source"
+import { CachedPlansSource, CachedSwitchesSource, filePlansLoader, ssmPlansLoader } from "../adapters/config/plans-source"
 import { ResolveCapabilities } from "../core/use-cases/resolve-capabilities"
 import { createDatabase, type Database, type DatabaseConfig } from "../adapters/database/client"
 import { pingDatabase } from "../adapters/database/health"
@@ -83,6 +83,10 @@ export function bootstrap(options: { logger: Logger; version: string; database: 
     : new InlineJobQueue((job) => new DeleteAccountData(accounts, audit).execute(job.userId))
   const requestDeletion = auth.then(() => new RequestAccountDeletion(accounts, queue, audit))
   const plansLoader = env.CONFIG_PREFIX ? ssmPlansLoader(`${env.CONFIG_PREFIX}/capabilities`) : filePlansLoader(env.CONFIG_FILE ?? "config.local.json")
+  const switches = new CachedSwitchesSource(
+    env.CONFIG_PREFIX ? ssmPlansLoader(`${env.CONFIG_PREFIX}/switches`) : filePlansLoader(env.CONFIG_FILE ?? "config.local.json", "switches"),
+    logger
+  )
   const capabilities = Promise.resolve(new ResolveCapabilities(new DrizzleEntitlementRepository(db), new CachedPlansSource(plansLoader, logger)))
 
   const sync = createSyncRepository(db, logger)
@@ -99,5 +103,5 @@ export function bootstrap(options: { logger: Logger; version: string; database: 
     { name: "db", run: () => pingDatabase(db) },
     { name: "config", run: async () => void (await auth) },
   ]
-  return createApp({ logger, version, healthChecks, auth, webOrigin: urls.webOrigin, requestDeletion, capabilities, sync, mcp })
+  return createApp({ logger, version, healthChecks, auth, webOrigin: urls.webOrigin, requestDeletion, capabilities, sync, mcp, switches })
 }

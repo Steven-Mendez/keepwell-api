@@ -10,6 +10,8 @@ import { ApiError } from "../errors"
 import { requireCapability } from "../middlewares/capability"
 import { requireSession } from "../middlewares/session"
 import type { AppEnv } from "../types"
+import type { SwitchesSource } from "../../../core/switches"
+import { refuseWhenReadOnly } from "../middlewares/switches"
 
 export const MAX_PAGE = 500
 /** Leave room under the Lambda's 25 s for answering with what committed. */
@@ -42,12 +44,13 @@ function parse<T extends z.ZodType>(schema: T, input: unknown): z.infer<T> {
   return parsed.data
 }
 
-export function syncRoutes(deps: { auth: Promise<Auth>; capabilities: Promise<ResolveCapabilities>; repository: SyncRepository; clock?: () => number }) {
+export function syncRoutes(deps: { auth: Promise<Auth>; capabilities: Promise<ResolveCapabilities>; repository: SyncRepository; clock?: () => number; switches?: SwitchesSource }) {
   const clock = deps.clock ?? (() => Date.now())
   const push = new ApplySyncBatch(deps.repository, clock)
   const routes = new Hono<AppEnv>()
   routes.use("/sync/*", requireSession(deps.auth), requireCapability(deps.capabilities, "cloud_sync"))
 
+  if (deps.switches) routes.use("/sync/push", refuseWhenReadOnly(deps.switches))
   routes.post("/sync/push", async (c) => {
     const body = parse(PushBody, await c.req.json().catch(() => undefined))
     const outcome = await push.execute({

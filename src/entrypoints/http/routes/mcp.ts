@@ -12,6 +12,8 @@ import type { CreatePending } from "../../../core/use-cases/create-pending"
 import { ApiError, errorBody } from "../errors"
 import { requireSession } from "../middlewares/session"
 import type { AppEnv } from "../types"
+import type { SwitchesSource } from "../../../core/switches"
+import { refuseWhenMcpDisabled } from "../middlewares/switches"
 
 export interface McpDeps {
   auth: Promise<Auth>
@@ -20,6 +22,7 @@ export interface McpDeps {
   connections?: McpConnections
   /** The write tools; without it, /mcp is read-only for everyone. */
   createPending?: CreatePending
+  switches?: SwitchesSource
   /** Public URL of the API: the resource is `${baseURL}/mcp`. */
   baseURL: string
   now?: () => Date
@@ -56,7 +59,8 @@ export function mcpRoutes(deps: McpDeps) {
       log: c.get("log"),
       clientId: caller.clientId,
       // Write tools exist only for a token that was granted `write`.
-      ...(deps.createPending && caller.scopes.includes("write")
+      // Write tools also vanish while the read_only switch is on.
+      ...(deps.createPending && caller.scopes.includes("write") && !(deps.switches && (await deps.switches.current()).read_only)
         ? { registerWrites: (server) => registerWriteTools(server, { create: deps.createPending!, userId: caller.userId, clientId: caller.clientId, log: c.get("log") }) }
         : {}),
     })
@@ -69,6 +73,7 @@ export function mcpRoutes(deps: McpDeps) {
     }
   }
 
+  if (deps.switches) routes.use("/mcp", refuseWhenMcpDisabled(deps.switches))
   routes.post("/mcp", async (c) => {
     const request = c.req.raw
     if (request.headers.get("authorization")?.toLowerCase().startsWith("bearer ")) {

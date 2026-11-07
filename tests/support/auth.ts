@@ -22,6 +22,7 @@ import { CreatePending } from "../../src/core/use-cases/create-pending"
 import { DrizzleEntitlementRepository } from "../../src/adapters/database/entitlements"
 import { CachedPlansSource } from "../../src/adapters/config/plans-source"
 import { CLOSED_PLANS, type PlansConfig } from "../../src/core/capabilities"
+import { NORMAL_SWITCHES, type Switches } from "../../src/core/switches"
 import { ResolveCapabilities } from "../../src/core/use-cases/resolve-capabilities"
 import { captureLogger } from "./logger"
 
@@ -67,7 +68,7 @@ async function verify(token: string) {
 /** Plans as at launch: sync for everyone during early access, MCP with the coffee. */
 export const LAUNCH_PLANS: PlansConfig = { ...CLOSED_PLANS, early_access: { cloud_sync: true } }
 
-export function testAuthApp(db: Database, config: Partial<AppConfig> = {}, options: { runJobs?: boolean; plans?: () => PlansConfig; clock?: () => number; now?: () => Date; baseURL?: string } = {}) {
+export function testAuthApp(db: Database, config: Partial<AppConfig> = {}, options: { runJobs?: boolean; plans?: () => PlansConfig; clock?: () => number; now?: () => Date; baseURL?: string; switches?: () => Switches } = {}) {
   const baseURL = options.baseURL ?? "http://localhost:3001"
   const { logger, lines } = captureLogger()
   const audit = new DrizzleAuditLog(db)
@@ -92,7 +93,7 @@ export function testAuthApp(db: Database, config: Partial<AppConfig> = {}, optio
   const readLedger = new ReadLedger(new ScopedLedgerReader((userId) => scopedDb(db, userId)), writer, now)
   const createPending = new CreatePending({ ledger: readLedger, writer, counter: new ChangeLogWriteCounter((userId) => scopedDb(db, userId)), clock: now })
   const mcp = { readLedger, baseURL, now, connections: new McpConnections(db, audit), createPending }
-  const app = createApp({ logger, version: "test", auth: Promise.resolve(auth), webOrigin: "http://localhost:3000", requestDeletion, capabilities, sync, clock: options.clock, mcp })
+  const app = createApp({ logger, version: "test", auth: Promise.resolve(auth), webOrigin: "http://localhost:3000", requestDeletion, capabilities, sync, clock: options.clock, mcp, switches: { current: async () => options.switches?.() ?? NORMAL_SWITCHES } })
   return { app, auth, lines, queue, accounts, audit, entitlements, capabilities }
 }
 
