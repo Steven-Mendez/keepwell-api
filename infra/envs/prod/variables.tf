@@ -13,16 +13,6 @@ variable "jobs_zip" {
   default = "../../../dist/lambda-jobs.zip"
 }
 
-variable "app_version" {
-  type        = string
-  description = "Commit SHA being deployed"
-
-  validation {
-    condition     = can(regex("^[0-9a-f]{7,40}$", var.app_version))
-    error_message = "app_version must be a git commit SHA."
-  }
-}
-
 variable "alert_email" {
   type        = string
   description = "Receives budget and alarm notifications"

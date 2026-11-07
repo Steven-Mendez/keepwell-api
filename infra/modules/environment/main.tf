@@ -32,9 +32,6 @@ variable "lambda_zip" {
   type = string
 }
 
-variable "app_version" {
-  type = string
-}
 
 variable "jobs_zip" {
   type = string
@@ -54,10 +51,9 @@ locals {
 }
 
 module "api" {
-  source      = "../api"
-  name        = local.name
-  lambda_zip  = var.lambda_zip
-  app_version = var.app_version
+  source     = "../api"
+  name       = local.name
+  lambda_zip = var.lambda_zip
   environment = {
     DB_HOST       = module.database.endpoint
     DB_USER       = "keepwell_app"
@@ -79,7 +75,6 @@ module "queue" {
   source          = "../queue"
   name            = local.name
   jobs_zip        = var.jobs_zip
-  app_version     = var.app_version
   db_endpoint     = module.database.endpoint
   db_cluster_arn  = module.database.arn
   api_role_name   = module.api.role_name
@@ -122,4 +117,12 @@ output "db_endpoint" {
 output "app_role_arn" {
   value       = join(",", [module.api.role_arn, module.queue.jobs_role_arn])
   description = "IAM roles mapped to keepwell_app by the migrator: the API and the jobs consumer"
+}
+
+output "api_function" {
+  value = module.api.function_name
+}
+
+output "jobs_function" {
+  value = "${local.name}-jobs"
 }

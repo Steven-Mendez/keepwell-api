@@ -8,10 +8,6 @@ variable "lambda_zip" {
   description = "Path to the bundled API zip built by scripts/build.mjs"
 }
 
-variable "app_version" {
-  type        = string
-  description = "Commit SHA, reported by GET /health"
-}
 
 variable "memory_mb" {
   type    = number

@@ -24,6 +24,8 @@ for (const [name, entry] of Object.entries(entries)) {
     sourcemap: "linked",
     metafile: true,
     legalComments: "none",
+    // The commit is part of the artifact, so the same zip reports the same version in dev and prod.
+    define: { "process.env.APP_VERSION": JSON.stringify(process.env.GITHUB_SHA ?? process.env.APP_VERSION ?? "local") },
     // Some CommonJS dependencies call require(); ESM output needs it defined.
     banner: { js: "import { createRequire as __cr } from 'node:module'; const require = __cr(import.meta.url);" },
   })

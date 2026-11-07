@@ -13,9 +13,6 @@ variable "jobs_zip" {
   type = string
 }
 
-variable "app_version" {
-  type = string
-}
 
 variable "db_endpoint" {
   type = string
@@ -123,6 +120,7 @@ resource "aws_lambda_function" "jobs" {
   handler          = "index.handler"
   filename         = var.jobs_zip
   source_code_hash = filebase64sha256(var.jobs_zip)
+  publish          = true
   memory_size      = 512
   timeout          = local.job_timeout
   # Deletions are rare; two at a time keeps DSQL's connection rate and conflicts low.
@@ -135,19 +133,31 @@ resource "aws_lambda_function" "jobs" {
 
   environment {
     variables = {
-      APP_VERSION  = var.app_version
       DB_HOST      = var.db_endpoint
       DB_USER      = "keepwell_app"
       NODE_OPTIONS = "--enable-source-maps"
     }
   }
 
+  lifecycle {
+    ignore_changes = [filename, source_code_hash]
+  }
+
   depends_on = [aws_iam_role_policy.jobs]
+}
+
+resource "aws_lambda_alias" "live" {
+  name             = "live"
+  function_name    = aws_lambda_function.jobs.function_name
+  function_version = aws_lambda_function.jobs.version
+  lifecycle {
+    ignore_changes = [function_version]
+  }
 }
 
 resource "aws_lambda_event_source_mapping" "jobs" {
   event_source_arn        = aws_sqs_queue.jobs.arn
-  function_name           = aws_lambda_function.jobs.arn
+  function_name           = aws_lambda_alias.live.arn
   batch_size              = 1
   function_response_types = ["ReportBatchItemFailures"]
 }

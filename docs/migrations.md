@@ -48,8 +48,12 @@ There is no database password and no Secrets Manager entry: DSQL authenticates e
 with a short-lived IAM token, so the pipeline's deploy role (`dsql:DbConnectAdmin`) migrates and the
 Lambda roles (`dsql:DbConnect`, mapped to `keepwell_app`) connect, with nothing stored anywhere.
 
-Order on `main`, per environment: migrations, then `terraform apply`. With Lambda, `apply` *is* the
-code deploy, so the schema has to be there before it; migrations are additive, so the running
-version keeps working against the new schema. The one exception is a cluster's very first deploy,
-when migrations run right after the `apply` that creates it. If migrations fail, `apply` doesn't run
-and the live version is untouched.
+Order on `main`, per environment (`.github/workflows/deploy.yml`): `terraform apply`
+(infrastructure only), then migrations, then the code. Terraform creates each Lambda once and then
+ignores its code; the pipeline publishes the zip built once in `check` as a new version and moves
+the `live` alias to it. So the schema is always forward of the code that needs it, the same artifact
+runs in dev and prod, and a failed migration leaves the live version untouched. Rollback is moving
+`live` back to the previous version, which `scripts/deploy-code.sh` prints.
+
+Not adopted on purpose: path filters that skip Terraform when only `src/` changed. An `apply` with no
+changes takes seconds, and skipping it would let drift go unnoticed.

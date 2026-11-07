@@ -52,6 +52,8 @@ jobs:
           PGPASSWORD=postgres psql -h localhost -p 54329 -U postgres -c "alter system set default_transaction_isolation = 'repeatable read'"
           PGPASSWORD=postgres psql -h localhost -p 54329 -U postgres -c "select pg_reload_conf()"
       - run: pnpm check
+      - name: drizzle check and schema drift
+        run: scripts/check-schema-drift.sh
       - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
         with:
           terraform_wrapper: false
@@ -97,7 +99,6 @@ jobs:
         id: plan
         working-directory: infra/envs/${{ matrix.environment }}
         env:
-          TF_VAR_app_version: ${{ github.event.pull_request.head.sha }}
           TF_VAR_alert_email: ${{ vars.ALERT_EMAIL }}
           TF_VAR_domain: ${{ vars.DOMAIN }}
         run: |

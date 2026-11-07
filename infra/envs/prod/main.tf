@@ -14,7 +14,6 @@ module "environment" {
   lambda_zip   = var.lambda_zip
   jobs_zip     = var.jobs_zip
   alert_email  = var.alert_email
-  app_version  = var.app_version
 }
 
 # An abuse shows up on the bill first. Account-wide, so it lives with prod only.

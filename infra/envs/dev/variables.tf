@@ -13,15 +13,6 @@ variable "jobs_zip" {
   default = "../../../dist/lambda-jobs.zip"
 }
 
-variable "app_version" {
-  type = string
-
-  validation {
-    condition     = can(regex("^[0-9a-f]{7,40}$", var.app_version))
-    error_message = "app_version must be a git commit SHA."
-  }
-}
-
 variable "domain" {
   type        = string
   description = "Registrable domain; the API answers on api.<domain> and the web on app.<domain>"

@@ -38,12 +38,15 @@ resource "aws_iam_role_policy" "api_logs" {
 }
 
 resource "aws_lambda_function" "api" {
-  function_name    = "${var.name}-api"
-  role             = aws_iam_role.api.arn
-  runtime          = "nodejs22.x"
-  architectures    = ["arm64"]
-  handler          = "index.handler"
-  filename         = var.lambda_zip
+  function_name = "${var.name}-api"
+  role          = aws_iam_role.api.arn
+  runtime       = "nodejs22.x"
+  architectures = ["arm64"]
+  handler       = "index.handler"
+  filename      = var.lambda_zip
+  # Terraform creates the function with the first build; from then on the pipeline publishes code
+  # (scripts/deploy-code.sh) after migrations, and moves the `live` alias. Terraform keeps owning
+  # its configuration.
   source_code_hash = filebase64sha256(var.lambda_zip)
   memory_size      = var.memory_mb
   # Below API Gateway's 29 s so the function answers (even partially) before the gateway gives up.
@@ -57,12 +60,25 @@ resource "aws_lambda_function" "api" {
 
   environment {
     variables = merge(var.environment, {
-      APP_VERSION  = var.app_version
       NODE_OPTIONS = "--enable-source-maps"
     })
   }
 
+  lifecycle {
+    ignore_changes = [filename, source_code_hash]
+  }
+
   depends_on = [aws_iam_role_policy.api_logs]
+}
+
+# What API Gateway invokes. The pipeline points it at each new version; rollback points it back.
+resource "aws_lambda_alias" "live" {
+  name             = "live"
+  function_name    = aws_lambda_function.api.function_name
+  function_version = aws_lambda_function.api.version
+  lifecycle {
+    ignore_changes = [function_version]
+  }
 }
 
 # --- HTTP API -------------------------------------------------------------------------------------
@@ -75,7 +91,7 @@ resource "aws_apigatewayv2_api" "http" {
 resource "aws_apigatewayv2_integration" "lambda" {
   api_id                 = aws_apigatewayv2_api.http.id
   integration_type       = "AWS_PROXY"
-  integration_uri        = aws_lambda_function.api.invoke_arn
+  integration_uri        = aws_lambda_alias.live.invoke_arn
   payload_format_version = "2.0"
   timeout_milliseconds   = 29000
 }
@@ -122,6 +138,7 @@ resource "aws_lambda_permission" "api_gateway" {
   statement_id  = "AllowHttpApiInvoke"
   action        = "lambda:InvokeFunction"
   function_name = aws_lambda_function.api.function_name
+  qualifier     = aws_lambda_alias.live.name
   principal     = "apigateway.amazonaws.com"
   source_arn    = "${aws_apigatewayv2_api.http.execution_arn}/*/*"
 }
