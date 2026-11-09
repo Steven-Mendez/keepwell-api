@@ -5,6 +5,12 @@ administrator profile. Everything after this enters through commits.
 
 ## 1. Domain
 
+Optional. Without one, leave `domain` empty and set `web_origin` to the web app's Vercel URL
+(`https://<project>.vercel.app`): the web deployment forwards the API's paths
+(`KEEPWELL_API_ORIGIN` = the `api_endpoint` output, see keepwell-web `next.config.ts`), so browsers
+and the iPhone use that single origin. Adding a domain later only means setting `domain`.
+
+
 Register the domain (or move its DNS) to Route 53 and keep the hosted zone. Only the zone: the API
 records are created by Terraform when the `dns` module comes in.
 

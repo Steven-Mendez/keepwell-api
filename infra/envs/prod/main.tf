@@ -6,14 +6,14 @@ provider "aws" {
 }
 
 module "environment" {
-  source       = "../../modules/environment"
-  environment  = "prod"
-  domain       = var.domain
-  hostname     = "api.${var.domain}"
-  web_hostname = "app.${var.domain}"
-  lambda_zip   = var.lambda_zip
-  jobs_zip     = var.jobs_zip
-  alert_email  = var.alert_email
+  source      = "../../modules/environment"
+  environment = "prod"
+  domain      = var.domain
+  hostname    = var.domain == "" ? "" : "api.${var.domain}"
+  web_origin  = var.domain == "" ? var.web_origin : "https://app.${var.domain}"
+  lambda_zip  = var.lambda_zip
+  jobs_zip    = var.jobs_zip
+  alert_email = var.alert_email
 }
 
 # An abuse shows up on the bill first. Account-wide, so it lives with prod only.

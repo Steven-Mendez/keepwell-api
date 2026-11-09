@@ -15,17 +15,24 @@ variable "environment" {
 }
 
 variable "domain" {
-  type = string
+  type        = string
+  default     = ""
+  description = "Registrable domain with a Route 53 zone. Empty: no custom domain, the API is reached through the web app's proxy"
 }
 
 variable "hostname" {
   type        = string
-  description = "api.<domain> in prod, api.dev.<domain> in dev"
+  default     = ""
+  description = "api.<domain> in prod, api.dev.<domain> in dev; unused without a domain"
 }
 
-variable "web_hostname" {
+variable "web_origin" {
   type        = string
-  description = "app.<domain> in prod, app.dev.<domain> in dev: the only CORS origin"
+  description = "The web app's origin, such as https://app.example.com or https://keepwell.vercel.app: the only CORS origin"
+  validation {
+    condition     = can(regex("^https://[a-z0-9.-]+$", var.web_origin))
+    error_message = "web_origin is https://<host>, with no path or trailing slash."
+  }
 }
 
 variable "lambda_zip" {
@@ -76,6 +83,10 @@ variable "deletion_protection" {
 
 locals {
   name = "keepwell-${var.environment}"
+  # With a domain, the API has its own host and shares the session cookie with app.<domain>. Without
+  # one, the web app forwards the API's paths (next.config.ts), so clients see a single origin.
+  custom_domain = var.domain != ""
+  public_url    = local.custom_domain ? "https://${var.hostname}" : var.web_origin
 }
 
 module "api" {
@@ -88,8 +99,8 @@ module "api" {
     DB_HOST            = module.database.endpoint
     DB_USER            = "keepwell_app"
     CONFIG_PREFIX      = "/keepwell/${var.environment}"
-    API_BASE_URL       = "https://${var.hostname}"
-    WEB_ORIGIN         = "https://${var.web_hostname}"
+    API_BASE_URL       = local.public_url
+    WEB_ORIGIN         = var.web_origin
     COOKIE_DOMAIN      = var.domain
     QUEUE_URL          = module.queue.queue_url
     KEEPWELL_TIME_ZONE = var.time_zone
@@ -131,6 +142,7 @@ module "parameters" {
 }
 
 module "dns" {
+  count     = local.custom_domain ? 1 : 0
   source    = "../dns"
   zone_name = var.domain
   hostname  = var.hostname
@@ -146,7 +158,8 @@ module "database" {
 }
 
 output "api_url" {
-  value = module.dns.url
+  value       = local.custom_domain ? module.dns[0].url : local.public_url
+  description = "Where clients reach the API"
 }
 
 output "api_endpoint" {

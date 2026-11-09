@@ -7,7 +7,7 @@ moved {
 
 moved {
   from = module.dns
-  to   = module.environment.module.dns
+  to   = module.environment.module.dns[0]
 }
 
 # Increment 5 turned the single auth_secret parameter into a set.

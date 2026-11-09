@@ -10,8 +10,8 @@ module "environment" {
   source              = "../../modules/environment"
   environment         = "dev"
   domain              = var.domain
-  hostname            = "api.dev.${var.domain}"
-  web_hostname        = "app.dev.${var.domain}"
+  hostname            = var.domain == "" ? "" : "api.dev.${var.domain}"
+  web_origin          = var.domain == "" ? var.web_origin : "https://app.dev.${var.domain}"
   lambda_zip          = var.lambda_zip
   jobs_zip            = var.jobs_zip
   alert_email         = var.alert_email
