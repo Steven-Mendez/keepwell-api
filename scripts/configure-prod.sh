@@ -15,12 +15,15 @@ aws sts get-caller-identity > /dev/null || { echo "AWS session expired: run 'aws
 current=$(aws ssm get-parameter --region "$region" --with-decryption --name "$prefix/auth_secret" --query Parameter.Value --output text)
 if [ "${#current}" -lt 32 ]; then put auth_secret SecureString "$(openssl rand -base64 48)"; else echo "· auth_secret already set"; fi
 
-read -r -p "Apple Team ID (10 characters, Membership details): " team
-read -r -p "Sign in with Apple key ID (10 characters): " key_id
-read -r -p "Path to AuthKey_${key_id}.p8: " p8
-read -r -p "Services ID (web, e.g. com.stevenmendez.keepwell.web): " services
-read -r -p "iOS bundle ID [com.stevenmendez.keepwell]: " bundle
-bundle=${bundle:-com.stevenmendez.keepwell}
+# Each value from the environment, or asked for when missing:
+#   TEAM_ID=... KEY_ID=... P8=~/Downloads/AuthKey_XXXX.p8 SERVICES_ID=... scripts/configure-prod.sh
+team=${TEAM_ID:-}; key_id=${KEY_ID:-}; p8=${P8:-}; services=${SERVICES_ID:-com.stevenmendez.keepwell.web}
+bundle=${BUNDLE_ID:-com.stevenmendez.keepwell}
+[ -n "$team" ] || read -r -p "Apple Team ID (10 characters, Membership details): " team
+[ -n "$key_id" ] || read -r -p "Sign in with Apple key ID (10 characters): " key_id
+[ -n "$p8" ] || read -r -p "Path to AuthKey_${key_id}.p8: " p8
+p8=${p8/#\~/$HOME}
+[ ${#team} = 10 ] && [ ${#key_id} = 10 ] || { echo "Team ID and key ID are 10 characters each." >&2; exit 1; }
 [ -f "$p8" ] || { echo "No file at $p8" >&2; exit 1; }
 
 put apple_team_id String "$team"
