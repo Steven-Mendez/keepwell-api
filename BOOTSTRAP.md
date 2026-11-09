@@ -55,7 +55,8 @@ These steps are added as the increments that need them land.
 ### Secrets in SSM (increment 4 onward)
 
 Terraform creates each secret parameter with the placeholder `unset` through a write-only
-argument, so values never reach the state. After the first deploy, set them:
+argument, so values never reach the state. After the first deploy, `scripts/configure-prod.sh` asks
+for Apple's values, writes them, reloads the API and waits for `/health`. By hand:
 
 ```bash
 put() { aws ssm put-parameter --overwrite --name "/keepwell/prod/$1" --type "$2" --value "$3"; }
