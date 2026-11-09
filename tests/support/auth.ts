@@ -3,7 +3,7 @@ import { generateKeyPairSync, randomUUID } from "node:crypto"
 import { importPKCS8, jwtVerify, SignJWT, importSPKI } from "jose"
 
 import { createAuth } from "../../src/adapters/auth/auth"
-import type { AppConfig } from "../../src/adapters/config/config"
+import { appleBundleIds, type AppConfig } from "../../src/adapters/config/config"
 import { DrizzleAuditLog } from "../../src/adapters/database/audit-log"
 import type { Database } from "../../src/adapters/database/client"
 import { DrizzleAccountStore } from "../../src/adapters/database/account-store"
@@ -61,7 +61,7 @@ async function verify(token: string) {
   try {
     await jwtVerify(token, await importSPKI(publicPem, "RS256"), {
       issuer: "https://appleid.apple.com",
-      audience: [TEST_CONFIG.apple_services_id, TEST_CONFIG.apple_bundle_id],
+      audience: [TEST_CONFIG.apple_services_id, ...appleBundleIds(TEST_CONFIG)],
     })
     return true
   } catch {

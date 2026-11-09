@@ -1,6 +1,6 @@
 import { appleClientSecret } from "../adapters/external/apple/client-secret"
 import { createAuth, type Auth } from "../adapters/auth/auth"
-import { configSourceFromEnv, loadConfig, type AppConfig } from "../adapters/config/config"
+import { configSourceFromEnv, loadConfig, type AppConfig, appleBundleIds } from "../adapters/config/config"
 import { DrizzleAccountStore } from "../adapters/database/account-store"
 import { DrizzleAuditLog } from "../adapters/database/audit-log"
 import { DrizzleEntitlementRepository } from "../adapters/database/entitlements"
@@ -118,7 +118,7 @@ export function bootstrap(options: { logger: Logger; version: string; database: 
   const acceptSandbox = env.APP_STORE_SANDBOX === "true"
   const purchases = new DrizzlePurchaseStore(db, logger)
   const verifier = quiet(config).then(
-    (loaded) => new AppleAppStoreVerifier({ bundleId: loaded.apple_bundle_id, appAppleId: env.APP_STORE_APP_ID ? Number(env.APP_STORE_APP_ID) : undefined, acceptSandbox })
+    (loaded) => new AppleAppStoreVerifier({ bundleId: appleBundleIds(loaded)[0], appAppleId: env.APP_STORE_APP_ID ? Number(env.APP_STORE_APP_ID) : undefined, acceptSandbox })
   )
   const appStore = {
     redeem: quiet(verifier.then((v) => new RedeemPurchase(v, purchases, audit, products, acceptSandbox))),

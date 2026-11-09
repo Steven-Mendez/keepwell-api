@@ -18,7 +18,8 @@ if [ "${#current}" -lt 32 ]; then put auth_secret SecureString "$(openssl rand -
 # Each value from the environment, or asked for when missing:
 #   TEAM_ID=... KEY_ID=... P8=~/Downloads/AuthKey_XXXX.p8 SERVICES_ID=... scripts/configure-prod.sh
 team=${TEAM_ID:-}; key_id=${KEY_ID:-}; p8=${P8:-}; services=${SERVICES_ID:-com.stevenmendez.keepwell.web}
-bundle=${BUNDLE_ID:-com.stevenmendez.keepwell}
+# The App Store build first (purchases carry it), then Debug builds from Xcode.
+bundle=${BUNDLE_ID:-com.stevenmendez.keepwell,com.stevenmendez.keepwell.debug}
 [ -n "$team" ] || read -r -p "Apple Team ID (10 characters, Membership details): " team
 [ -n "$key_id" ] || read -r -p "Sign in with Apple key ID (10 characters): " key_id
 [ -n "$p8" ] || read -r -p "Path to AuthKey_${key_id}.p8: " p8

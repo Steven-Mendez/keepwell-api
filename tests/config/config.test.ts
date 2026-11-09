@@ -5,7 +5,7 @@ import { join } from "node:path"
 import { GetParametersByPathCommand, type SSMClient } from "@aws-sdk/client-ssm"
 import { describe, expect, it } from "vitest"
 
-import { configSourceFromEnv, loadConfig } from "../../src/adapters/config/config"
+import { configSourceFromEnv, loadConfig, appleBundleIds } from "../../src/adapters/config/config"
 
 const secret = "s".repeat(40)
 const apple = {
@@ -28,6 +28,14 @@ function fakeSsm(pages: { Parameters: { Name: string; Value: string }[]; NextTok
   } as unknown as SSMClient
   return { client, calls }
 }
+
+describe("iOS bundle IDs", () => {
+  it("lists every build allowed to sign in, the App Store one first", () => {
+    expect(appleBundleIds({ apple_bundle_id: "com.x.app, com.x.app.debug" })).toEqual(["com.x.app", "com.x.app.debug"])
+    expect(appleBundleIds({ apple_bundle_id: "com.x.app" })).toEqual(["com.x.app"])
+    expect(() => appleBundleIds({ apple_bundle_id: " , " })).toThrow()
+  })
+})
 
 describe("configuration", () => {
   it("reads SSM by path, decrypted, across pages, with names relative to the prefix", async () => {

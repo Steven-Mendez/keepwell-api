@@ -15,6 +15,10 @@ export const AppConfig = z.object({
   apple_team_id: z.string().regex(/^[A-Z0-9]{10}$/, "apple_team_id is a 10-character team ID"),
   apple_key_id: z.string().regex(/^[A-Z0-9]{10}$/, "apple_key_id is a 10-character key ID"),
   apple_services_id: z.string().min(3),
+  /**
+   * The iOS app's bundle ID; comma-separated when several builds sign in against this API (the
+   * App Store build first, then Debug's `.debug`). The first is the one App Store purchases carry.
+   */
   apple_bundle_id: z.string().min(3),
   /** The .p8 key, PEM, newlines as \n. */
   apple_private_key: z.string().includes("PRIVATE KEY", { message: "apple_private_key must be the .p8 PEM" }),
@@ -62,4 +66,11 @@ export async function loadConfig(source: ConfigSource, ssm?: SSMClient): Promise
     throw new Error(`Invalid configuration: ${problems.join("; ")}`)
   }
   return parsed.data
+}
+
+/** Every bundle ID in `apple_bundle_id`, the App Store build's first. */
+export function appleBundleIds(config: Pick<AppConfig, "apple_bundle_id">): [string, ...string[]] {
+  const ids = config.apple_bundle_id.split(",").map((id) => id.trim()).filter(Boolean)
+  if (ids.length === 0) throw new Error("apple_bundle_id is empty")
+  return ids as [string, ...string[]]
 }

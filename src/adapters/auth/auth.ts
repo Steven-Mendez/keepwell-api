@@ -12,7 +12,7 @@ import type { AuditLog } from "../../core/ports/audit-log"
 import { AdmitSignIn, NotInvited } from "../../core/use-cases/admit-sign-in"
 import { DrizzleInvitationStore } from "../database/invitation-store"
 import { currentRequest } from "../observability/request-context"
-import type { AppConfig } from "../config/config"
+import { appleBundleIds, type AppConfig } from "../config/config"
 import type { Database } from "../database/client"
 import * as schema from "../database/schema"
 
@@ -97,8 +97,9 @@ export function createAuth(options: AuthOptions) {
       apple: {
         clientId: config.apple_services_id,
         clientSecret: options.appleClientSecret,
-        appBundleIdentifier: config.apple_bundle_id,
-        audience: [config.apple_services_id, config.apple_bundle_id],
+        appBundleIdentifier: appleBundleIds(config)[0],
+        // The web (Services ID) and every iOS build allowed: an ID token's audience is its bundle ID.
+        audience: [config.apple_services_id, ...appleBundleIds(config)],
         ...(options.verifyAppleIdToken ? { verifyIdToken: options.verifyAppleIdToken } : {}),
         // Runs on every Apple sign-in, new or returning, before any row is written.
         mapProfileToUser: async (profile: { sub?: string }) => {
