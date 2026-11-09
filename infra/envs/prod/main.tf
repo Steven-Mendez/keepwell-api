@@ -16,6 +16,8 @@ module "environment" {
   alert_email = var.alert_email
   # Daily AWS Backup copies kept 35 days (docs/runbooks/restore.md).
   backups = true
+  # "Keepwell – Personal Finance" in App Store Connect; verifies Production purchases.
+  app_store_app_id = "6832675983"
 }
 
 # An abuse shows up on the bill first. Account-wide, so it lives with prod only.
