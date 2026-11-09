@@ -26,7 +26,9 @@ export function invitationRoutes(deps: { invitations: InvitationStore; secure: b
     setCookie(c, INVITATION_COOKIE, normalizeInvitation(body.data.code), {
       httpOnly: true,
       secure: deps.secure,
-      sameSite: "Lax",
+      // Apple comes back with a cross-site POST that redirects to a GET; a Lax cookie is dropped
+      // along that chain. It carries only an invitation code, for 30 minutes, under /api/auth.
+      sameSite: deps.secure ? "None" : "Lax",
       path: "/api/auth",
       maxAge: 30 * 60,
       ...(deps.cookieDomain ? { domain: deps.cookieDomain } : {}),

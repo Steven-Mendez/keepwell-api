@@ -79,3 +79,15 @@ describe("auth mount", () => {
     expect(await res.json()).toEqual({ ok: true })
   })
 })
+
+describe("a failed Apple callback", () => {
+  const app = appDatabase()
+  afterAll(() => app.close())
+
+  it("lands on the web's sign-in page with a code, never on raw JSON or a bare error page", async () => {
+    const { app: http } = testAuthApp(app.db)
+    const stale = await http.request("/api/auth/callback/apple?code=x&state=y")
+    expect(stale.status).toBe(302)
+    expect(stale.headers.get("location")).toMatch(/^http:\/\/localhost:3000\/login\?error=state_mismatch/)
+  })
+})

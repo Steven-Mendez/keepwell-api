@@ -66,6 +66,8 @@ export function createAuth(options: AuthOptions) {
     basePath: "/api/auth",
     secret: config.auth_secret,
     trustedOrigins: [options.webOrigin, "https://appleid.apple.com"],
+    // Its own error page is bare text; the web's sign-in page explains the code instead.
+    onAPIError: { errorURL: `${options.webOrigin}/login` },
     // JSON and arrays as text: Aurora DSQL has no jsonb or array columns (patched adapter option).
     database: drizzleAdapter(options.db, { provider: "pg", usePlural: true, schema, supportsJSON: false, supportsArrays: false }),
     plugins: [

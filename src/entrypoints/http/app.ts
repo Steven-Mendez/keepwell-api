@@ -80,7 +80,7 @@ export function createApp(deps: AppDependencies) {
   app.route("/", healthRoutes({ version: deps.version, checks: deps.healthChecks ?? [] }))
   app.get("/openapi.json", (c) => c.json(openApiDocument()))
   if (deps.auth) {
-    app.route("/", authRoutes(deps.auth))
+    app.route("/", authRoutes(deps.auth, { webOrigin: deps.webOrigin }))
     app.route("/", meRoutes(deps.auth, { requestDeletion: deps.requestDeletion, capabilities: deps.capabilities }))
     if (deps.capabilities && deps.sync) {
       app.route("/", syncRoutes({ auth: deps.auth, capabilities: deps.capabilities, repository: deps.sync, clock: deps.clock, switches: deps.switches }))
