@@ -2,7 +2,7 @@
 #   1. terraform apply   infrastructure only; Lambda code is not Terraform's after creation
 #   2. migrate           schema forward (additive), before any code that needs it
 #   3. deploy code       the zip built once in `check` becomes a version; `live` moves to it
-#   4. verify            dev: integration suite against real DSQL; both: smoke test
+#   4. verify            smoke test
 # A failure stops the chain: the live alias still points at the previous version.
 name: deploy
 
@@ -29,6 +29,7 @@ env:
   TF_INPUT: "0"
   TF_VAR_alert_email: ${{ vars.ALERT_EMAIL }}
   TF_VAR_domain: ${{ vars.DOMAIN }}
+  TF_VAR_web_origin: ${{ vars.WEB_ORIGIN }}
 
 jobs:
   deploy:
@@ -85,12 +86,5 @@ jobs:
       - name: 3. deploy code
         run: scripts/deploy-code.sh "${{ steps.out.outputs.api_fn }}" "${{ steps.out.outputs.jobs_fn }}"
 
-      - name: 4a. integration tests against dev
-        if: inputs.environment == 'dev'
-        env:
-          DB_HOST: ${{ steps.out.outputs.db }}
-          API_URL: ${{ steps.out.outputs.url }}
-        run: pnpm test:remote
-
-      - name: 4b. smoke test
+      - name: 4. smoke test
         run: ./scripts/smoke.sh "${{ steps.out.outputs.url }}" "${{ github.sha }}"

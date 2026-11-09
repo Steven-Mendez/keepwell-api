@@ -1,4 +1,7 @@
 import { createHash } from "node:crypto"
+import { cpSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
 
 import { migrate as migrateDsql } from "@aws/aurora-dsql-drizzle"
 import { sql } from "drizzle-orm"
@@ -14,13 +17,15 @@ export const MIGRATIONS_FOLDER = new URL("../../../drizzle/migrations", import.m
  *
  * - DSQL: the official adapter's migrator, which runs each DDL in its own transaction, records each
  *   statement, and waits for asynchronous index jobs before recording them.
+ *   Statements DSQL refuses but doesn't need are blanked in a temporary copy (`forDsql`): the
+ *   files on disk never change, and a blank chunk is recorded without running.
  * - Local Postgres: the same files and the same statement-by-statement tracking, with `ASYNC`
  *   removed (Postgres has no asynchronous DDL), and an already existing role tolerated because
  *   roles outlive a dropped test database.
  */
 export async function runMigrations(db: Database, target: "dsql" | "postgres", log: Logger, folder = MIGRATIONS_FOLDER) {
   if (target === "dsql") {
-    const result = await migrateDsql(db, { migrationsFolder: folder })
+    const result = await migrateDsql(db, { migrationsFolder: forDsql(folder) })
     if (!result.success) throw new Error(`Migration ${result.error.migrationName}#${result.error.statementIndex} failed: ${result.error.message}`)
     log.info({ applied: result.appliedStatements }, "migrations applied")
     return result.appliedStatements
@@ -96,4 +101,23 @@ export async function grantIamRole(db: Database, iamRoleArn: string, log: Logger
   if (existing.rows.length > 0) return
   await db.execute(sql.raw(`AWS IAM GRANT ${pgRole} TO '${iamRoleArn.replace(/'/g, "''")}'`))
   log.info({ pg_role: pgRole }, "iam role mapped")
+}
+
+/**
+ * `GRANT USAGE ON SCHEMA public` is refused by DSQL ("feature not supported on system entity"):
+ * there every role already uses `public`. Postgres needs it on older versions, so the migrations
+ * keep it and DSQL gets a copy with that statement blank, at the same index.
+ */
+const DSQL_SKIPPED = /^\s*GRANT\s+USAGE\s+ON\s+SCHEMA\s+public\s+TO\s+\w+\s*;?\s*$/i
+
+export function forDsql(folder: string): string {
+  const copy = mkdtempSync(join(tmpdir(), "keepwell-migrations-"))
+  cpSync(folder, copy, { recursive: true })
+  for (const file of readdirSync(copy).filter((name) => name.endsWith(".sql"))) {
+    const path = join(copy, file)
+    const chunks = readFileSync(path, "utf8").split("--> statement-breakpoint")
+    const kept = chunks.map((chunk) => (DSQL_SKIPPED.test(withoutLeadingComments(chunk.trim())) ? "\n" : chunk))
+    writeFileSync(path, kept.join("--> statement-breakpoint"))
+  }
+  return copy
 }

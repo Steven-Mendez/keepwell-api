@@ -14,6 +14,8 @@ module "environment" {
   lambda_zip  = var.lambda_zip
   jobs_zip    = var.jobs_zip
   alert_email = var.alert_email
+  # Daily AWS Backup copies kept 35 days (docs/runbooks/restore.md).
+  backups = true
 }
 
 # An abuse shows up on the bill first. Account-wide, so it lives with prod only.

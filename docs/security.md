@@ -98,7 +98,8 @@ damage is bounded:
 - A plan is granted only from a transaction signed by Apple: Apple's library checks the signature,
   the chain to Apple Root CA G3 (pinned in code, checked against `certs/`), bundle id and
   environment. The client never says "I paid".
-- Sandbox transactions are refused in prod. Unknown products grant nothing.
+- Sandbox transactions are accepted (`accept_sandbox_purchases`): TestFlight and App Review buy in
+  Sandbox against the production server. Turning it off refuses them. Unknown products grant nothing.
 - `Idempotency-Key` (UUID) is required; a key reused for another body answers 422, a retry
   answers the first result. A purchase is granted once (`original_transaction_id` unique); the
   same receipt on a second account answers 409 and is audited, it never moves the plan.

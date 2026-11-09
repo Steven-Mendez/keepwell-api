@@ -64,6 +64,12 @@ variable "app_store_products" {
   }
 }
 
+variable "accept_sandbox_purchases" {
+  type        = bool
+  default     = true
+  description = "Accept App Store Sandbox purchases. TestFlight and App Review buy in Sandbox against the production server, as Apple expects"
+}
+
 variable "app_store_app_id" {
   type        = string
   default     = ""
@@ -73,7 +79,7 @@ variable "app_store_app_id" {
 variable "backups" {
   type        = bool
   default     = false
-  description = "Daily AWS Backup copies of the cluster (prod only: dev holds test data)"
+  description = "Daily AWS Backup copies of the cluster (the restore runbook relies on them)"
 }
 
 variable "deletion_protection" {
@@ -93,8 +99,9 @@ module "api" {
   source     = "../api"
   name       = local.name
   lambda_zip = var.lambda_zip
-  # Without it the module creates no alarms at all.
+  # Without them the module creates no alarms at all.
   alarm_topic_arn = module.alerts.topic_arn
+  alarms          = true
   environment = {
     DB_HOST            = module.database.endpoint
     DB_USER            = "keepwell_app"
@@ -106,8 +113,7 @@ module "api" {
     KEEPWELL_TIME_ZONE = var.time_zone
     APP_STORE_PRODUCTS = jsonencode(var.app_store_products)
     APP_STORE_APP_ID   = var.app_store_app_id
-    # TestFlight and Xcode purchases are Sandbox; only prod refuses them.
-    APP_STORE_SANDBOX = tostring(var.environment != "prod")
+    APP_STORE_SANDBOX  = tostring(var.accept_sandbox_purchases)
   }
 }
 

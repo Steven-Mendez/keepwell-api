@@ -55,19 +55,17 @@ These steps are added as the increments that need them land.
 ### Secrets in SSM (increment 4 onward)
 
 Terraform creates each secret parameter with the placeholder `unset` through a write-only
-argument, so values never reach the state. After the first deploy of each environment, set them:
+argument, so values never reach the state. After the first deploy, set them:
 
 ```bash
-put() { aws ssm put-parameter --overwrite --name "/keepwell/$1/$2" --type "$3" --value "$4"; }
-for env in dev prod; do
-  put $env auth_secret SecureString "$(openssl rand -base64 48)"
-  put $env apple_private_key SecureString "$(awk '{printf "%s\\n", $0}' AuthKey_XXXXXXXXXX.p8)"
-  put $env apple_key_id String XXXXXXXXXX
-  put $env apple_team_id String YYYYYYYYYY
-  put $env apple_services_id String <services id, e.g. app.keepwell.web>
-  put $env apple_bundle_id String <iOS bundle id>
-  put $env allowed_apple_subs String ""   # filled in step 5
-done
+put() { aws ssm put-parameter --overwrite --name "/keepwell/prod/$1" --type "$2" --value "$3"; }
+put auth_secret SecureString "$(openssl rand -base64 48)"
+put apple_private_key SecureString "$(awk '{printf "%s\\n", $0}' AuthKey_XXXXXXXXXX.p8)"
+put apple_key_id String XXXXXXXXXX
+put apple_team_id String YYYYYYYYYY
+put apple_services_id String <services id, e.g. app.keepwell.web>
+put apple_bundle_id String <iOS bundle id>
+put allowed_apple_subs String ""   # filled in step 5
 ```
 
 ### Sign in with Apple (increment 5)
@@ -76,7 +74,8 @@ In the Apple developer portal:
 
 1. Enable Sign in with Apple on the iOS App ID.
 2. Create a **Services ID** for the web, with Sign in with Apple enabled, domain `api.<domain>` and
-   return URL `https://api.<domain>/api/auth/callback/apple` (and the `api.dev.` equivalents).
+   return URL `<public URL>/api/auth/callback/apple` (without a domain, the public URL is the web
+   app's: `https://keepwell-web.vercel.app`).
 3. Create a **key** with Sign in with Apple; download the `.p8` once. Its key ID and the team ID
    go to SSM above.
 4. Deploy, then try to sign in from the web. You are rejected (registration is closed) and the
@@ -98,14 +97,14 @@ sends a confirmation email after the first deploy; confirm it, or alarms go nowh
 1. In App Store Connect create the non-consumable product `app.keepwell.coffee` ("Invítame un café").
    Another id needs `app_store_products` in the environment module (product id → plan).
 2. Set `app_store_app_id` to the app's Apple ID (App Information → Apple ID). Without it
-   Production purchases cannot be verified; Sandbox ones (dev, TestFlight) can.
-3. App Store Server Notifications V2: Production URL `https://api.<domain>/webhooks/app-store`,
-   Sandbox URL `https://api.dev.<domain>/webhooks/app-store`. Use "Request a Test Notification"
+   Production purchases cannot be verified; Sandbox ones (TestFlight, App Review) can.
+3. App Store Server Notifications V2: the same `<public URL>/webhooks/app-store` for Production
+   and Sandbox. Use "Request a Test Notification"
    and look for `app_store.notification` in the logs.
 4. Apple's root certificate lives in `certs/` with its fingerprint; a test checks the copy in code
    matches it byte for byte.
 
-dev accepts Sandbox purchases; prod refuses them (`APP_STORE_SANDBOX`).
+Sandbox purchases are accepted, as App Review needs (`accept_sandbox_purchases`).
 
 ### Invitations (increment 26)
 

@@ -60,10 +60,8 @@ jobs:
       - name: terraform fmt and validate
         run: |
           terraform -chdir=infra fmt -check -recursive
-          for env in dev prod; do
-            terraform -chdir="infra/envs/$env" init -backend=false -input=false > /dev/null
-            terraform -chdir="infra/envs/$env" validate
-          done
+          terraform -chdir=infra/envs/prod init -backend=false -input=false > /dev/null
+          terraform -chdir=infra/envs/prod validate
       - run: pnpm build
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
@@ -81,7 +79,7 @@ jobs:
       pull-requests: write
     strategy:
       matrix:
-        environment: [dev, prod]
+        environment: [prod]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
@@ -101,6 +99,7 @@ jobs:
         env:
           TF_VAR_alert_email: ${{ vars.ALERT_EMAIL }}
           TF_VAR_domain: ${{ vars.DOMAIN }}
+          TF_VAR_web_origin: ${{ vars.WEB_ORIGIN }}
         run: |
           terraform init -backend-config="bucket=${{ vars.TF_STATE_BUCKET }}"
           # Read-only role: no lock, no writes.
@@ -126,20 +125,10 @@ jobs:
       - if: steps.plan.outputs.destroys_data == 'true'
         run: echo "::error::The plan destroys a resource with data" && exit 1
 
-  deploy-dev:
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    needs: check
-    permissions:
-      contents: read
-      id-token: write
-    uses: ./.github/workflows/deploy.yml
-    with:
-      environment: dev
-
-  # prod is touched only after dev migrated, applied and passed its integration tests.
+  # A single environment: the pull request's checks and plan are the gate before it.
   deploy-prod:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    needs: deploy-dev
+    needs: check
     permissions:
       contents: read
       id-token: write

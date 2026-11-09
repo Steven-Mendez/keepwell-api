@@ -36,7 +36,7 @@ src/
     http/               Hono app, routes, middlewares (session, capabilities, errors)
     jobs/               SQS consumers (account deletion), from increment 7
     lambda.ts           the HTTP handler; dev.ts runs the same app locally
-infra/                  Terraform: bootstrap (once, by hand), modules, envs/dev and envs/prod
+infra/                  Terraform: bootstrap (once, by hand), modules, envs/prod (the only environment)
 docs/adr/               architecture decisions
 ```
 

@@ -1,11 +1,19 @@
 variable "alarm_topic_arn" {
   type        = string
   default     = null
-  description = "SNS topic for alarms; none means no alarms"
+  description = "SNS topic for alarms"
+}
+
+# Separate from the topic ARN, which is unknown until the topic exists: count and for_each must be
+# known at plan time.
+variable "alarms" {
+  type        = bool
+  default     = false
+  description = "Create the alarms (needs alarm_topic_arn)"
 }
 
 locals {
-  alarms = var.alarm_topic_arn == null ? {} : {
+  alarms = !var.alarms ? {} : {
     server_errors = {
       description = "More than 5% of requests answered 5xx over 10 minutes"
       namespace   = "AWS/ApiGateway"
@@ -57,7 +65,7 @@ resource "aws_cloudwatch_metric_alarm" "api" {
 # Refusals are normal one at a time (an expired session, a forged webhook) and worrying in bulk:
 # a burst means someone is probing the API or the webhook, or a client shipped with broken auth.
 resource "aws_cloudwatch_log_metric_filter" "refusals" {
-  count          = var.alarm_topic_arn == null ? 0 : 1
+  count          = var.alarms ? 1 : 0
   name           = "${var.name}-refusals"
   log_group_name = aws_cloudwatch_log_group.access.name
   pattern        = "{ ($.status = \"401\") || ($.status = \"403\") }"
@@ -70,7 +78,7 @@ resource "aws_cloudwatch_log_metric_filter" "refusals" {
 }
 
 resource "aws_cloudwatch_metric_alarm" "refusals" {
-  count               = var.alarm_topic_arn == null ? 0 : 1
+  count               = var.alarms ? 1 : 0
   alarm_name          = "${var.name}-refusals"
   alarm_description   = "More than ${var.refusal_threshold} answers of 401/403 in 10 minutes"
   namespace           = "Keepwell/${var.name}"

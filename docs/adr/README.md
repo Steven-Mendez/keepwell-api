@@ -13,3 +13,4 @@ decision that changes gets a new record that supersedes the old one; records are
 | [0006](0006-async-jobs.md)                      | SQS with a dead-letter queue, for account deletion only       |
 | [0007](0007-oauth-for-mcp.md)                  | OAuth 2.1 for MCP with Better Auth: CIMD first, PKCE, revocation |
 | [0008](0008-capabilities-by-configuration.md)    | Capabilities by configuration, not plans in code              |
+| [0009](0009-single-environment.md)               | One environment, production                                   |

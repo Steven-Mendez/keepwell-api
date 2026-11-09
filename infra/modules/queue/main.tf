@@ -123,8 +123,6 @@ resource "aws_lambda_function" "jobs" {
   publish          = true
   memory_size      = 512
   timeout          = local.job_timeout
-  # Deletions are rare; two at a time keeps DSQL's connection rate and conflicts low.
-  reserved_concurrent_executions = 2
 
   logging_config {
     log_format = "Text"
@@ -160,6 +158,11 @@ resource "aws_lambda_event_source_mapping" "jobs" {
   function_name           = aws_lambda_alias.live.arn
   batch_size              = 1
   function_response_types = ["ReportBatchItemFailures"]
+  # Deletions are rare; two at a time keeps DSQL's connection rate and conflicts low. Limited here
+  # rather than with reserved concurrency, which new accounts (10 in total) cannot spare.
+  scaling_config {
+    maximum_concurrency = 2
+  }
 }
 
 output "queue_url" {

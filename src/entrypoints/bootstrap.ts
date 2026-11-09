@@ -69,6 +69,16 @@ export async function buildAuth(db: Database, config: AppConfig, urls: Urls): Pr
  * Configuration loads in the background; a failure is logged and reported by /health instead of
  * crashing the instance, so the reason is visible from outside.
  */
+/**
+ * Marks a promise built from the configuration as handled. With configuration missing (a fresh
+ * deploy before its secrets are set) every such promise rejects; unhandled, Node ends the process
+ * and /health can't say `config: error`. Routes that await it still get the rejection.
+ */
+function quiet<T>(promise: Promise<T>): Promise<T> {
+  promise.catch(() => undefined)
+  return promise
+}
+
 export function bootstrap(options: { logger: Logger; version: string; database: DatabaseConfig; env?: NodeJS.ProcessEnv }) {
   const { logger, version } = options
   const urls = urlsFromEnv(options.env)
@@ -85,7 +95,7 @@ export function bootstrap(options: { logger: Logger; version: string; database: 
   const queue: JobQueue = env.QUEUE_URL
     ? new SqsJobQueue(env.QUEUE_URL)
     : new InlineJobQueue((job) => new DeleteAccountData(accounts, audit).execute(job.userId))
-  const requestDeletion = auth.then(() => new RequestAccountDeletion(accounts, queue, audit))
+  const requestDeletion = quiet(auth.then(() => new RequestAccountDeletion(accounts, queue, audit)))
   const plansLoader = env.CONFIG_PREFIX ? ssmPlansLoader(`${env.CONFIG_PREFIX}/capabilities`) : filePlansLoader(env.CONFIG_FILE ?? "config.local.json")
   const switches = new CachedSwitchesSource(
     env.CONFIG_PREFIX ? ssmPlansLoader(`${env.CONFIG_PREFIX}/switches`) : filePlansLoader(env.CONFIG_FILE ?? "config.local.json", "switches"),
@@ -107,12 +117,12 @@ export function bootstrap(options: { logger: Logger; version: string; database: 
   const products = JSON.parse(env.APP_STORE_PRODUCTS ?? "{}") as Record<string, string>
   const acceptSandbox = env.APP_STORE_SANDBOX === "true"
   const purchases = new DrizzlePurchaseStore(db, logger)
-  const verifier = config.then(
+  const verifier = quiet(config).then(
     (loaded) => new AppleAppStoreVerifier({ bundleId: loaded.apple_bundle_id, appAppleId: env.APP_STORE_APP_ID ? Number(env.APP_STORE_APP_ID) : undefined, acceptSandbox })
   )
   const appStore = {
-    redeem: verifier.then((v) => new RedeemPurchase(v, purchases, audit, products, acceptSandbox)),
-    notifications: verifier.then((v) => new HandleAppStoreNotification(v, purchases, audit)),
+    redeem: quiet(verifier.then((v) => new RedeemPurchase(v, purchases, audit, products, acceptSandbox))),
+    notifications: quiet(verifier.then((v) => new HandleAppStoreNotification(v, purchases, audit))),
   }
 
   const invitations = { store: new DrizzleInvitationStore(db), secure: urls.apiBaseUrl.startsWith("https://"), cookieDomain: urls.cookieDomain }
