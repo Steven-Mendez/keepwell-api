@@ -24,6 +24,8 @@ terraform apply \
   -var state_bucket=keepwell-tfstate-<account-id>
 ```
 
+If the repository uses immutable OIDC subjects (`gh api repos/<owner>/keepwell-api/actions/oidc/customization/sub` shows `use_immutable_subject: true`), pass the prefix it prints without `repo:`, e.g. `-var github_repository=<owner>@<owner-id>/keepwell-api@<repo-id>`; otherwise AWS refuses the pipeline's `AssumeRoleWithWebIdentity`.
+
 State for this stack stays local (`infra/bootstrap/terraform.tfstate`, git-ignored). Keep a copy in
 a password manager; losing it only means importing three resources by hand.
 

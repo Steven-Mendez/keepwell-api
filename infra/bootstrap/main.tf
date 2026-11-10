@@ -26,8 +26,10 @@ variable "project" {
 }
 
 variable "github_repository" {
-  type        = string
-  description = "owner/name of the keepwell-api repository"
+  type = string
+  # GitHub repositories created with immutable OIDC subjects send `repo:owner@<id>/name@<id>:…`
+  # (gh api repos/<owner>/<name>/actions/oidc/customization/sub shows the prefix); pass that form.
+  description = "The repository as the OIDC subject names it: owner/name, or owner@<id>/name@<id> with immutable subjects"
 }
 
 variable "state_bucket" {
