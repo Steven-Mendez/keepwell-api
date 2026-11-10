@@ -45,6 +45,9 @@ Create `keepwell-api` on GitHub and set these **variables** (not secrets; none o
 | `TF_STATE_BUCKET`     | `state_bucket` output                  |
 | `ALERT_EMAIL`         | where budget and alarm emails go       |
 | `DOMAIN`              | the registrable domain of step 1       |
+| `WEB_ORIGIN`          | without a domain: the web's origin (`https://<project>.vercel.app`), which proxies the API |
+
+Leave `DOMAIN` unset when there is none (GitHub has no empty variables; unset reads as empty). Actions must be enabled for the repository.
 
 Protect `main`: pull requests only, `check` and `plan` required.
 
