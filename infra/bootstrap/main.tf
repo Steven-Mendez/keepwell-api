@@ -214,15 +214,32 @@ resource "aws_iam_role_policy" "deploy" {
         ]
       },
       {
-        # The jobs queue's trigger: event source mappings are named by a UUID, never by the project
-        # prefix, so they can't be held to it; creating and listing them names no resource at all.
-        Sid    = "QueueTriggers"
+        # The jobs queue's trigger. Creating or changing one names the function it calls, so it is
+        # held to the project's functions; mappings themselves are named by a UUID, never by the
+        # project prefix, so reading, deleting and tagging them can only be held to mappings.
+        Sid      = "QueueTriggerWrites"
+        Effect   = "Allow"
+        Action   = ["lambda:CreateEventSourceMapping", "lambda:UpdateEventSourceMapping"]
+        Resource = "*"
+        Condition = {
+          StringEquals = { "aws:RequestedRegion" = var.region }
+          ArnLike      = { "lambda:FunctionArn" = "arn:aws:lambda:${var.region}:${local.account}:function:${local.prefix}-*" }
+        }
+      },
+      {
+        Sid    = "QueueTriggerMappings"
         Effect = "Allow"
         Action = [
-          "lambda:CreateEventSourceMapping", "lambda:GetEventSourceMapping", "lambda:UpdateEventSourceMapping",
-          "lambda:DeleteEventSourceMapping", "lambda:ListEventSourceMappings", "lambda:TagResource",
-          "lambda:UntagResource", "lambda:ListTags",
+          "lambda:GetEventSourceMapping", "lambda:DeleteEventSourceMapping",
+          "lambda:TagResource", "lambda:UntagResource", "lambda:ListTags",
         ]
+        Resource = "arn:aws:lambda:${var.region}:${local.account}:event-source-mapping:*"
+      },
+      {
+        # Listing names no resource at all.
+        Sid       = "QueueTriggerList"
+        Effect    = "Allow"
+        Action    = ["lambda:ListEventSourceMappings"]
         Resource  = "*"
         Condition = { StringEquals = { "aws:RequestedRegion" = var.region } }
       },
