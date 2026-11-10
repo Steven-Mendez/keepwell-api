@@ -199,7 +199,7 @@ resource "aws_iam_role_policy" "deploy" {
       {
         Sid    = "ProjectFunctionsLogsQueuesParameters"
         Effect = "Allow"
-        Action = ["lambda:*", "logs:*", "sqs:*", "ssm:*", "cloudwatch:*"]
+        Action = ["lambda:*", "logs:*", "sqs:*", "ssm:*", "cloudwatch:*", "sns:*"]
         Resource = [
           "arn:aws:lambda:${var.region}:${local.account}:function:${local.prefix}-*",
           "arn:aws:logs:${var.region}:${local.account}:log-group:/aws/lambda/${local.prefix}-*",
@@ -209,7 +209,22 @@ resource "aws_iam_role_policy" "deploy" {
           "arn:aws:sqs:${var.region}:${local.account}:${local.prefix}-*",
           "arn:aws:ssm:${var.region}:${local.account}:parameter/${local.prefix}/*",
           "arn:aws:cloudwatch:${var.region}:${local.account}:alarm:${local.prefix}-*",
+          # The alerts topic and its subscriptions (topic ARN plus `:<subscription id>`).
+          "arn:aws:sns:${var.region}:${local.account}:${local.prefix}-*",
         ]
+      },
+      {
+        # The jobs queue's trigger: event source mappings are named by a UUID, never by the project
+        # prefix, so they can't be held to it; creating and listing them names no resource at all.
+        Sid    = "QueueTriggers"
+        Effect = "Allow"
+        Action = [
+          "lambda:CreateEventSourceMapping", "lambda:GetEventSourceMapping", "lambda:UpdateEventSourceMapping",
+          "lambda:DeleteEventSourceMapping", "lambda:ListEventSourceMappings", "lambda:TagResource",
+          "lambda:UntagResource", "lambda:ListTags",
+        ]
+        Resource  = "*"
+        Condition = { StringEquals = { "aws:RequestedRegion" = var.region } }
       },
       {
         # These services either don't support resource-level names on create (API Gateway, ACM,
