@@ -264,8 +264,13 @@ export function creditCardDetail(ledger: Ledger, accountId: string, now: Date = 
   const cycle = billingCycle(now, terms?.cutoffDay)
   let available: Money | undefined
   if (terms?.limit) {
-    const owed = convert(totalDebt, settingsRate(currencies), terms.limit.currency)
-    available = { amount: dec(terms.limit.amount).plus(owed.amount), currency: terms.limit.currency }
+    try {
+      const owed = convert(totalDebt, settingsRate(currencies), terms.limit.currency)
+      available = { amount: dec(terms.limit.amount).plus(owed.amount), currency: terms.limit.currency }
+    } catch {
+      // A limit in a currency the settings no longer convert: no "available" rather than a wrong one.
+      available = undefined
+    }
   }
   const holder = ledger.cards.find((card) => card.accountId === accountId && card.kind === "creditHolder")
   return {

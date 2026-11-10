@@ -107,9 +107,17 @@ export function balanceOf(account: Account, transactions: readonly Transaction[]
 
 // Rule 6: net worth, with today's settings rate.
 
+/** A balance in a currency the settings no longer convert is left out rather than mixed in, as in the forecast. */
 export function netWorth(balances: readonly Money[], settings: CurrencySettings): Money {
   const rate = settingsRate(settings)
-  return { amount: sum(balances.map((balance) => convert(balance, rate, settings.principal).amount)), currency: settings.principal }
+  const amounts = balances.flatMap((balance) => {
+    try {
+      return [convert(balance, rate, settings.principal).amount]
+    } catch {
+      return []
+    }
+  })
+  return { amount: sum(amounts), currency: settings.principal }
 }
 
 export function inSecondCurrency(total: Money, settings: CurrencySettings): Money | undefined {
