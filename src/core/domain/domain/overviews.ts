@@ -15,6 +15,7 @@ import {
   isConfirmed,
   monthlySummary,
   netWorth,
+  excludedCurrencies,
   nextOccurrence,
   plannedSummary,
   priceIncreases,
@@ -86,6 +87,8 @@ export interface HomeOverview {
   settings: CurrencySettings
   netWorth: Money
   netWorthInSecond?: Money
+  /** Currencies of balances the net worth leaves out (no rate in the settings); empty when none. */
+  netWorthExcluded: string[]
   /** Deposit and cash accounts. */
   accountCount: number
   /** Plastics, not transfer channels. */
@@ -142,6 +145,7 @@ export function homeOverview(ledger: Ledger, now: Date = new Date(), recentCount
     settings: currencies,
     netWorth: total,
     ...(second ? { netWorthInSecond: second } : {}),
+    netWorthExcluded: excludedCurrencies(allBalances, currencies),
     accountCount: accounts.filter((account) => account.kind !== "credit").length,
     cardCount: cards.filter((card) => card.kind !== "transfer").length,
     month: monthlySummary(yearMonthContaining(now), transactions, currencies.principal),

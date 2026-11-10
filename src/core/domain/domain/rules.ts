@@ -120,6 +120,24 @@ export function netWorth(balances: readonly Money[], settings: CurrencySettings)
   return { amount: sum(amounts), currency: settings.principal }
 }
 
+/**
+ * The currencies `netWorth` leaves out: sorted, unique codes of non-zero balances that `convert`
+ * can't bring to the principal currency (the settings hold no rate for them). Empty when none.
+ */
+export function excludedCurrencies(balances: readonly Money[], settings: CurrencySettings): string[] {
+  const rate = settingsRate(settings)
+  const codes = new Set<string>()
+  for (const balance of balances) {
+    if (balance.amount.isZero()) continue
+    try {
+      convert(balance, rate, settings.principal)
+    } catch {
+      codes.add(balance.currency)
+    }
+  }
+  return [...codes].sort()
+}
+
 export function inSecondCurrency(total: Money, settings: CurrencySettings): Money | undefined {
   if (settings.second === undefined) return undefined
   try {
