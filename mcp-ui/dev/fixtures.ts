@@ -78,5 +78,17 @@ export const FIXTURES: Record<string, Fixture> = {
     input: { ...lunch, name: "Gimnasio", frequency: "monthly", interval: 1, start_date: "2026-12-05T12:00:00.000Z", is_subscription: true, amount: "35" },
     result: () => ok({ id: "rule", status: "pending_confirmation", next_date: "2026-12-05" }),
   },
+  apply_changes: {
+    input: { lang: "es", changes: [] },
+    result: () =>
+      ok({
+        ok: true,
+        results: [
+          { tool: "create_account", account_id: "a9", name: "Efectivo" },
+          ...[["Súper", "150"], ["Gasolina", "40"], ["Farmacia", "12.50"], ["Almuerzo", "8"], ["Uber", "6.20"], ["Netflix", "15.49"], ["Gimnasio", "35"], ["Café", "3.50"], ["Libros", "22"]].map(([description, amount]) => ({ tool: "create_transaction", id: description, status: "saved", description, amount: { amount, currency: "USD" } })),
+        ],
+        changes: { created: 10, updated: 0, deleted: 0, not_applied: [] },
+      }),
+  },
   list_accounts: { result: () => ok({ accounts: [{ id: "a1", name: "Ahorro BAC" }, { id: "a2", name: "BAC Visa" }] }) },
 }

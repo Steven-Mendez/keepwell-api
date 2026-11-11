@@ -82,6 +82,7 @@ export function startViews(pick: (tool: string | undefined) => AnyView): void {
     },
   }
 
+  let conversationLang: Lang | undefined
   const applyContext = (changed: Partial<McpUiHostContext>) => {
     if (changed.theme) applyDocumentTheme(changed.theme)
     if (changed.styles?.variables) applyHostStyleVariables(changed.styles.variables)
@@ -91,7 +92,8 @@ export function startViews(pick: (tool: string | undefined) => AnyView): void {
       document.body.style.padding = `${top}px ${right}px ${bottom}px ${left}px`
     }
     const full = app.getHostContext()
-    ctx.lang = languageOf(full)
+    // The conversation's language (the tool's `lang`) wins over Claude's interface language.
+    ctx.lang = conversationLang ?? languageOf(full)
     ctx.canFullscreen = (full?.availableDisplayModes ?? []).includes("fullscreen")
     ctx.isFullscreen = (changed.displayMode ?? full?.displayMode) === "fullscreen"
     document.documentElement.lang = ctx.lang
@@ -99,7 +101,16 @@ export function startViews(pick: (tool: string | undefined) => AnyView): void {
     if (last !== undefined) view().render(last, ctx)
   }
 
-  app.ontoolinput = ({ arguments: args }) => view().input?.(args ?? {}, ctx)
+  app.ontoolinput = ({ arguments: args }) => {
+    const wanted = (args as { lang?: unknown } | undefined)?.lang
+    if (wanted === "es" || wanted === "en") {
+      conversationLang = wanted
+      ctx.lang = wanted
+      document.documentElement.lang = wanted
+      if (last !== undefined) view().render(last, ctx)
+    }
+    view().input?.(args ?? {}, ctx)
+  }
   app.ontoolresult = (result) => {
     const data = dataOf<Data>(result)
     if (data) {
