@@ -17,7 +17,7 @@ import {
 import type { Transaction } from "../domain/schema"
 
 // The MCP read tools as pure functions over the domain's Ledger (ADR 0007 covers the transport).
-// Everything is typed JSON: amounts are exact decimal text with their ISO 4217 code, never prose that
+// Everything is typed JSON: amounts are decimal text rounded to cents with their ISO 4217 code, never prose that
 // could read as an instruction, never HTML or Markdown (the MCP Apps views of ADR 0010 are a static
 // resource that draws this JSON as text). Cards show their last four digits only.
 
@@ -26,7 +26,10 @@ export interface MoneyJSON {
   currency: string
 }
 
-const money = (value: Money): MoneyJSON => ({ amount: value.amount.toString(), currency: value.currency })
+// Amounts come out rounded to cents. Converting between currencies at the settings rate leaves
+// long tails (452.2835628530784…) that are noise to a reader; the domain keeps the exact values.
+const amountText = (value: Money["amount"]) => value.toDecimalPlaces(2).toString()
+const money = (value: Money): MoneyJSON => ({ amount: amountText(value.amount), currency: value.currency })
 const monthText = (value: YearMonth) => `${value.year}-${String(value.month).padStart(2, "0")}`
 const day = (date: Date) => date.toISOString().slice(0, 10)
 
@@ -81,21 +84,21 @@ export function getMonthlySummary(ledger: Ledger, month: YearMonth) {
   return {
     month: monthText(month),
     currency,
-    income: summary.income.toString(),
-    expense: summary.expense.toString(),
-    net: savings(summary).toString(),
+    income: amountText(summary.income),
+    expense: amountText(summary.expense),
+    net: amountText(savings(summary)),
     spending_by_category: summary.categories.map((total) => ({
       category_id: total.categoryId,
       category: categoryName(ledger, total.categoryId),
-      amount: total.amount.toString(),
+      amount: amountText(total.amount),
       share: total.share.toDecimalPlaces(4).toString(),
     })),
-    income_by_category: summary.incomeCategories.map((total) => ({ category_id: total.categoryId, category: categoryName(ledger, total.categoryId), amount: total.amount.toString() })),
+    income_by_category: summary.incomeCategories.map((total) => ({ category_id: total.categoryId, category: categoryName(ledger, total.categoryId), amount: amountText(total.amount) })),
     budgets: budgetStatuses(summary, ledger.categories).map((status) => ({
       category_id: status.categoryId,
       category: categoryName(ledger, status.categoryId),
-      budget: status.budget.toString(),
-      spent: status.spent.toString(),
+      budget: amountText(status.budget),
+      spent: amountText(status.spent),
       level: status.level,
     })),
   }
@@ -108,9 +111,9 @@ export function getTrends(ledger: Ledger, months: number, now: Date) {
     currency,
     months: report.months.map((month) => ({
       month: monthText(month.month),
-      income: month.income.toString(),
-      expense: month.expense.toString(),
-      net: savings(month).toString(),
+      income: amountText(month.income),
+      expense: amountText(month.expense),
+      net: amountText(savings(month)),
     })),
   }
 }
