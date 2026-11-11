@@ -1,4 +1,4 @@
-import { appleClientSecret } from "../adapters/external/apple/client-secret"
+import { AppleSecretKeeper, appleClientSecret } from "../adapters/external/apple/client-secret"
 import { createAuth, type Auth } from "../adapters/auth/auth"
 import { configSourceFromEnv, loadConfig, type AppConfig, appleBundleIds } from "../adapters/config/config"
 import { DrizzleAccountStore } from "../adapters/database/account-store"
@@ -47,22 +47,30 @@ export function urlsFromEnv(env: NodeJS.ProcessEnv = process.env): Urls {
 }
 
 /** Everything that depends on configuration, built once it has loaded. */
-export async function buildAuth(db: Database, config: AppConfig, urls: Urls): Promise<Auth> {
-  const secret = await appleClientSecret({
-    teamId: config.apple_team_id,
-    keyId: config.apple_key_id,
-    servicesId: config.apple_services_id,
-    privateKey: config.apple_private_key,
-  })
-  return createAuth({
+export async function buildAuth(db: Database, config: AppConfig, urls: Urls, logger?: Logger): Promise<{ auth: Auth; secret: AppleSecretKeeper }> {
+  const secret = new AppleSecretKeeper(
+    () =>
+      appleClientSecret({
+        teamId: config.apple_team_id,
+        keyId: config.apple_key_id,
+        servicesId: config.apple_services_id,
+        privateKey: config.apple_private_key,
+      }),
+    undefined,
+    undefined,
+    (error) => logger?.error({ err: error }, "apple client secret refresh failed, keeping the previous one")
+  )
+  await secret.ensureFresh()
+  const auth = createAuth({
     db,
     config,
     audit: new DrizzleAuditLog(db),
     baseURL: urls.apiBaseUrl,
     webOrigin: urls.webOrigin,
     cookieDomain: urls.cookieDomain,
-    appleClientSecret: secret,
+    appleClientSecret: () => secret.current,
   })
+  return { auth, secret }
 }
 
 /**
@@ -86,7 +94,8 @@ export function bootstrap(options: { logger: Logger; version: string; database: 
   const { db } = createDatabase(options.database, logger)
 
   const config: Promise<AppConfig> = loadConfig(configSourceFromEnv(options.env))
-  const auth = config.then((loaded) => buildAuth(db, loaded, urls))
+  const built = config.then((loaded) => buildAuth(db, loaded, urls, logger))
+  const auth = built.then((b) => b.auth)
   auth.catch((error: unknown) => logger.error({ err: error }, "configuration failed to load"))
 
   // Under Lambda the queue is SQS; locally the job runs in-process right after the request.
@@ -133,7 +142,7 @@ export function bootstrap(options: { logger: Logger; version: string; database: 
     { name: "db", run: () => pingDatabase(db) },
     { name: "config", run: async () => void (await auth) },
   ]
-  const app = createApp({ logger, version, healthChecks, auth, webOrigin: urls.webOrigin, requestDeletion, capabilities, sync, mcp, switches, appStore, invitations })
+  const app = createApp({ logger, version, healthChecks, auth, webOrigin: urls.webOrigin, requestDeletion, capabilities, sync, mcp, switches, appStore, invitations, beforeAuth: async () => void (await built).secret.ensureFresh() })
 
   /**
    * Does the first request's slow work ahead of it: opens the database connection (DSQL IAM token

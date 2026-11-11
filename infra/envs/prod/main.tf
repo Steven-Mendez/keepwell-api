@@ -20,11 +20,12 @@ module "environment" {
   app_store_app_id = "6832675983"
 }
 
-# An abuse shows up on the bill first. Account-wide, so it lives with prod only.
+# An abuse shows up on the bill first. Account-wide, so it lives with prod only. Sized for the
+# provisioned instance on the API (about 4.4 USD a month, flat) on top of the usage-based services.
 resource "aws_budgets_budget" "monthly" {
   name         = "keepwell-monthly"
   budget_type  = "COST"
-  limit_amount = "10"
+  limit_amount = "20"
   limit_unit   = "USD"
   time_unit    = "MONTHLY"
 

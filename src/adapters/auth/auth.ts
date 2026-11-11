@@ -27,8 +27,8 @@ export interface AuthOptions {
   webOrigin: string
   /** Registrable domain shared by app. and api., so the session cookie reaches both. Unset locally. */
   cookieDomain?: string
-  /** Apple's client secret, minted from the .p8 key at start-up (adapters/external/apple/client-secret.ts). */
-  appleClientSecret: string
+  /** Apple's client secret, minted from the .p8 key (AppleSecretKeeper). A function is read each time Apple is called, so a refreshed secret takes effect. */
+  appleClientSecret: string | (() => string)
   /**
    * Replaces Apple's signature check. Tests only: they sign ID tokens with their own key. Production
    * uses external/apple/id-token.ts (Apple's cached JWKS, issuer, audience, expiry, nonce).
@@ -99,7 +99,9 @@ export function createAuth(options: AuthOptions) {
     socialProviders: {
       apple: {
         clientId: config.apple_services_id,
-        clientSecret: options.appleClientSecret,
+        get clientSecret() {
+          return typeof options.appleClientSecret === "function" ? options.appleClientSecret() : options.appleClientSecret
+        },
         appBundleIdentifier: appleBundleIds(config)[0],
         // The web (Services ID) and every iOS build allowed: an ID token's audience is its bundle ID.
         audience: [config.apple_services_id, ...appleBundleIds(config)],

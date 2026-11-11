@@ -35,6 +35,8 @@ export interface AppDependencies {
   healthChecks?: HealthCheck[]
   /** Built once configuration has loaded; routes that need it wait for it. */
   auth?: Promise<Auth>
+  /** Runs before each /api/auth request (refreshes Apple's client secret when it is stale). */
+  beforeAuth?: () => Promise<void>
   /** The only origin allowed by CORS, with credentials. No wildcards. */
   webOrigin?: string
   requestDeletion?: Promise<RequestAccountDeletion>
@@ -80,7 +82,7 @@ export function createApp(deps: AppDependencies) {
   app.route("/", healthRoutes({ version: deps.version, checks: deps.healthChecks ?? [] }))
   app.get("/openapi.json", (c) => c.json(openApiDocument()))
   if (deps.auth) {
-    app.route("/", authRoutes(deps.auth, { webOrigin: deps.webOrigin }))
+    app.route("/", authRoutes(deps.auth, { webOrigin: deps.webOrigin, before: deps.beforeAuth }))
     app.route("/", meRoutes(deps.auth, { requestDeletion: deps.requestDeletion, capabilities: deps.capabilities }))
     if (deps.capabilities && deps.sync) {
       app.route("/", syncRoutes({ auth: deps.auth, capabilities: deps.capabilities, repository: deps.sync, clock: deps.clock, switches: deps.switches }))
