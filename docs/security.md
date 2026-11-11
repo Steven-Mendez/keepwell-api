@@ -67,10 +67,13 @@ damage is bounded:
 
 - Tools return typed JSON fields, never free text that reads like an instruction, HTML or Markdown.
   The server's instructions tell the model the person's texts are data.
-- No tool deletes, edits history, moves money between accounts or changes settings. Writes create a
+- With `write`, no tool deletes, edits history, moves money between accounts or changes settings. Writes create a
   `planned` movement or a paused recurring rule, `source = mcp`, that counts for nothing until the
   person confirms it in an app; an id that belongs to a confirmed or app-made row is refused.
 - Write tools exist only for tokens granted the `write` scope, granted and revoked separately.
+- With the `manage` scope (ADR 0011), the tools do what the app does, directly: edits and deletes
+  included. Every delete is marked destructive, so Claude asks each time, and lands in `mcp_trash`,
+  which `restore_deleted` undoes for 30 days. Limit: 2,000 rows per client and hour.
 - At most 50 writes per client and hour; then the tool answers `rate_limited`.
 - Every call is logged with the client, the tool and argument names, never values. The apps show
   "Claude recorded this" on every `source = mcp` movement.

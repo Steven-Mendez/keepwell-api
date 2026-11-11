@@ -38,7 +38,7 @@ describe("MCP over OAuth 2.1", () => {
 
   it("publishes discovery documents at the root, with CIMD and PKCE", async () => {
     const resource = (await (await fetch(`${base}/.well-known/oauth-protected-resource`)).json()) as Record<string, unknown>
-    expect(resource).toMatchObject({ resource: `${base}/mcp`, authorization_servers: [`${base}/api/auth`], scopes_supported: ["read", "write"] })
+    expect(resource).toMatchObject({ resource: `${base}/mcp`, authorization_servers: [`${base}/api/auth`], scopes_supported: ["read", "write", "manage"] })
     const server = (await (await fetch(`${base}/.well-known/oauth-authorization-server`)).json()) as Record<string, unknown>
     expect(server).toMatchObject({ client_id_metadata_document_supported: true, code_challenge_methods_supported: ["S256"] })
     expect(server.token_endpoint_auth_methods_supported).toContain("none")
@@ -56,7 +56,7 @@ describe("MCP over OAuth 2.1", () => {
     expect(claims).toMatchObject({ aud: `${base}/mcp`, scope: "read offline_access" })
     const list = await mcpCall(base, token!.access_token, "tools/list")
     expect(list.status).toBe(200)
-    expect(((await list.json()) as { result: { tools: unknown[] } }).result.tools.length).toBe(7)
+    expect(((await list.json()) as { result: { tools: unknown[] } }).result.tools.length).toBe(13)
   })
 
   it("refuses a redirect URI the client didn't register", async () => {

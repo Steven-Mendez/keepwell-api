@@ -14,6 +14,8 @@ import { HandleAppStoreNotification, RedeemPurchase } from "../core/use-cases/re
 import { McpConnections } from "../adapters/auth/mcp-connections"
 import { ChangeLogWriteCounter } from "../adapters/database/repositories/mcp-write-counter"
 import { CreatePending } from "../core/use-cases/create-pending"
+import { ManageLedger } from "../core/use-cases/manage-ledger"
+import { ScopedMcpTrash } from "../adapters/database/repositories/mcp-trash"
 import { ReadLedger } from "../core/use-cases/read-ledger"
 import { CachedPlansSource, CachedSwitchesSource, filePlansLoader, ssmPlansLoader } from "../adapters/config/plans-source"
 import { ResolveCapabilities } from "../core/use-cases/resolve-capabilities"
@@ -116,12 +118,15 @@ export function bootstrap(options: { logger: Logger; version: string; database: 
 
   const sync = createSyncRepository(db, logger)
   const writer = new ApplySyncBatch(sync)
-  const readLedger = new ReadLedger(new ScopedLedgerReader((userId) => scopedDb(db, userId)), writer)
+  const ledgerReader = new ScopedLedgerReader((userId) => scopedDb(db, userId))
+  const readLedger = new ReadLedger(ledgerReader, writer)
+  const writeCounter = new ChangeLogWriteCounter((userId) => scopedDb(db, userId))
   const mcp = {
     readLedger,
     baseURL: urls.apiBaseUrl,
     connections: new McpConnections(db, audit),
-    createPending: new CreatePending({ ledger: readLedger, writer, counter: new ChangeLogWriteCounter((userId) => scopedDb(db, userId)) }),
+    createPending: new CreatePending({ ledger: readLedger, writer, counter: writeCounter }),
+    manage: new ManageLedger({ reader: ledgerReader, ledger: readLedger, writer, counter: writeCounter, trash: new ScopedMcpTrash((userId) => scopedDb(db, userId)) }),
   }
 
   // The coffee (increment 23): productId → plan from the environment, Apple's bundle id from config.

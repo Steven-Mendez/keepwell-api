@@ -2,6 +2,8 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js"
 
 import type { Logger } from "../../adapters/observability/logger"
 import type { CreatePending } from "../../core/use-cases/create-pending"
+import type { ManageLedger } from "../../core/use-cases/manage-ledger"
+import { registerManageTools } from "./manage-tools"
 import type { ReadLedger } from "../../core/use-cases/read-ledger"
 import { createMcpServer } from "./server"
 import { registerUiResources } from "./ui/resources"
@@ -16,6 +18,8 @@ export interface McpServices {
   readLedger: ReadLedger
   /** The write tools; without it, the connector is read-only for everyone. */
   createPending?: CreatePending
+  /** The manage tools (ADR 0011); without it, `manage` grants nothing more than `write`. */
+  manage?: ManageLedger
   /** The exact URL clients connect to (`${API_BASE_URL}/mcp`); the views' sandbox origin derives from it. */
   mcpUrl: string
   now: () => Date
@@ -34,7 +38,9 @@ export interface McpCaller {
 
 /** A fresh server for one request: the transport is stateless, so nothing is shared between calls. */
 export function buildMcpServer(services: McpServices, caller: McpCaller): McpServer {
-  const writable = services.createPending !== undefined && caller.scopes.includes("write") && !caller.readOnly
+  // manage replaces the pending write tools with ones that apply directly, as the app does.
+  const manages = services.manage !== undefined && caller.scopes.includes("manage") && !caller.readOnly
+  const writable = !manages && services.createPending !== undefined && caller.scopes.includes("write") && !caller.readOnly
   const server = createMcpServer({
     ledger: () => services.readLedger.execute(caller.userId),
     now: services.now,
@@ -44,6 +50,7 @@ export function buildMcpServer(services: McpServices, caller: McpCaller): McpSer
       ? { registerWrites: (server) => registerWriteTools(server, { create: services.createPending!, userId: caller.userId, clientId: caller.clientId, log: caller.log }) }
       : {}),
   })
+  if (manages) registerManageTools(server, { manage: services.manage!, userId: caller.userId, clientId: caller.clientId, log: caller.log })
   registerUiResources(server, services.mcpUrl)
   return server
 }

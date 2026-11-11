@@ -12,6 +12,12 @@ import {
   getTrends,
   getUpcomingPayments,
   listAccounts,
+  listCategories,
+  listCategorizationRules,
+  listLoans,
+  listPersonalDebts,
+  listRecurringRules,
+  listSavingsGoals,
   parseMonth,
   searchTransactions,
 } from "../../core/mcp/read-tools"
@@ -100,6 +106,12 @@ export function createMcpServer(context: McpContext): McpServer {
     },
     (args, ledger) => searchTransactions(ledger, args)
   )
+  tool("list_categories", { title: "List categories", description: "Expense and income categories in the person's order, with their monthly budgets." }, {}, (_, ledger) => listCategories(ledger))
+  tool("list_recurring_rules", { title: "List recurring payments", description: "Recurring movements and subscriptions with their schedule and whether they are paused." }, {}, (_, ledger) => listRecurringRules(ledger))
+  tool("list_savings_goals", { title: "List savings goals", description: "Savings goals with their target and what is set aside." }, {}, (_, ledger) => listSavingsGoals(ledger))
+  tool("list_loans", { title: "List loans", description: "Loans with their installments and which are paid." }, {}, (_, ledger) => listLoans(ledger))
+  tool("list_personal_debts", { title: "List personal debts", description: "Money owed to or by people, with repayments and whether settled." }, {}, (_, ledger) => listPersonalDebts(ledger))
+  tool("list_categorization_rules", { title: "List categorization rules", description: "Rules that categorize movements by their description, in the order they apply." }, {}, (_, ledger) => listCategorizationRules(ledger))
   context.registerWrites?.(server)
   return server
 }

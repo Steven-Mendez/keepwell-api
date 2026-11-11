@@ -1,10 +1,13 @@
 import { el, type Lang, type View, type ViewContext } from "../shared/app"
 import { dayName, money } from "../shared/format"
 
-/** What create_transaction and create_recurring_rule return. */
+/**
+ * What create_transaction and create_recurring_rule return: pending with the `write` permission, or
+ * saved directly with `manage` (ADR 0011), which wraps it in `result`.
+ */
 interface Pending {
   id: string
-  status: "pending_confirmation"
+  status: "pending_confirmation" | "planned" | "saved"
   amount?: { amount: string; currency: string }
   date?: string
   description?: string
@@ -33,6 +36,10 @@ const text = {
     preparing: "Preparing…",
     badge: "Pending",
     note: "It doesn't count toward your balances until you confirm it in Keepwell.",
+    savedMovement: "Movement saved",
+    savedRule: "Recurring movement saved",
+    savedBadge: "Saved",
+    savedNote: "Saved in Keepwell, as if you had entered it in the app.",
     amount: "Amount",
     account: "Account",
     date: "Date",
@@ -48,6 +55,10 @@ const text = {
     preparing: "Preparando…",
     badge: "Pendiente",
     note: "No cuenta en tus saldos hasta que lo confirmes en Keepwell.",
+    savedMovement: "Movimiento guardado",
+    savedRule: "Movimiento recurrente guardado",
+    savedBadge: "Guardado",
+    savedNote: "Guardado en Keepwell, como si lo hubieras anotado en la app.",
     amount: "Monto",
     account: "Cuenta",
     date: "Fecha",
@@ -70,7 +81,8 @@ function pair(label: string, value: string | null | undefined): HTMLElement | nu
 function draw(result: Pending | undefined, ctx: ViewContext) {
   const t = text[ctx.lang]
   const isRule = input.frequency !== undefined || result?.next_date !== undefined
-  const title = isRule ? t.rule : t.movement
+  const saved = result?.status === "saved"
+  const title = saved ? (isRule ? t.savedRule : t.savedMovement) : isRule ? t.rule : t.movement
   const label = input.name ?? result?.description ?? input.description ?? ""
   const amount = result?.amount ?? (input.amount && input.currency ? { amount: input.amount, currency: input.currency } : undefined)
   const date = result?.next_date ?? result?.date ?? input.start_date ?? input.date
@@ -79,7 +91,7 @@ function draw(result: Pending | undefined, ctx: ViewContext) {
     el(
       "article",
       { class: "card" },
-      el("div", { class: "header" }, el("h1", {}, title), el("span", { class: "badge" }, result ? t.badge : t.preparing)),
+      el("div", { class: "header" }, el("h1", {}, title), el("span", { class: saved ? "badge saved" : "badge" }, result ? (saved ? t.savedBadge : t.badge) : t.preparing)),
       label ? el("p", { class: "value" }, label) : "",
       el(
         "dl",
@@ -89,7 +101,7 @@ function draw(result: Pending | undefined, ctx: ViewContext) {
         pair(isRule ? t.next : t.date, date ? dayName(date, ctx.lang) : null) ?? "",
         pair(t.every, input.frequency ? `${t.frequency(input.frequency, input.interval ?? 1)}${input.is_subscription ? ` · ${t.subscription}` : ""}` : null) ?? ""
       ),
-      el("p", { class: "caption" }, t.note)
+      el("p", { class: "caption" }, saved ? t.savedNote : t.note)
     )
   )
 }
@@ -113,7 +125,8 @@ export const pendingView: View<Pending> = {
     }
   },
   render(data, ctx) {
-    latest = data
-    draw(data, ctx)
+    // manage wraps what was saved in `result`, next to the change summary.
+    latest = (data as Pending & { result?: Pending }).result ?? data
+    draw(latest, ctx)
   },
 }

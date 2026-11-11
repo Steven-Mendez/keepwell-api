@@ -212,3 +212,93 @@ export function getFinancialContext(ledger: Ledger, now: Date) {
     pending_confirmation: ledger.transactions.filter((t) => t.status === "planned").length,
   }
 }
+
+// The lists the manage tools take ids from (ADR 0011). Plain fields, never prose.
+
+export function listCategories(ledger: Ledger) {
+  return {
+    categories: ledger.categories.map((category) => ({
+      id: category.id,
+      name: category.name,
+      kind: category.kind,
+      monthly_budget: category.monthlyBudget ? { amount: category.monthlyBudget.amount, currency: category.monthlyBudget.currency } : null,
+    })),
+  }
+}
+
+export function listRecurringRules(ledger: Ledger) {
+  return {
+    rules: ledger.recurringRules.map((rule) => ({
+      id: rule.id,
+      name: rule.name,
+      kind: rule.kind,
+      amount: { amount: rule.amount, currency: rule.currency },
+      category_id: rule.categoryId ?? null,
+      account_id: rule.accountId,
+      card_id: rule.cardId ?? null,
+      destination_account_id: rule.destinationAccountId ?? null,
+      frequency: rule.frequency,
+      interval: rule.interval,
+      start_date: rule.startDate,
+      next_date: rule.nextDate,
+      end_date: rule.endDate ?? null,
+      is_subscription: rule.isSubscription,
+      auto_confirm: rule.autoConfirm,
+      is_paused: rule.isPaused,
+      note: rule.note ?? null,
+      tags: rule.tags ?? [],
+      recorded_by: rule.source === "mcp" ? "mcp" : "app",
+    })),
+  }
+}
+
+export function listSavingsGoals(ledger: Ledger) {
+  return {
+    goals: ledger.savingsGoals.map((goal) => ({
+      id: goal.id,
+      name: goal.name,
+      target: goal.target,
+      saved: goal.saved,
+      target_month: goal.targetMonth ?? null,
+      icon: goal.icon ?? null,
+      color: goal.color ?? null,
+    })),
+  }
+}
+
+export function listLoans(ledger: Ledger) {
+  return {
+    loans: ledger.loans.map((loan) => ({
+      id: loan.id,
+      name: loan.name,
+      lender: loan.lender ?? null,
+      borrowed: loan.borrowed,
+      installment_amount: loan.installmentAmount,
+      installment_count: loan.installmentCount,
+      frequency: loan.frequency,
+      first_due_date: loan.firstDueDate,
+      paid_installments: loan.payments.map((payment) => ({ number: payment.number, paid_at: payment.paidAt, transaction_id: payment.transactionId ?? null })),
+    })),
+  }
+}
+
+export function listPersonalDebts(ledger: Ledger) {
+  return {
+    debts: ledger.personalDebts.map((debt) => ({
+      id: debt.id,
+      person: debt.person,
+      direction: debt.direction,
+      amount: debt.amount,
+      date: debt.date,
+      note: debt.note ?? null,
+      repayments: debt.repayments.map((repayment) => ({ amount: repayment.amount, date: repayment.date })),
+      settled_at: debt.settledAt ?? null,
+    })),
+  }
+}
+
+export function listCategorizationRules(ledger: Ledger) {
+  return {
+    rules: ledger.categorizationRules.map((rule) => ({ id: rule.id, match: rule.match, kind: rule.kind, category_id: rule.categoryId, category: categoryName(ledger, rule.categoryId), tags: rule.tags ?? [] })),
+  }
+}

@@ -39,7 +39,8 @@ export interface AuthOptions {
 export const SESSION_DAYS = 30
 /** MCP access tokens live 15 minutes; refresh tokens rotate and are revocable (ADR 0007). */
 export const MCP_ACCESS_TOKEN_SECONDS = 15 * 60
-export const MCP_SCOPES = ["read", "write", "offline_access"] as const
+/** read: the read tools. write: propose movements that wait as pending. manage: everything the app does (ADR 0011). */
+export const MCP_SCOPES = ["read", "write", "manage", "offline_access"] as const
 
 /** Exact match is the provider's default; on top of it, only https or a loopback address. */
 export function allowedRedirectUri(uri: string): boolean {

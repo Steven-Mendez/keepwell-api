@@ -15,3 +15,4 @@ decision that changes gets a new record that supersedes the old one; records are
 | [0008](0008-capabilities-by-configuration.md)    | Capabilities by configuration, not plans in code              |
 | [0009](0009-single-environment.md)               | One environment, production                                   |
 | [0010](0010-mcp-module-and-apps.md)             | The MCP as a separable module, with MCP Apps views            |
+| [0011](0011-mcp-manage-scope.md)               | A `manage` scope: the MCP does what the app does, with undoable deletes |

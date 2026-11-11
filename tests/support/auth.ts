@@ -19,6 +19,8 @@ import { ReadLedger } from "../../src/core/use-cases/read-ledger"
 import { McpConnections } from "../../src/adapters/auth/mcp-connections"
 import { ChangeLogWriteCounter } from "../../src/adapters/database/repositories/mcp-write-counter"
 import { CreatePending } from "../../src/core/use-cases/create-pending"
+import { ManageLedger } from "../../src/core/use-cases/manage-ledger"
+import { ScopedMcpTrash } from "../../src/adapters/database/repositories/mcp-trash"
 import { DrizzleInvitationStore } from "../../src/adapters/database/invitation-store"
 import { DrizzlePurchaseStore } from "../../src/adapters/database/purchase-store"
 import type { AppStoreVerifier } from "../../src/core/ports/app-store"
@@ -94,9 +96,12 @@ export function testAuthApp(db: Database, config: Partial<AppConfig> = {}, optio
   const sync = createSyncRepository(db, logger)
   const now = options.now ?? (() => new Date())
   const writer = new ApplySyncBatch(sync)
-  const readLedger = new ReadLedger(new ScopedLedgerReader((userId) => scopedDb(db, userId)), writer, now)
-  const createPending = new CreatePending({ ledger: readLedger, writer, counter: new ChangeLogWriteCounter((userId) => scopedDb(db, userId)), clock: now })
-  const mcp = { readLedger, baseURL, now, connections: new McpConnections(db, audit), createPending }
+  const ledgerReader = new ScopedLedgerReader((userId) => scopedDb(db, userId))
+  const readLedger = new ReadLedger(ledgerReader, writer, now)
+  const counter = new ChangeLogWriteCounter((userId) => scopedDb(db, userId))
+  const createPending = new CreatePending({ ledger: readLedger, writer, counter, clock: now })
+  const manage = new ManageLedger({ reader: ledgerReader, ledger: readLedger, writer, counter, trash: new ScopedMcpTrash((userId) => scopedDb(db, userId)), clock: now })
+  const mcp = { readLedger, baseURL, now, connections: new McpConnections(db, audit), createPending, manage }
   const purchases = new DrizzlePurchaseStore(db, logger)
   const verifier = options.appStoreVerifier ?? { transaction: async () => Promise.reject(new Error("no verifier")), notification: async () => Promise.reject(new Error("no verifier")) }
   const appStore = {

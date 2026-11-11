@@ -36,6 +36,7 @@ export const USER_OWNED_TABLES: { name: string; key: string }[] = [
   { name: "clients", key: "client_id" },
   { name: "idempotency_keys", key: "key" },
   { name: "sync_state", key: "user_id" },
+  { name: "mcp_trash", key: "id" },
 ]
 
 /**
