@@ -69,6 +69,7 @@ button.ghost { border-color: transparent; color: var(--kw-accent); }
 .actions { display: flex; gap: 8px; justify-content: space-between; align-items: center; flex-wrap: wrap; }
 
 .card { border: 1px solid var(--kw-border); border-radius: var(--kw-radius); padding: 14px; display: flex; flex-direction: column; gap: 10px; }
+.badge.saved { color: var(--kw-income); }
 .badge { display: inline-block; font-size: 12px; font-weight: 600; padding: 2px 8px; border-radius: 999px; background: var(--kw-surface); color: var(--kw-warning); }
 .pair { display: flex; justify-content: space-between; gap: 12px; }
 .pair dt { color: var(--kw-muted); }

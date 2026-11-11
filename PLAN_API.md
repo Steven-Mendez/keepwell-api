@@ -110,7 +110,7 @@ resume qué infraestructura entra durante la fase.
 - Tipos de cambio automáticos: la tasa sigue viajando en cada movimiento, como hoy.
 - Panel de administración.
 - Soporte a ChatGPT como objetivo de primera clase. Se diseña para MCP estándar; ChatGPT entra con lo que su capa soporte (hoy prioriza lectura y búsqueda).
-- Herramientas MCP destructivas (borrar o editar historial). Eso se hace en la app.
+- Herramientas MCP destructivas (borrar o editar historial). Eso se hace en la app. (Actualizado en ADR 0011: con el permiso `manage`, el MCP hace lo mismo que la app, y sus borrados se pueden deshacer 30 días).
 - Suscripción Pro con StoreKit. El café sí entra (fase 8); la suscripción usa el mismo endpoint cuando llegue (ver `PLAN_MONETIZACION.md`).
 - Doble partida con contrapartidas por categoría. Ver "Principios de backend financiero".
 

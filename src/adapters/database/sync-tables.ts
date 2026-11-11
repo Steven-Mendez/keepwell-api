@@ -238,3 +238,23 @@ export const invitations = pgTable("invitations", {
   redeemed_by: text("redeemed_by"),
   created_at: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 })
+
+/**
+ * What MCP deletes took away, kept TRASH_DAYS so `restore_deleted` can undo them (ADR 0011): a sync
+ * tombstone is final, so restoring creates the rows again under new ids. `rows` is JSON text of the
+ * rows as they were. Copies of finance data: erased with the account (USER_OWNED_TABLES) and purged
+ * after TRASH_DAYS.
+ */
+export const mcpTrash = pgTable(
+  "mcp_trash",
+  {
+    user_id: text("user_id").notNull(),
+    id: text("id").notNull(),
+    client_id: text("client_id").notNull(),
+    label: text("label").notNull(),
+    rows: text("rows").notNull(),
+    created_at: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    restored_at: timestamp("restored_at", { withTimezone: true }),
+  },
+  (table) => [primaryKey({ columns: [table.user_id, table.id] }), index("mcp_trash_user_created").on(table.user_id, table.created_at)]
+)

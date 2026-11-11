@@ -10,7 +10,7 @@ type Http = ReturnType<typeof testAuthApp>["app"]
 export const LEDGER_AND_SYNC_TABLES = [
   "sessions", "accounts", "users", "audit_log", "entitlements", "clients", "applied_events", "change_log", "sync_state",
   "ledger_accounts", "cards", "categories", "transactions", "recurring_rules", "savings_goals", "loans", "loan_payments",
-  "personal_debts", "personal_debt_repayments", "categorization_rules", "settings",
+  "personal_debts", "personal_debt_repayments", "categorization_rules", "settings", "mcp_trash",
 ]
 
 export async function wipe(admin: Database) {

@@ -12,6 +12,7 @@ import { mcpRoutes, wellKnownRoutes } from "./routes/mcp"
 import type { McpConnections } from "../../adapters/auth/mcp-connections"
 import type { ReadLedger } from "../../core/use-cases/read-ledger"
 import type { CreatePending } from "../../core/use-cases/create-pending"
+import type { ManageLedger } from "../../core/use-cases/manage-ledger"
 import type { SwitchesSource } from "../../core/switches"
 import type { HandleAppStoreNotification, RedeemPurchase } from "../../core/use-cases/redeem-purchase"
 import { appStoreRoutes } from "./routes/app-store"
@@ -48,7 +49,7 @@ export interface AppDependencies {
   invitations?: { store: InvitationStore; secure: boolean; cookieDomain?: string; now?: () => Date }
   appStore?: { redeem: Promise<RedeemPurchase>; notifications: Promise<HandleAppStoreNotification> }
   /** The MCP server's data access; with it, /mcp is mounted. */
-  mcp?: { readLedger: ReadLedger; baseURL: string; now?: () => Date; connections?: McpConnections; createPending?: CreatePending }
+  mcp?: { readLedger: ReadLedger; baseURL: string; now?: () => Date; connections?: McpConnections; createPending?: CreatePending; manage?: ManageLedger }
 }
 
 /** Builds the whole HTTP surface from its dependencies, so tests and Lambda wire the same app. */

@@ -8,6 +8,7 @@ import type { ResolveCapabilities } from "../../../core/use-cases/resolve-capabi
 import type { ReadLedger } from "../../../core/use-cases/read-ledger"
 import { buildMcpServer } from "../../mcp"
 import type { CreatePending } from "../../../core/use-cases/create-pending"
+import type { ManageLedger } from "../../../core/use-cases/manage-ledger"
 import { ApiError, errorBody } from "../errors"
 import { requireSession } from "../middlewares/session"
 import type { AppEnv } from "../types"
@@ -21,6 +22,8 @@ export interface McpDeps {
   connections?: McpConnections
   /** The write tools; without it, /mcp is read-only for everyone. */
   createPending?: CreatePending
+  /** The manage tools, for tokens granted `manage` (ADR 0011). */
+  manage?: ManageLedger
   switches?: SwitchesSource
   /** Public URL of the API: the resource is `${baseURL}/mcp`. */
   baseURL: string
@@ -53,7 +56,7 @@ export function mcpRoutes(deps: McpDeps) {
       return c.json(errorBody(c, "needs_plan", "The MCP connector comes with Keepwell's coffee, bought in the iPhone app.", { capability: "mcp" }), 403)
     }
     const server = buildMcpServer(
-      { readLedger: deps.readLedger, createPending: deps.createPending, mcpUrl: resource, now: deps.now ?? (() => new Date()) },
+      { readLedger: deps.readLedger, createPending: deps.createPending, manage: deps.manage, mcpUrl: resource, now: deps.now ?? (() => new Date()) },
       {
         ...caller,
         log: c.get("log"),
