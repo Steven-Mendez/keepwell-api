@@ -1,9 +1,11 @@
+import { registerAppTool } from "@modelcontextprotocol/ext-apps/server"
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js"
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js"
 import { z } from "zod"
 
 import type { Logger } from "../../adapters/observability/logger"
 import { CreatePending, McpWriteError } from "../../core/use-cases/create-pending"
+import { VIEWS_URI } from "./ui/resources"
 
 const decimal = z.string().regex(/^[0-9]+(\.[0-9]+)?$/, "a positive exact decimal such as 12.50")
 const instant = z.string().refine((text) => !Number.isNaN(Date.parse(text)), "an ISO 8601 date or date-time")
@@ -37,9 +39,15 @@ export function registerWriteTools(server: McpServer, options: { create: CreateP
     }
   }
 
-  server.registerTool(
+  // Both show the pending card: what was prepared, waiting for the person in Keepwell.
+  const pendingView = { ui: { resourceUri: VIEWS_URI } }
+
+  registerAppTool(
+    server,
     "create_transaction",
     {
+      title: "Record a movement",
+      _meta: pendingView,
       description:
         "Record a movement. It is saved as pending: it doesn't count toward balances until the person confirms it in Keepwell, and it shows as recorded by you.",
       inputSchema: { ...common, description: z.string().min(1).max(200), date: instant.describe("When it happened") },
@@ -48,9 +56,12 @@ export function registerWriteTools(server: McpServer, options: { create: CreateP
     async (args) => run("create_transaction", () => options.create.transaction(options.userId, options.clientId, args))
   )
 
-  server.registerTool(
+  registerAppTool(
+    server,
     "create_recurring_rule",
     {
+      title: "Set up a recurring movement",
+      _meta: pendingView,
       description: "Set up a recurring movement or subscription. It stays paused, recording nothing, until the person confirms it in Keepwell.",
       inputSchema: {
         ...common,

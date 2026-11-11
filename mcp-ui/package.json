@@ -1,0 +1,22 @@
+{
+  "name": "@keepwell/mcp-ui",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "description": "The MCP Apps views Claude renders for Keepwell's MCP tools. Built into one HTML file per view, which the API serves as ui:// resources (ADR 0009).",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "dev": "vite --config vite.dev.config.ts --port 5179",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/ext-apps": "^1.7.5",
+    "@modelcontextprotocol/sdk": "^1.32.2",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3",
+    "vite": "^7.3.8",
+    "vite-plugin-singlefile": "^2.3.4"
+  }
+}
