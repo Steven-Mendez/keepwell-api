@@ -3,11 +3,15 @@
 Last rehearsed: not yet (before opening registration).
 
 Secrets live in SSM Parameter Store under `/keepwell/<env>/`, never in Terraform state. The Lambda
-reads them at cold start, so new values take effect when instances are recycled:
+reads them at cold start, so new values take effect when instances are recycled. The `live` alias
+points at a published version (with provisioned concurrency, warm instances never go away on their
+own), so publish a new version and move the alias; the old instances are replaced:
 
 ```bash
 aws lambda update-function-configuration --function-name keepwell-$ENV-api --description "rotate $(date +%s)"
 aws lambda wait function-updated-v2 --function-name keepwell-$ENV-api
+v=$(aws lambda publish-version --function-name keepwell-$ENV-api --query Version --output text)
+aws lambda update-alias --function-name keepwell-$ENV-api --name live --function-version "$v"
 ```
 
 ## `auth_secret` (Better Auth)

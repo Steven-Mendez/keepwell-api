@@ -81,6 +81,17 @@ resource "aws_lambda_alias" "live" {
   }
 }
 
+# One instance kept initialised on the alias API Gateway calls, so a request after idle doesn't pay
+# the cold start (init, database connection, Better Auth). Traffic beyond it still scales out on
+# demand. The pipeline moves the alias to each new version; Lambda re-provisions the instance on it
+# and scripts/deploy-code.sh waits until that is READY before the smoke test.
+resource "aws_lambda_provisioned_concurrency_config" "live" {
+  count                             = var.provisioned_concurrency > 0 ? 1 : 0
+  function_name                     = aws_lambda_function.api.function_name
+  qualifier                         = aws_lambda_alias.live.name
+  provisioned_concurrent_executions = var.provisioned_concurrency
+}
+
 # --- HTTP API -------------------------------------------------------------------------------------
 
 resource "aws_apigatewayv2_api" "http" {

@@ -11,6 +11,7 @@ import { and, eq, isNotNull } from "drizzle-orm"
 import type { AuditLog } from "../../core/ports/audit-log"
 import { AdmitSignIn, NotInvited } from "../../core/use-cases/admit-sign-in"
 import { DrizzleInvitationStore } from "../database/invitation-store"
+import { appleIdTokenVerifier } from "../external/apple/id-token"
 import { currentRequest } from "../observability/request-context"
 import { appleBundleIds, type AppConfig } from "../config/config"
 import type { Database } from "../database/client"
@@ -30,7 +31,7 @@ export interface AuthOptions {
   appleClientSecret: string
   /**
    * Replaces Apple's signature check. Tests only: they sign ID tokens with their own key. Production
-   * uses Better Auth's verification (Apple's JWKS, issuer, audience, expiry, nonce).
+   * uses external/apple/id-token.ts (Apple's cached JWKS, issuer, audience, expiry, nonce).
    */
   verifyAppleIdToken?: (token: string, nonce?: string) => Promise<boolean>
 }
@@ -102,7 +103,8 @@ export function createAuth(options: AuthOptions) {
         appBundleIdentifier: appleBundleIds(config)[0],
         // The web (Services ID) and every iOS build allowed: an ID token's audience is its bundle ID.
         audience: [config.apple_services_id, ...appleBundleIds(config)],
-        ...(options.verifyAppleIdToken ? { verifyIdToken: options.verifyAppleIdToken } : {}),
+        // Apple's keys stay cached across sign-ins (Better Auth's own check refetches them each time).
+        verifyIdToken: options.verifyAppleIdToken ?? appleIdTokenVerifier({ audience: [config.apple_services_id, ...appleBundleIds(config)] }),
         // Runs on every Apple sign-in, new or returning, before any row is written.
         mapProfileToUser: async (profile: { sub?: string }) => {
           try {

@@ -24,6 +24,7 @@ import { InlineJobQueue, SqsJobQueue } from "../adapters/queue/sqs-job-queue"
 import type { JobQueue } from "../core/ports/job-queue"
 import { DeleteAccountData } from "../core/use-cases/delete-account-data"
 import { RequestAccountDeletion } from "../core/use-cases/request-account-deletion"
+import { warmAppleKeys } from "../adapters/external/apple/id-token"
 import { createApp } from "./http/app"
 import { DrizzleInvitationStore } from "../adapters/database/invitation-store"
 import type { HealthCheck } from "./http/routes/health"
@@ -101,7 +102,8 @@ export function bootstrap(options: { logger: Logger; version: string; database: 
     env.CONFIG_PREFIX ? ssmPlansLoader(`${env.CONFIG_PREFIX}/switches`) : filePlansLoader(env.CONFIG_FILE ?? "config.local.json", "switches"),
     logger
   )
-  const capabilities = Promise.resolve(new ResolveCapabilities(new DrizzleEntitlementRepository(db), new CachedPlansSource(plansLoader, logger)))
+  const plans = new CachedPlansSource(plansLoader, logger)
+  const capabilities = Promise.resolve(new ResolveCapabilities(new DrizzleEntitlementRepository(db), plans))
 
   const sync = createSyncRepository(db, logger)
   const writer = new ApplySyncBatch(sync)
@@ -131,5 +133,26 @@ export function bootstrap(options: { logger: Logger; version: string; database: 
     { name: "db", run: () => pingDatabase(db) },
     { name: "config", run: async () => void (await auth) },
   ]
-  return createApp({ logger, version, healthChecks, auth, webOrigin: urls.webOrigin, requestDeletion, capabilities, sync, mcp, switches, appStore, invitations })
+  const app = createApp({ logger, version, healthChecks, auth, webOrigin: urls.webOrigin, requestDeletion, capabilities, sync, mcp, switches, appStore, invitations })
+
+  /**
+   * Does the first request's slow work ahead of it: opens the database connection (DSQL IAM token
+   * and TLS), loads configuration and builds Better Auth, reads the plan and switch parameters and
+   * downloads Apple's signing keys. Each step is independent and none can fail the caller; a step
+   * that fails here is simply retried by the request that needs it.
+   */
+  async function warmUp(): Promise<void> {
+    const steps: Array<[string, () => Promise<unknown>]> = [
+      ["database", () => pingDatabase(db)],
+      ["auth", () => auth],
+      ["apple keys", () => warmAppleKeys()],
+      ["plans", () => plans.current()],
+      ["switches", () => switches.current()],
+    ]
+    const results = await Promise.allSettled(steps.map(([, run]) => run()))
+    results.forEach((result, index) => {
+      if (result.status === "rejected") logger.warn({ err: result.reason, step: steps[index]?.[0] }, "warm-up step failed, will retry on demand")
+    })
+  }
+  return Object.assign(app, { warmUp })
 }

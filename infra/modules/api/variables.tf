@@ -14,6 +14,12 @@ variable "memory_mb" {
   default = 512
 }
 
+variable "provisioned_concurrency" {
+  type        = number
+  default     = 1
+  description = "Warm instances kept on the `live` alias (0 = none). Removes the cold start from the first request after idle; billed per hour whether used or not."
+}
+
 variable "log_retention_days" {
   type    = number
   default = 90

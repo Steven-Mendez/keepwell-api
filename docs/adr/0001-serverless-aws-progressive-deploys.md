@@ -39,7 +39,9 @@ on the product. AWS is a requirement.
 ## Consequences
 
 - A cold start is part of the first request after idle. Kept short with a single esbuild bundle,
-  arm64 and no VPC; measured in the logs (`cold start` line with `init_ms`).
+  arm64 and no VPC; measured in the logs (`cold start` line with `init_ms`). The API keeps one
+  provisioned instance on `live` (about 4.4 USD a month at 512 MB) and warms the database,
+  configuration, Better Auth and Apple's keys during init.
 - Rollback is re-applying the previous commit, which reverts code and infrastructure together.
   Lambda publishes versions, so an alias can point back in seconds once there are external users.
 - Two hours a month of upkeep (dependencies, provider upgrades, logs) is the real cost, larger than

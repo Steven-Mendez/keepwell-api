@@ -15,6 +15,13 @@ const database = databaseConfigFromEnv()
 if (!database) throw new Error("DB_HOST is not set")
 const app = bootstrap({ logger, version, database })
 const honoHandler = handle(app)
+
+// Top-level await keeps the init phase open until the database, configuration, Better Auth and
+// Apple's keys are ready, so the first request finds them warm (under provisioned concurrency that
+// happens before any traffic). Bounded, and a failure is only logged: the requests retry lazily.
+await Promise.race([app.warmUp(), new Promise((resolve) => setTimeout(resolve, 6_000).unref())]).catch((error: unknown) =>
+  logger.warn({ err: error }, "warm-up failed")
+)
 let coldStart = true
 
 export const handler: typeof honoHandler = async (event, context) => {
