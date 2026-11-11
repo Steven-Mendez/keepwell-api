@@ -15,8 +15,11 @@ variable "memory_mb" {
 }
 
 variable "provisioned_concurrency" {
-  type        = number
-  default     = 1
+  type = number
+  # 0 until the account's Lambda concurrency quota is raised: new accounts get 10 concurrent
+  # executions and AWS keeps 10 unreserved, so any provisioned instance is refused. Set to 1 once the
+  # "Concurrent executions" quota (Service Quotas, Lambda) is above 10.
+  default     = 0
   description = "Warm instances kept on the `live` alias (0 = none). Removes the cold start from the first request after idle; billed per hour whether used or not."
 }
 
