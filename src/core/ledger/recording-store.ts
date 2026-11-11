@@ -104,6 +104,39 @@ export class RecordingStore extends InMemoryStore implements LedgerStore {
     for (const category of this.categories) this.touch("category", category.id)
     for (const id of before) this.touch("category", id)
   }
+  /**
+   * Gives a record the use case just created the id the client chose (`create_account`'s `id`), and
+   * repoints every reference to it, so later steps of a batch can use that id. Ids are only ever
+   * replaced in `id` and `…Id` fields, never in names or notes.
+   */
+  renameId(from: string, to: string) {
+    if (from === to) return
+    const swap = <T>(value: T): T => {
+      if (Array.isArray(value)) return value.map(swap) as T
+      if (value && typeof value === "object") {
+        const copy: Record<string, unknown> = {}
+        for (const [key, inner] of Object.entries(value)) copy[key] = (key === "id" || key.endsWith("Id")) && inner === from ? to : swap(inner)
+        return copy as T
+      }
+      return value
+    }
+    this.accounts = swap(this.accounts)
+    this.cards = swap(this.cards)
+    this.transactions = swap(this.transactions)
+    this.recurringRules = swap(this.recurringRules)
+    this.savingsGoals = swap(this.savingsGoals)
+    this.loans = swap(this.loans)
+    this.personalDebts = swap(this.personalDebts)
+    this.categorizationRules = swap(this.categorizationRules)
+    this.categories = swap(this.categories)
+    for (const ids of this.touched.values()) {
+      if (ids.has(from)) {
+        ids.delete(from)
+        ids.add(to)
+      }
+    }
+  }
+
   override async saveSettings(settings: Settings) {
     await super.saveSettings(settings)
     this.touch("settings", "settings")

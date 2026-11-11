@@ -169,4 +169,43 @@ describe("MCP manage tools", () => {
     expect(rule.isError).toBeFalsy()
     expect(data<{ rules: unknown[] }>(await tool("list_categorization_rules")).rules).toHaveLength(1)
   })
+
+  it("applies a batch in one call: an account and its movements, all or nothing, never twice", async () => {
+    const { tool, data } = await setup()
+    const accountId = randomUUID()
+    const batch = {
+      lang: "es",
+      changes: [
+        { tool: "create_account", arguments: { id: accountId, kind: "cash", name: "Efectivo", balance: "2000", currency: "USD" } },
+        ...[["Súper", "150"], ["Gasolina", "40"], ["Farmacia", "12.50"]].map(([description, amount]) => ({
+          tool: "create_transaction",
+          arguments: { id: randomUUID(), kind: "expense", amount, currency: "USD", account_id: accountId, category_id: "groceries", description, date: today() },
+        })),
+      ],
+    }
+    const applied = await tool("apply_changes", batch)
+    expect(applied.isError, applied.content[0]?.text).toBeFalsy()
+    expect(data<{ results: { tool: string }[] }>(applied).results.map((r) => r.tool)).toEqual(["create_account", "create_transaction", "create_transaction", "create_transaction"])
+    expect(await count(sql`select count(*) as n from ledger_accounts where id = ${accountId}`)).toBe(1)
+    expect(await count(sql`select count(*) as n from transactions where account_id = ${accountId}`)).toBe(3)
+    expect(data(await tool("get_net_worth"))).toMatchObject({ net_worth: { amount: "1797.5" } })
+
+    // The same batch again creates nothing twice.
+    expect((await tool("apply_changes", batch)).isError).toBeFalsy()
+    expect(await count(sql`select count(*) as n from transactions where account_id = ${accountId}`)).toBe(3)
+
+    // One bad step: nothing at all is saved.
+    const broken = await tool("apply_changes", {
+      changes: [
+        { tool: "create_category", arguments: { id: randomUUID(), name: "Mascotas", kind: "expense" } },
+        { tool: "create_transaction", arguments: { id: randomUUID(), kind: "expense", amount: "10", currency: "USD", account_id: randomUUID(), description: "Nada", date: today() } },
+      ],
+    })
+    expect(broken.isError).toBe(true)
+    expect(broken.content[0]!.text).toContain("changes[1]")
+    expect(await count(sql`select count(*) as n from categories where name = 'Mascotas'`)).toBe(0)
+
+    // Deletes are not batchable: each asks on its own.
+    expect((await tool("apply_changes", { changes: [{ tool: "delete_account", arguments: { account_id: accountId } }] })).isError).toBe(true)
+  })
 })

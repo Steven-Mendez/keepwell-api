@@ -115,9 +115,10 @@ export class ManageLedger {
 
   /** The ledger as stored (tombstones included) and as the domain sees it. */
   private async load(userId: string) {
-    // Records recurring occurrences that came due first, as every read does.
-    await this.deps.ledger.execute(userId)
-    const rows = await this.deps.reader.load(userId)
+    // Records recurring occurrences that came due first, as every read does; the rows are read again
+    // only when that wrote something.
+    const loaded = await this.deps.ledger.load(userId)
+    const rows = loaded.fresh ? loaded.rows : await this.deps.reader.load(userId)
     const store = new RecordingStore(toDomain(rows))
     for (const row of rows.category) if (row.deleted_at !== null) store.deletedCategoryIds.add(row.id)
     // The defaults every app shows even before it stored them.

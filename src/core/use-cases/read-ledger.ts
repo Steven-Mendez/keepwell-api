@@ -21,6 +21,14 @@ export class ReadLedger {
   ) {}
 
   async execute(userId: string): Promise<Ledger> {
+    return (await this.load(userId)).ledger
+  }
+
+  /**
+   * The ledger and the rows it came from. `fresh` is false when recording due occurrences changed
+   * the rows, so a caller that needs the stored rows reads them again.
+   */
+  async load(userId: string): Promise<{ ledger: Ledger; rows: Awaited<ReturnType<LedgerReader["load"]>>; fresh: boolean }> {
     const now = this.clock()
     const rows = await this.reader.load(userId)
     const store = new InMemoryStore(toDomain(rows))
@@ -50,6 +58,6 @@ export class ReadLedger {
       ]
       await this.writer.execute({ userId, clientId: SERVER_CLIENT_ID, platform: "other", events, deadline: Date.now() + 10_000 })
     }
-    return loadLedger(store)
+    return { ledger: await loadLedger(store), rows, fresh: created.length === 0 }
   }
 }

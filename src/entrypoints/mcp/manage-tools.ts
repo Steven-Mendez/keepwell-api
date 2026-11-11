@@ -67,6 +67,8 @@ const ref = (what: string) => z.string().min(1).max(64).describe(what)
 const kind = z.enum(["expense", "income", "transfer"])
 const categoryKind = z.enum(["expense", "income"])
 const tags = z.array(z.string().max(40)).max(10)
+/** The conversation's language, so a view reads in it (Claude's interface may be in another). */
+const lang = z.enum(["en", "es"]).optional().describe("The language of the conversation, for the view")
 
 const WRITE: ToolAnnotations = { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false }
 const CREATE: ToolAnnotations = { ...WRITE, idempotentHint: true }
@@ -82,8 +84,24 @@ function find<T extends { id: string }>(list: readonly T[], id: string, what: st
   return found
 }
 
+/**
+ * A create step that already ran (same `id`) answers with what is there instead of creating it again,
+ * so a retried call, or a batch sent twice, never duplicates.
+ */
+function existing(list: readonly { id: string }[], id: string) {
+  return list.some((item) => item.id === id)
+}
+
 export function registerManageTools(server: McpServer, options: { manage: ManageLedger; userId: string; clientId: string; log: Logger }) {
   const { manage, userId, clientId, log } = options
+
+  /** Every tool's input and operation, so apply_changes runs the same steps in one write. */
+  type Spec = {
+    input: z.ZodRawShape
+    operation: (store: RecordingStore, args: never, now: Date) => Promise<unknown>
+    trash?: ((store: RecordingStore, args: never) => string) | undefined
+  }
+  const specs = new Map<string, Spec>()
 
   /**
    * One tool: validates, runs `operation` on the ledger, writes what changed. `key` makes retries
@@ -97,7 +115,8 @@ export function registerManageTools(server: McpServer, options: { manage: Manage
     operation: (store: RecordingStore, args: z.infer<z.ZodObject<Args>>, now: Date) => Promise<unknown>,
     trash?: (store: RecordingStore, args: z.infer<z.ZodObject<Args>>) => string
   ) => {
-    const config = { title: meta.title, description: meta.description, inputSchema: input, annotations: meta.annotations }
+    specs.set(name, { input, operation: operation as Spec["operation"], trash: trash as Spec["trash"] })
+    const config = { title: meta.title, description: meta.description, inputSchema: meta.view ? { ...input, lang } : input, annotations: meta.annotations }
     const handler = (async (args: z.infer<z.ZodObject<Args>>) => {
       try {
         const { result, changes } = await manage.run(userId, clientId, { key: `${name}|${key(args)}`, keepIds: typeof (args as { id?: unknown }).id === "string" ? [(args as { id: string }).id] : [], ...(trash ? { trashLabel: (store: RecordingStore) => trash(store, args) } : {}) }, (store, now) => operation(store, args, now))
@@ -129,6 +148,7 @@ export function registerManageTools(server: McpServer, options: { manage: Manage
     },
     (args) => args.id,
     async (store, args, now) => {
+      if (existing(store.accounts, args.id)) return { account_id: args.id, already_existed: true }
       const account = await addAccount(
         store,
         {
@@ -140,7 +160,8 @@ export function registerManageTools(server: McpServer, options: { manage: Manage
         },
         now
       )
-      return { account_id: account.id, name: account.name }
+      store.renameId(account.id, args.id)
+      return { account_id: args.id, name: account.name }
     }
   )
 
@@ -162,6 +183,7 @@ export function registerManageTools(server: McpServer, options: { manage: Manage
     },
     (args) => args.id,
     async (store, args, now) => {
+      if (existing(store.accounts, args.id)) return { account_id: args.id, already_existed: true }
       const { account, holder } = await addCreditCard(
         store,
         {
@@ -178,7 +200,8 @@ export function registerManageTools(server: McpServer, options: { manage: Manage
         },
         now
       )
-      return { account_id: account.id, card_id: holder.id, name: account.name }
+      store.renameId(account.id, args.id)
+      return { account_id: args.id, card_id: holder.id, name: account.name }
     }
   )
 
@@ -250,6 +273,7 @@ export function registerManageTools(server: McpServer, options: { manage: Manage
     { id: newId, name: z.string().min(1).max(40), kind: categoryKind, icon: z.string().max(40).optional(), color: z.string().max(20).optional(), monthly_budget: decimal.optional(), budget_currency: currency.optional() },
     (args) => args.id,
     async (store, args) => {
+      if (existing(await store.fetchCategories(), args.id)) return { category_id: args.id, already_existed: true }
       const principal = store.settings?.currencies.principal ?? "USD"
       const category = await saveCategory(store, {
         name: args.name,
@@ -258,7 +282,8 @@ export function registerManageTools(server: McpServer, options: { manage: Manage
         ...(args.color ? { color: args.color } : {}),
         ...(args.monthly_budget ? { monthlyBudget: { amount: args.monthly_budget, currency: (args.budget_currency ?? principal).toUpperCase() } } : {}),
       })
-      return { category_id: category.id, name: category.name }
+      store.renameId(category.id, args.id)
+      return { category_id: args.id, name: category.name }
     }
   )
 
@@ -329,7 +354,7 @@ export function registerManageTools(server: McpServer, options: { manage: Manage
 
   tool(
     "create_transaction",
-    { title: "Record a movement", description: "Records an expense, income or transfer, saved like one typed in the app. status planned keeps it out of balances until confirmed.", annotations: CREATE, view: true },
+    { title: "Record a movement", description: "Records one expense, income or transfer, saved like one typed in the app. status planned keeps it out of balances until confirmed. For more than one, use apply_changes.", annotations: CREATE, view: true },
     { id: newId, ...movement, status: z.enum(["confirmed", "planned"]).default("confirmed") },
     (args) => args.id,
     async (store, args) => {
@@ -453,8 +478,10 @@ export function registerManageTools(server: McpServer, options: { manage: Manage
     { id: newId, ...movementBase, ...schedule },
     (args) => args.id,
     async (store, args, now) => {
+      if (existing(store.recurringRules, args.id)) return { id: args.id, status: "saved", already_existed: true }
       const rule = await saveRecurringRule(store, ruleDraft(args), now)
-      return { id: rule.id, status: "saved", next_date: rule.nextDate.slice(0, 10), name: rule.name }
+      store.renameId(rule.id, args.id)
+      return { id: args.id, status: "saved", next_date: rule.nextDate.slice(0, 10), name: rule.name }
     }
   )
 
@@ -510,8 +537,10 @@ export function registerManageTools(server: McpServer, options: { manage: Manage
     { id: newId, ...goal },
     (args) => args.id,
     async (store, args) => {
+      if (existing(store.savingsGoals, args.id)) return { goal_id: args.id, already_existed: true }
       const saved = await saveSavingsGoal(store, goalDraft(args))
-      return { goal_id: saved.id, name: saved.name }
+      store.renameId(saved.id, args.id)
+      return { goal_id: args.id, name: saved.name }
     }
   )
 
@@ -568,8 +597,10 @@ export function registerManageTools(server: McpServer, options: { manage: Manage
     { id: newId, ...loan },
     (args) => args.id,
     async (store, args) => {
+      if (existing(store.loans, args.id)) return { loan_id: args.id, already_existed: true }
       const saved = await saveLoan(store, loanDraft(args))
-      return { loan_id: saved.id, name: saved.name }
+      store.renameId(saved.id, args.id)
+      return { loan_id: args.id, name: saved.name }
     }
   )
 
@@ -634,8 +665,10 @@ export function registerManageTools(server: McpServer, options: { manage: Manage
     { id: newId, ...debt },
     (args) => args.id,
     async (store, args) => {
+      if (existing(store.personalDebts, args.id)) return { debt_id: args.id, already_existed: true }
       const saved = await savePersonalDebt(store, debtDraft(args))
-      return { debt_id: saved.id, person: saved.person }
+      store.renameId(saved.id, args.id)
+      return { debt_id: args.id, person: saved.person }
     }
   )
 
@@ -684,9 +717,11 @@ export function registerManageTools(server: McpServer, options: { manage: Manage
     { id: newId, match: z.string().min(1).max(60), category_id: ref("From list_categories"), kind: categoryKind, tags: tags.optional(), apply_to_past: z.boolean().default(false) },
     (args) => args.id,
     async (store, args) => {
+      if (existing(store.categorizationRules, args.id)) return { rule_id: args.id, already_existed: true }
       const rule = await saveCategorizationRule(store, { match: args.match, categoryId: args.category_id, kind: args.kind, ...(args.tags ? { tags: args.tags } : {}) })
-      const applied = args.apply_to_past ? await applyRuleToPast(store, rule) : 0
-      return { rule_id: rule.id, applied_to_past: applied }
+      store.renameId(rule.id, args.id)
+      const applied = args.apply_to_past ? await applyRuleToPast(store, { ...rule, id: args.id }) : 0
+      return { rule_id: args.id, applied_to_past: applied }
     }
   )
 
@@ -753,6 +788,61 @@ export function registerManageTools(server: McpServer, options: { manage: Manage
       })
       return { currencies: saved.currencies, payment_reminder_days_before: saved.paymentReminderDaysBefore }
     }
+  )
+
+  // Batches ------------------------------------------------------------------------------------
+
+  // Deletes stay one by one: each is destructive, so Claude asks about each.
+  const batchable = [...specs.keys()].filter((name) => !name.startsWith("delete_") && name !== "unpay_loan_installment")
+  registerAppTool(
+    server,
+    "apply_changes",
+    {
+      title: "Make several changes at once",
+      description:
+        "Runs up to 100 of the other tools (except deletes) in order, as one change: all saved or none, one card in the chat, much faster than one call each. Use it whenever there is more than one thing to create or edit, e.g. several movements, or an account and its movements. A step may use an id a previous step created (give creates your own `id`).",
+      inputSchema: {
+        changes: z
+          .array(z.object({ tool: z.enum(batchable as [string, ...string[]]), arguments: z.record(z.string(), z.unknown()) }))
+          .min(1)
+          .max(100),
+        lang,
+      },
+      annotations: { ...CREATE, idempotentHint: true },
+      _meta: { ui: { resourceUri: VIEWS_URI } },
+    },
+    (async (args: { changes: { tool: string; arguments: Record<string, unknown> }[] }) => {
+      try {
+        const steps = args.changes.map((change, index) => {
+          const spec = specs.get(change.tool)!
+          const parsed = z.object(spec.input).safeParse(change.arguments)
+          if (!parsed.success) throw new ManageError("invalid", `changes[${index}] (${change.tool}): ${parsed.error.issues.map((issue) => `${issue.path.join(".")}: ${issue.message}`).join("; ")}`)
+          return { tool: change.tool, spec, args: parsed.data as Record<string, unknown> }
+        })
+        const keepIds = steps.flatMap((step) => (typeof step.args.id === "string" ? [step.args.id] : []))
+        const { result, changes } = await manage.run(userId, clientId, { key: `apply_changes|${JSON.stringify(args.changes)}`, keepIds }, async (store, now) => {
+          const results: Record<string, unknown>[] = []
+          for (const [index, step] of steps.entries()) {
+            try {
+              const done = await step.spec.operation(store, step.args as never, now)
+              results.push({ tool: step.tool, ...(done && typeof done === "object" ? (done as Record<string, unknown>) : {}) })
+            } catch (error) {
+              // All or nothing: nothing is written until every step passed.
+              const message = error instanceof Error ? error.message : "failed"
+              throw new ManageError(error instanceof ManageError ? error.code : "invalid", `changes[${index}] (${step.tool}): ${message}. Nothing was saved.`)
+            }
+          }
+          return results
+        })
+        const data = { ok: true, results: result, changes }
+        log.info({ mcp_tool: "apply_changes", client_id: clientId, ok: true, steps: steps.length, created: changes.created, updated: changes.updated }, "mcp manage")
+        return { content: [{ type: "text", text: JSON.stringify(data) }], structuredContent: data } satisfies CallToolResult
+      } catch (error) {
+        const code = error instanceof ManageError ? error.code : "failed"
+        log.warn({ mcp_tool: "apply_changes", client_id: clientId, ok: false, code }, "mcp manage refused")
+        return { isError: true, content: [{ type: "text", text: JSON.stringify({ error: code, message: error instanceof Error ? error.message : "Not saved" }) }] } satisfies CallToolResult
+      }
+    }) as never
   )
 
   // Trash --------------------------------------------------------------------------------------

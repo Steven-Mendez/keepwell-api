@@ -1,4 +1,5 @@
 import { startViews, type AnyView } from "./shared/app"
+import { batchView } from "./views/batch"
 import { pendingView } from "./views/pending"
 import { summaryView } from "./views/summary"
 import { trendsView } from "./views/trends"
@@ -15,6 +16,7 @@ const BY_TOOL: Record<string, AnyView> = {
   get_upcoming_payments: upcomingView,
   create_transaction: pendingView,
   create_recurring_rule: pendingView,
+  apply_changes: batchView,
 }
 
 startViews((tool) => (tool ? BY_TOOL[tool] : undefined) ?? summaryView)
