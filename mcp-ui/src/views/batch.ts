@@ -11,7 +11,7 @@ const text = {
   en: {
     title: (n: number) => (n === 1 ? "1 change saved" : `${n} changes saved`),
     badge: "Saved",
-    note: "Saved in Keepwell together, as if you had entered them in the app.",
+    note: "Saved in Keepwell together.",
     more: (n: number) => `and ${n} more`,
     already: "already there",
     steps: {
@@ -46,7 +46,7 @@ const text = {
   es: {
     title: (n: number) => (n === 1 ? "1 cambio guardado" : `${n} cambios guardados`),
     badge: "Guardado",
-    note: "Guardados en Keepwell juntos, como si los hubieras anotado en la app.",
+    note: "Guardados en Keepwell, todos juntos.",
     more: (n: number) => `y ${n} más`,
     already: "ya existía",
     steps: {
