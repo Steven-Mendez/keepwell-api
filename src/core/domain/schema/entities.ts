@@ -210,7 +210,7 @@ export const TargetMonth = z.object({
 })
 export type TargetMonth = z.infer<typeof TargetMonth>
 
-export const MAX_GOAL_NAME_LENGTH = 40
+export const MAX_GOAL_NAME_LENGTH = 60
 
 /**
  * Money set aside for something ("Trip: C$15,000 by December"), shared contract with iOS
@@ -239,8 +239,8 @@ export type SavingsGoal = z.infer<typeof SavingsGoal>
 export const LoanFrequency = z.enum(["weekly", "monthly"])
 export type LoanFrequency = z.infer<typeof LoanFrequency>
 
-export const MAX_LOAN_NAME_LENGTH = 40
-export const MAX_DEBT_NAME_LENGTH = 40
+export const MAX_LOAN_NAME_LENGTH = 60
+export const MAX_DEBT_NAME_LENGTH = 60
 /** Fifty years of monthly installments (iOS `Loan.installmentCountRange`). */
 export const MAX_LOAN_INSTALLMENTS = 600
 
