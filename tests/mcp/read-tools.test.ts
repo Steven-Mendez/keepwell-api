@@ -95,6 +95,20 @@ describe("MCP read tools", () => {
     expect((data.net_worth_in_second_currency as { currency: string }).currency).toBe("NIO")
   })
 
+  it("rounds converted amounts to cents instead of returning the long tail of the rate", async () => {
+    const { http, cookie, mcp } = await connected()
+    const at = "2026-11-06T15:00:00.000Z"
+    await syncClient(http, cookie).push([
+      event("transaction", transactionRow(randomUUID(), at, { amount: "100", currency: "NIO", account_id: ACCOUNT, description: "Pulpería" }), "create"),
+    ])
+    const { data } = await mcp.tool("get_monthly_summary", { month: "2026-11" })
+    // 120.50 + 450 rent + 100 NIO ÷ 36.6243 (2.7304…) = 573.2304… → 573.23
+    expect(data).toMatchObject({ expense: "573.23" })
+    for (const amount of JSON.stringify(data).match(/"(?:amount|income|expense|net|spent)":"[^"]*"/g) ?? []) {
+      expect(amount).toMatch(/"-?\d+(\.\d{1,2})?"$/)
+    }
+  })
+
   it("searches movements by text and pages them", async () => {
     const { mcp } = await connected()
     const { data } = await mcp.tool("search_transactions", { text: "colonia", limit: 5 })
