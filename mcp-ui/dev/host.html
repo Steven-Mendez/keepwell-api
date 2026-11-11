@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Keepwell views · dev host</title>
+    <style>
+      body { margin: 0; font: 13px system-ui; background: #f4f4f4; color: #222; }
+      body.dark { background: #1a1a1a; color: #ddd; }
+      header { display: flex; flex-wrap: wrap; gap: 6px; padding: 10px; align-items: center; }
+      select, button { font: inherit; padding: 4px 8px; }
+      #frame { margin: 0 10px 20px; border: 1px dashed #999; }
+      iframe { border: 0; width: 100%; display: block; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <select id="tool"></select>
+      <select id="lang"><option>en</option><option>es</option></select>
+      <select id="theme"><option>light</option><option>dark</option></select>
+      <select id="width"><option value="320">320px</option><option value="390">390px</option><option value="700" selected>700px</option></select>
+      <span id="mode">inline</span>
+    </header>
+    <div id="frame"></div>
+    <script type="module" src="./host.ts"></script>
+  </body>
+</html>

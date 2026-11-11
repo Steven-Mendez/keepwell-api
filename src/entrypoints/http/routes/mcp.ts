@@ -6,8 +6,7 @@ import type { Auth } from "../../../adapters/auth/auth"
 import type { McpConnections } from "../../../adapters/auth/mcp-connections"
 import type { ResolveCapabilities } from "../../../core/use-cases/resolve-capabilities"
 import type { ReadLedger } from "../../../core/use-cases/read-ledger"
-import { createMcpServer } from "../../mcp/server"
-import { registerWriteTools } from "../../mcp/write-tools"
+import { buildMcpServer } from "../../mcp"
 import type { CreatePending } from "../../../core/use-cases/create-pending"
 import { ApiError, errorBody } from "../errors"
 import { requireSession } from "../middlewares/session"
@@ -53,17 +52,15 @@ export function mcpRoutes(deps: McpDeps) {
     if (!(await (await deps.capabilities).has(caller.userId, "mcp"))) {
       return c.json(errorBody(c, "needs_plan", "The MCP connector comes with Keepwell's coffee, bought in the iPhone app.", { capability: "mcp" }), 403)
     }
-    const server = createMcpServer({
-      ledger: () => deps.readLedger.execute(caller.userId),
-      now: deps.now ?? (() => new Date()),
-      log: c.get("log"),
-      clientId: caller.clientId,
-      // Write tools exist only for a token that was granted `write`.
-      // Write tools also vanish while the read_only switch is on.
-      ...(deps.createPending && caller.scopes.includes("write") && !(deps.switches && (await deps.switches.current()).read_only)
-        ? { registerWrites: (server) => registerWriteTools(server, { create: deps.createPending!, userId: caller.userId, clientId: caller.clientId, log: c.get("log") }) }
-        : {}),
-    })
+    const server = buildMcpServer(
+      { readLedger: deps.readLedger, createPending: deps.createPending, mcpUrl: resource, now: deps.now ?? (() => new Date()) },
+      {
+        ...caller,
+        log: c.get("log"),
+        // Write tools exist only for a token granted `write`, and vanish while the read_only switch is on.
+        readOnly: deps.switches ? (await deps.switches.current()).read_only : false,
+      }
+    )
     const transport = new WebStandardStreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true })
     await server.connect(transport)
     try {

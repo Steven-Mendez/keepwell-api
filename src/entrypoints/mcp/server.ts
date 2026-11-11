@@ -1,3 +1,4 @@
+import { registerAppTool } from "@modelcontextprotocol/ext-apps/server"
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js"
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js"
 import { z } from "zod"
@@ -14,6 +15,7 @@ import {
   parseMonth,
   searchTransactions,
 } from "../../core/mcp/read-tools"
+import { VIEWS_URI } from "./ui/resources"
 
 export interface McpContext {
   /** The caller's ledger, loaded (and recurring occurrences recorded) once per request. */
@@ -36,11 +38,12 @@ export function createMcpServer(context: McpContext): McpServer {
 
   const tool = <Args extends z.ZodRawShape>(
     name: string,
-    description: string,
+    meta: { title: string; description: string; view?: boolean },
     input: Args,
     run: (args: z.infer<z.ZodObject<Args>>, ledger: Ledger) => unknown
   ) => {
-    server.registerTool(name, { description, inputSchema: input, annotations: { readOnlyHint: true, openWorldHint: false } }, (async (args: z.infer<z.ZodObject<Args>>) => {
+    const config = { title: meta.title, description: meta.description, inputSchema: input, annotations: { readOnlyHint: true, openWorldHint: false } }
+    const handler = (async (args: z.infer<z.ZodObject<Args>>) => {
       const started = performance.now()
       try {
         const result = run(args, await load())
@@ -51,35 +54,38 @@ export function createMcpServer(context: McpContext): McpServer {
         context.log.warn({ mcp_tool: name, client_id: context.clientId, ok: false, err: error }, "mcp call failed")
         return { isError: true, content: [{ type: "text", text: JSON.stringify({ error: error instanceof Error ? error.message : "failed" }) }] } satisfies CallToolResult
       }
-    }) as never)
+    }) as never
+    // A tool with a view names the ui:// resource; hosts without MCP Apps still read the JSON text.
+    if (meta.view) registerAppTool(server, name, { ...config, _meta: { ui: { resourceUri: VIEWS_URI } } }, handler)
+    else server.registerTool(name, config, handler)
   }
 
-  tool("get_financial_context", "Start here: currencies, accounts with balances, net worth, this month's income and spending, budgets and the next 14 days of payments.", {}, (_, ledger) =>
+  tool("get_financial_context", { title: "Financial overview", description: "Start here: currencies, accounts with balances, net worth, this month's income and spending, budgets and the next 14 days of payments.", view: true }, {}, (_, ledger) =>
     getFinancialContext(ledger, context.now())
   )
-  tool("list_accounts", "Accounts with their balance in each currency, credit terms, and cards (last four digits only).", {}, (_, ledger) => ({ accounts: listAccounts(ledger) }))
-  tool("get_net_worth", "Net worth in the principal currency (and the second, at the settings rate), with each account's share.", {}, (_, ledger) => getNetWorth(ledger))
+  tool("list_accounts", { title: "List accounts", description: "Accounts with their balance in each currency, credit terms, and cards (last four digits only)." }, {}, (_, ledger) => ({ accounts: listAccounts(ledger) }))
+  tool("get_net_worth", { title: "Net worth", description: "Net worth in the principal currency (and the second, at the settings rate), with each account's share." }, {}, (_, ledger) => getNetWorth(ledger))
   tool(
     "get_monthly_summary",
-    "Income, spending and net for one month, by category, with budgets. Confirmed movements only, in the principal currency.",
+    { title: "Monthly summary", description: "Income, spending and net for one month, by category, with budgets. Confirmed movements only, in the principal currency.", view: true },
     { month: z.string().regex(/^\d{4}-\d{2}$/).optional().describe("YYYY-MM; this month when left out") },
     (args, ledger) => getMonthlySummary(ledger, parseMonth(args.month, context.now()))
   )
   tool(
     "get_trends",
-    "Income, spending and net for each of the last months, oldest first.",
+    { title: "Monthly trends", description: "Income, spending and net for each of the last months, oldest first.", view: true },
     { months: z.number().int().min(1).max(24).default(6) },
     (args, ledger) => getTrends(ledger, args.months, context.now())
   )
   tool(
     "get_upcoming_payments",
-    "Recurring movements and credit card due dates from today on.",
+    { title: "Upcoming payments", description: "Recurring movements and credit card due dates from today on.", view: true },
     { days: z.number().int().min(1).max(90).default(30) },
     (args, ledger) => getUpcomingPayments(ledger, args.days, context.now())
   )
   tool(
     "search_transactions",
-    "Movements, newest first, filtered by date (YYYY-MM-DD), account, category, kind, currency, status or text in the description, note or tags. Paged with cursor.",
+    { title: "Search movements", description: "Movements, newest first, filtered by date (YYYY-MM-DD), account, category, kind, currency, status or text in the description, note or tags. Paged with cursor." },
     {
       from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
       to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),

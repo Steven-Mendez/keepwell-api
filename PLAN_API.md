@@ -754,6 +754,8 @@ tratarlo como orden. No hay forma de impedirlo del todo; se limita el daño posi
 
 - Las herramientas devuelven JSON estructurado con campos tipados. Nunca texto libre concatenado
   que parezca una instrucción, nunca HTML ni Markdown.
+  Las vistas de MCP Apps (ADR 0010) no cambian esto: son un recurso `ui://` estático, sin datos
+  del usuario, que pinta ese JSON como texto.
 - No existen herramientas que borren, editen historial, muevan dinero entre cuentas ni cambien
   ajustes. Solo lectura y creación con estado pendiente.
 - Las escrituras requieren el scope `write`, que se concede aparte y se revoca aparte.

@@ -60,6 +60,16 @@ describe("MCP write tools", () => {
     expect(list).not.toContain("create_recurring_rule")
   })
 
+  it("shows both write tools with a title and the pending card view (ADR 0009)", async () => {
+    const { token } = await setup("read write offline_access")
+    const tools = ((await (await mcpCall(base, token, "tools/list")).json()) as { result: { tools: { name: string; title?: string; _meta?: { ui?: { resourceUri?: string } } }[] } }).result.tools
+    for (const name of ["create_transaction", "create_recurring_rule"]) {
+      const tool = tools.find((t) => t.name === name)
+      expect(tool?.title, name).toBeTruthy()
+      expect(tool?._meta?.ui?.resourceUri, name).toBe("ui://keepwell/views")
+    }
+  })
+
   it("records a pending movement made by mcp that balances ignore until confirmed", async () => {
     const { tool } = await setup("read write offline_access")
     const id = randomUUID()

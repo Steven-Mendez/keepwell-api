@@ -18,7 +18,8 @@ import type { Transaction } from "../domain/schema"
 
 // The MCP read tools as pure functions over the domain's Ledger (ADR 0007 covers the transport).
 // Everything is typed JSON: amounts are exact decimal text with their ISO 4217 code, never prose that
-// could read as an instruction, never HTML or Markdown. Cards show their last four digits only.
+// could read as an instruction, never HTML or Markdown (the MCP Apps views of ADR 0010 are a static
+// resource that draws this JSON as text). Cards show their last four digits only.
 
 export interface MoneyJSON {
   amount: string
