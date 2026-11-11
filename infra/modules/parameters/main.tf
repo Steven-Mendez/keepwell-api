@@ -21,7 +21,7 @@ variable "capabilities" {
     plans        = map(list(string))
   })
   default = {
-    early_access = { cloud_sync = true }
+    early_access = { cloud_sync = true, mcp = true }
     plans = {
       free          = []
       supporter     = ["mcp"]

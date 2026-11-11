@@ -8,7 +8,8 @@
   "allowed_apple_subs": "000000.local.author",
   "capabilities": {
     "early_access": {
-      "cloud_sync": true
+      "cloud_sync": true,
+      "mcp": true
     },
     "plans": {
       "free": [],
