@@ -25,6 +25,11 @@ export interface PushOutcome {
   /** True when time ran out; the events not listed must be sent again. */
   partial: boolean
   metrics: { applied: number; stale: number; rejected: number; replayed: number }
+  /**
+   * `notificationState` rows this push applied that leave their notification read or deleted: what
+   * the person's other devices should take off their screens (ADR 0012).
+   */
+  settledNotifications: string[]
 }
 
 /**
@@ -43,7 +48,7 @@ export class ApplySyncBatch {
   /** `createdBy` is `mcp` only for rows the MCP tools write; sync always creates `app` rows. */
   async execute(input: { userId: string; clientId: string; platform: string; events: unknown[]; deadline: number; createdBy?: RecordSource }): Promise<PushOutcome> {
     const { userId, clientId } = input
-    const outcome: PushOutcome = { results: [], partial: false, metrics: { applied: 0, stale: 0, rejected: 0, replayed: 0 } }
+    const outcome: PushOutcome = { results: [], partial: false, metrics: { applied: 0, stale: 0, rejected: 0, replayed: 0 }, settledNotifications: [] }
     await this.repository.touchClient(userId, clientId, input.platform)
 
     const checked = input.events.slice(0, MAX_PUSH_EVENTS).map((raw) => ({ raw, check: validateSyncEvent(raw) }))
@@ -53,7 +58,10 @@ export class ApplySyncBatch {
         break
       }
       const chunk = checked.slice(start, start + PUSH_CHUNK)
+      const settled = new Set<string>()
       const results = await this.repository.transaction(userId, async (unit) => {
+        // The work reruns whole on a write conflict: start from nothing each time.
+        settled.clear()
         const out: PushResult[] = []
         const ids = chunk.flatMap(({ raw }) => (eventIdOf(raw) ? [eventIdOf(raw)!] : []))
         const previous = await unit.previousResults(ids)
@@ -83,6 +91,7 @@ export class ApplySyncBatch {
             await unit.writeRow(entity, decision.row, existing !== undefined)
             await unit.appendChange({ serverSeq, entity, entityId: event.entity_id, operation: decision.operation, row: decision.row, clientId, eventId, status: "applied" })
             await unit.recordResult(eventId, { result: "applied", reason: null, serverSeq })
+            if (entity === "notificationState" && settlesNotification(decision.row as SyncRow<"notificationState">)) settled.add(event.entity_id)
             out.push({ event_id: eventId, status: "applied", server_seq: serverSeq, updated_at: decision.row.updated_at })
           } else {
             await unit.appendChange({ serverSeq, entity, entityId: event.entity_id, operation: event.operation, row: check.row, clientId, eventId, status: "stale" })
@@ -93,7 +102,9 @@ export class ApplySyncBatch {
         return out
       })
       outcome.results.push(...results)
+      outcome.settledNotifications.push(...settled)
     }
+    outcome.settledNotifications = [...new Set(outcome.settledNotifications)]
     for (const result of outcome.results) {
       if ((result as PushResult & { replayed?: boolean }).replayed) outcome.metrics.replayed++
       outcome.metrics[result.status]++
@@ -101,6 +112,10 @@ export class ApplySyncBatch {
     }
     return outcome
   }
+}
+
+function settlesNotification(row: SyncRow<"notificationState">): boolean {
+  return row.deleted_at === null && (row.read_at !== null || row.dismissed_at !== null)
 }
 
 function eventIdOf(raw: unknown): string | undefined {

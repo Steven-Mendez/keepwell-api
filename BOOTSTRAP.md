@@ -93,6 +93,48 @@ In the Apple developer portal:
 
 `GET /health` answers `config: error` until the real values are in place.
 
+### Push notifications (ADR 0012)
+
+Two secrets sets, each optional: while a platform's parameters are `unset` the API and the
+notifications job leave that platform off, so nothing breaks if you do this later. Terraform has
+already created the parameters (placeholder `unset`).
+
+**iPhone: an APNs auth key.** In the Apple developer portal:
+
+1. Identifiers → the iOS App ID → enable the **Push Notifications** capability (the iOS app also
+   needs the `aps-environment` entitlement in Xcode's Signing & Capabilities).
+2. Keys → **+** → name it `Keepwell APNs`, tick **Apple Push Notifications service (APNs)**,
+   register and download the `.p8` once. One key serves sandbox (Xcode builds) and production
+   (TestFlight, App Store); the server picks the host by the environment each device reports.
+3. Write it to SSM with its key ID (shown next to the key), the team ID (Membership) and the bundle
+   ID of the App Store build:
+
+```bash
+put() { aws ssm put-parameter --overwrite --name "/keepwell/prod/$1" --type "$2" --value "$3"; }
+put apns_private_key SecureString "$(awk '{printf "%s\\n", $0}' AuthKey_XXXXXXXXXX.p8)"
+put apns_key_id String XXXXXXXXXX
+put apns_team_id String YYYYYYYYYY
+put apns_bundle_id String <iOS bundle id, e.g. app.keepwell.ios>
+```
+
+**Browsers: a VAPID key pair.** Made once; changing it later silences every subscribed browser
+until each one subscribes again. No tool to install, Node can make it:
+
+```bash
+node -e "const c=require('crypto');const e=c.createECDH('prime256v1');e.generateKeys();console.log(e.getPublicKey().toString('base64url'));console.log(e.getPrivateKey().toString('base64url'))"
+# first line: public key, second: private key
+put vapid_public_key String <public key>
+put vapid_private_key SecureString <private key>
+put vapid_subject String mailto:you@example.com   # or an https: URL push services can reach you at
+```
+
+Configuration is read at cold start, so recycle the functions afterwards (the API and the job):
+`aws lambda update-function-configuration --function-name keepwell-prod-api --description "reload $(date +%s)"`,
+and the same for `keepwell-prod-notifications`. Check the job in CloudWatch Logs
+(`notifications job done`); `keepwell-prod-notifications-not-running` alarms if EventBridge Scheduler
+stops invoking it. The first deploy also maps the job's IAM role to the `keepwell_app` database role
+(`NOTIFICATIONS_IAM_ROLE_ARN` in the migrate step).
+
 ### Alerts (increment 7 onward)
 
 Each environment creates an SNS topic `keepwell-<env>-alerts` subscribed to `ALERT_EMAIL`. AWS

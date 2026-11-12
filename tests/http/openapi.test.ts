@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs"
 
 import { describe, expect, it } from "vitest"
 
+import { SYNC_ENTITIES } from "../../src/core/domain/schema"
 import { openApiDocument } from "../../src/entrypoints/http/openapi"
 
 describe("OpenAPI", () => {
@@ -12,6 +13,6 @@ describe("OpenAPI", () => {
 
   it("describes every sync entity's row", () => {
     const schemas = Object.keys(openApiDocument().components.schemas)
-    expect(schemas.filter((name) => name.startsWith("Row.")).length).toBe(12)
+    expect(schemas.filter((name) => name.startsWith("Row.")).length).toBe(SYNC_ENTITIES.length)
   })
 })

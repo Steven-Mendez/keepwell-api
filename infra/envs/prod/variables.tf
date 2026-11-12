@@ -13,6 +13,11 @@ variable "jobs_zip" {
   default = "../../../dist/lambda-jobs.zip"
 }
 
+variable "notifications_zip" {
+  type    = string
+  default = "../../../dist/lambda-notifications.zip"
+}
+
 variable "alert_email" {
   type        = string
   description = "Receives budget and alarm notifications"

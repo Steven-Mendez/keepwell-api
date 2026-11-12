@@ -37,6 +37,7 @@ export interface LedgerRows {
   personalDebtRepayment: Row<"personalDebtRepayment">[]
   categorizationRule: Row<"categorizationRule">[]
   settings: Row<"settings">[]
+  notificationState: Row<"notificationState">[]
 }
 
 const alive = <T extends { deleted_at: string | null }>(rows: T[]) => rows.filter((row) => row.deleted_at === null)

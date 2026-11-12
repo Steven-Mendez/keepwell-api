@@ -3,7 +3,7 @@
 # Runs after `terraform apply` and the migrations, so new code never meets an old schema.
 # Rollback: `aws lambda update-alias --function-name <fn> --name live --function-version <previous>`
 # (docs/runbooks/rollback.md); the previous version is printed here.
-# Usage: scripts/deploy-code.sh <api-function> <jobs-function>
+# Usage: scripts/deploy-code.sh <api-function> <jobs-function> <notifications-function>
 set -euo pipefail
 
 # Provisioned concurrency follows the alias to the new version; the instances warm up in the
@@ -42,3 +42,4 @@ publish() {
 
 publish "$1" dist/lambda-api.zip wait
 publish "$2" dist/lambda-jobs.zip
+publish "$3" dist/lambda-notifications.zip

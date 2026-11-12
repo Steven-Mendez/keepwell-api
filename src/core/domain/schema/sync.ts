@@ -24,6 +24,7 @@ export const SYNC_ENTITIES = [
   "personalDebtRepayment",
   "categorizationRule",
   "settings",
+  "notificationState",
 ] as const
 export const SyncEntity = z.enum(SYNC_ENTITIES)
 export type SyncEntity = z.infer<typeof SyncEntity>
@@ -213,6 +214,19 @@ export const SettingsWire = z.object({
   ...Audit,
 })
 
+/**
+ * The person's state for one notification (ADR 0012). Notifications are computed from the ledger;
+ * this row only says what was done with one, keyed by the notification's id
+ * (`lib/domain/notifications.ts`). "Mark as unread" writes `read_at: null`; deleting sets
+ * `dismissed_at`, and undoing it clears it again, so neither is a tombstone.
+ */
+export const NotificationStateWire = z.object({
+  id: z.string().min(1).max(64),
+  read_at: IsoDateTime.nullable(),
+  dismissed_at: IsoDateTime.nullable(),
+  ...Audit,
+})
+
 export const SYNC_WIRE = {
   account: AccountWire,
   card: CardWire,
@@ -226,6 +240,7 @@ export const SYNC_WIRE = {
   personalDebtRepayment: PersonalDebtRepaymentWire,
   categorizationRule: CategorizationRuleWire,
   settings: SettingsWire,
+  notificationState: NotificationStateWire,
 } as const satisfies Record<SyncEntity, z.ZodType>
 
 export type SyncRow<E extends SyncEntity = SyncEntity> = z.infer<(typeof SYNC_WIRE)[E]>

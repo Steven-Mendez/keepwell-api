@@ -1,6 +1,7 @@
 import { z } from "zod"
 
 import { SYNC_WIRE, SyncEvent } from "../../core/domain/schema"
+import { DeviceBody } from "./routes/push"
 import { PullQuery, PushBody, SnapshotQuery } from "./routes/sync"
 
 // OpenAPI 3.1 generated from the Zod schemas that validate requests, so the document can't
@@ -73,6 +74,14 @@ export function openApiDocument() {
       },
       "/sync/snapshot": {
         get: { summary: "Current rows of one entity, by id, and the sequence they reflect", parameters: queryParameters(SnapshotQuery), responses: { "200": { description: "A page of rows" }, ...errors } },
+      },
+      "/push/config": {
+        get: { summary: "The VAPID public key the browser subscribes with", responses: { "200": { description: "OK", content: content({ type: "object", properties: { vapid_public_key: { type: "string" } }, required: ["vapid_public_key"] }) }, "503": { description: "Web notifications aren't set up on this server", content: content(ref("Error")) }, ...errors } },
+      },
+      "/push/devices/{clientId}": {
+        parameters: [{ name: "clientId", in: "path", required: true, schema: { type: "string", format: "uuid" } }],
+        put: { summary: "Register or refresh this installation as a push device (ADR 0012)", requestBody: { required: true, content: content(json(DeviceBody)) }, responses: { "204": { description: "Registered" }, ...errors } },
+        delete: { summary: "Forget this installation's push device (also on sign-out)", responses: { "204": { description: "Removed" }, ...errors } },
       },
     },
   }

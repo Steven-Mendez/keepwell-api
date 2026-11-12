@@ -44,6 +44,10 @@ variable "jobs_zip" {
   type = string
 }
 
+variable "notifications_zip" {
+  type = string
+}
+
 variable "alert_email" {
   type = string
 }
@@ -133,6 +137,17 @@ module "queue" {
   alarm_topic_arn = module.alerts.topic_arn
 }
 
+module "notifications" {
+  source            = "../notifications"
+  name              = local.name
+  notifications_zip = var.notifications_zip
+  db_endpoint       = module.database.endpoint
+  db_cluster_arn    = module.database.arn
+  parameter_prefix  = "/keepwell/${var.environment}"
+  time_zone         = var.time_zone
+  alarm_topic_arn   = module.alerts.topic_arn
+}
+
 module "backup" {
   count           = var.backups ? 1 : 0
   source          = "../backup"
@@ -184,6 +199,15 @@ output "app_role_arn" {
 output "jobs_role_arn" {
   value       = module.queue.jobs_role_arn
   description = "Mapped to the keepwell_jobs database role by the migrator"
+}
+
+output "notifications_role_arn" {
+  value       = module.notifications.role_arn
+  description = "Mapped to the keepwell_app database role by the migrator"
+}
+
+output "notifications_function" {
+  value = module.notifications.function_name
 }
 
 output "api_function" {

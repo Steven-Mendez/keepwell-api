@@ -8,6 +8,13 @@ import { z } from "zod"
  * (SecureString) under `/keepwell/<env>/`, never from environment variables or Terraform state. In
  * development the same keys come from `config.local.json` (git-ignored).
  */
+/** Push secrets are optional: Terraform seeds them as `unset`, and without them push is simply off. */
+const optionalSecret = z
+  .string()
+  .optional()
+  .transform((value) => (value === undefined || value.trim() === "" || value === "unset" ? undefined : value))
+  .optional()
+
 export const AppConfig = z.object({
   /** Signs sessions and tokens (Better Auth). 32+ characters; rotated per docs/runbooks. */
   auth_secret: z.string().min(32, "auth_secret must be at least 32 characters (still the placeholder?)"),
@@ -29,6 +36,17 @@ export const AppConfig = z.object({
   allowed_apple_subs: z
     .string()
     .transform((list) => list.split(",").map((sub) => sub.trim()).filter(Boolean)),
+  /** Push notifications (ADR 0012). APNs: the .p8 key of a key with the APNs service, PEM with \n. */
+  apns_private_key: optionalSecret,
+  apns_key_id: optionalSecret,
+  apns_team_id: optionalSecret,
+  /** The topic of the iOS pushes: the app's bundle ID. */
+  apns_bundle_id: optionalSecret,
+  /** Web Push (VAPID): the public key is also what `GET /push/config` returns, both base64url. */
+  vapid_public_key: optionalSecret,
+  vapid_private_key: optionalSecret,
+  /** `mailto:` or `https:` contact the push services can reach (RFC 8292). */
+  vapid_subject: optionalSecret,
 })
 export type AppConfig = z.infer<typeof AppConfig>
 
@@ -73,4 +91,29 @@ export function appleBundleIds(config: Pick<AppConfig, "apple_bundle_id">): [str
   const ids = config.apple_bundle_id.split(",").map((id) => id.trim()).filter(Boolean)
   if (ids.length === 0) throw new Error("apple_bundle_id is empty")
   return ids as [string, ...string[]]
+}
+
+export interface ApnsConfig {
+  privateKey: string
+  keyId: string
+  teamId: string
+  bundleId: string
+}
+
+export interface VapidConfig {
+  publicKey: string
+  privateKey: string
+  subject: string
+}
+
+/** APNs settings when all four are present; otherwise iOS pushes are off. */
+export function apnsConfig(config: AppConfig): ApnsConfig | undefined {
+  const { apns_private_key: privateKey, apns_key_id: keyId, apns_team_id: teamId, apns_bundle_id: bundleId } = config
+  return privateKey && keyId && teamId && bundleId ? { privateKey, keyId, teamId, bundleId } : undefined
+}
+
+/** VAPID settings when all three are present; otherwise Web Push is off. */
+export function vapidConfig(config: AppConfig): VapidConfig | undefined {
+  const { vapid_public_key: publicKey, vapid_private_key: privateKey, vapid_subject: subject } = config
+  return publicKey && privateKey && subject ? { publicKey, privateKey, subject } : undefined
 }
