@@ -21,6 +21,7 @@ import {
   parseMonth,
   searchTransactions,
 } from "../../core/mcp/read-tools"
+import { decimal } from "./inputs"
 import { VIEWS_URI } from "./ui/resources"
 
 export interface McpContext {
@@ -92,7 +93,7 @@ export function createMcpServer(context: McpContext): McpServer {
   )
   tool(
     "search_transactions",
-    { title: "Search movements", description: "Movements, newest first, filtered by date (YYYY-MM-DD), account, category, kind, currency, status or text in the description, note or tags. Paged with cursor." },
+    { title: "Search movements", description: "Movements, newest first, filtered by date (YYYY-MM-DD), account, category, kind, currency, status, amount range (min_amount/max_amount, inclusive, in the principal currency at each movement's own recorded rate), tags (movements carrying all of them), recurring rule (recurring_rule_id, subscriptions_only) or text in the description, note or tags. Paged with cursor." },
     {
       from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
       to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
@@ -102,6 +103,11 @@ export function createMcpServer(context: McpContext): McpServer {
       currency: z.string().length(3).optional(),
       status: z.enum(["confirmed", "planned"]).optional(),
       text: z.string().max(100).optional(),
+      min_amount: decimal.optional().describe("Inclusive, in the principal currency at each movement's own recorded rate"),
+      max_amount: decimal.optional().describe("Inclusive, in the principal currency at each movement's own recorded rate"),
+      tags: z.array(z.string().max(64)).max(10).optional().describe("Movements carrying all of them; \"#Boda\" and \"boda\" are the same tag"),
+      recurring_rule_id: z.string().max(64).optional().describe("From list_recurring_rules: only the movements that rule recorded"),
+      subscriptions_only: z.boolean().optional().describe("Only movements recorded by rules that are subscriptions today"),
       limit: z.number().int().min(1).max(100).default(25),
       cursor: z.number().int().min(0).optional(),
     },

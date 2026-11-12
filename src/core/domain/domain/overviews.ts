@@ -2,11 +2,12 @@ import type { Account, Card, CategorizationRule, CurrencySettings, Loan, Persona
 import { DEFAULT_SETTINGS } from "../schema"
 
 import { addMonths, contains, daysInMonth, sameMonth, yearMonthContaining, zonedParts, type DateInterval, type TimeZone, type YearMonth } from "./calendar"
-import { Decimal, ZERO, dec, sum } from "./decimal"
+import { Decimal, ZERO, dec, roundedHalfUp, sum } from "./decimal"
 import { DomainError } from "./errors"
 import { balanceForecast, type BalanceForecast } from "./forecast"
 import { convert, settingsRate, zeroMoney, type Money } from "./money"
 import {
+  amountIn,
   averageMonthlyTotal,
   balanceOf,
   billingCycle,
@@ -307,22 +308,91 @@ export function filterMatches(filter: TransactionFilter, transaction: Transactio
   return isConfirmed(transaction) && transaction.kind === filter
 }
 
+/** Bounds on a movement's amount in the principal currency, both inclusive; either may be left out. */
+export interface AmountRange {
+  min?: Decimal
+  max?: Decimal
+}
+
+/** Where a movement came from: anything, a subscription's rule, or one recurring rule. */
+export type TransactionOrigin = { kind: "any" } | { kind: "subscriptions" } | { kind: "rule"; id: string }
+
+const ANY_ORIGIN: TransactionOrigin = { kind: "any" }
+
+/** Why a range can't be applied; `undefined` when it can. */
+export function amountRangeError(range: AmountRange): "minAboveMax" | undefined {
+  return range.min !== undefined && range.max !== undefined && range.min.gt(range.max) ? "minAboveMax" : undefined
+}
+
+/**
+ * Whether the movement's amount in the principal currency, converted with the rate it recorded
+ * (the figure the totals strip adds up), falls in the range. Compared rounded to cents, as shown:
+ * 99.996 reads 100.00 and passes "at least 100". A range with `min` above `max` matches nothing.
+ */
+export function amountInRange(transaction: Transaction, range: AmountRange, principal: string): boolean {
+  if (amountRangeError(range)) return false
+  const amount = roundedHalfUp(amountIn(transaction, principal), 2)
+  if (range.min !== undefined && amount.lt(range.min)) return false
+  if (range.max !== undefined && amount.gt(range.max)) return false
+  return true
+}
+
+/**
+ * Whether the movement came from the origin. A rule matches by `recurringId`, even once deleted;
+ * a subscription needs the rule to still exist and be one today (paused counts). Movements logged
+ * by hand match neither.
+ */
+export function originMatches(transaction: Transaction, origin: TransactionOrigin, rules: readonly RecurringRule[]): boolean {
+  switch (origin.kind) {
+    case "any":
+      return true
+    case "rule":
+      return transaction.recurringId === origin.id
+    case "subscriptions":
+      return transaction.recurringId !== undefined && rules.some((rule) => rule.id === transaction.recurringId && rule.isSubscription)
+  }
+}
+
 export interface TransactionQuery {
   kind: TransactionFilter
   scope: TransactionScope
   text: string
+  /** Read in `context.principal`; left out, amounts don't narrow. */
+  amount?: AmountRange
+  /** Read against `context.rules`; left out, every origin passes. */
+  origin?: TransactionOrigin
+}
+
+/** What the amount and origin filters read: the principal currency and the recurring rules. */
+export interface TransactionQueryContext {
+  principal: string
+  rules: readonly RecurringRule[]
 }
 
 /**
  * Narrows movements; `searchableText` is presentation (translated category, method name). A search
- * like "#boda" narrows to that tag instead of the text (iOS `TransactionQuery.tag`).
+ * like "#boda" narrows to that tag instead of the text (iOS `TransactionQuery.tag`). The amount and
+ * origin filters apply only with a `context`.
  */
-export function filterTransactions(transactions: readonly Transaction[], query: TransactionQuery, searchableText: (transaction: Transaction) => string): Transaction[] {
+export function filterTransactions(
+  transactions: readonly Transaction[],
+  query: TransactionQuery,
+  searchableText: (transaction: Transaction) => string,
+  context?: TransactionQueryContext,
+): Transaction[] {
   const needle = folded(query.text.trim())
   const tag = searchedTag(query.text)
   const matchesText = (transaction: Transaction) =>
     tag !== undefined ? (transaction.tags ?? []).includes(tag) : needle === "" || folded(searchableText(transaction)).includes(needle)
-  return transactions.filter((transaction) => filterMatches(query.kind, transaction) && scopeIncludes(query.scope, transaction) && matchesText(transaction))
+  const range = query.amount
+  const narrowsAmount = range !== undefined && (range.min !== undefined || range.max !== undefined)
+  const origin = query.origin ?? ANY_ORIGIN
+  const matchesExtras = (transaction: Transaction) =>
+    context === undefined ||
+    ((!narrowsAmount || amountInRange(transaction, range, context.principal)) && originMatches(transaction, origin, context.rules))
+  return transactions.filter(
+    (transaction) => filterMatches(query.kind, transaction) && scopeIncludes(query.scope, transaction) && matchesText(transaction) && matchesExtras(transaction),
+  )
 }
 
 /** Accounts in the Accounts tab's order (credit, bank, cash), each with the card that is its face. */

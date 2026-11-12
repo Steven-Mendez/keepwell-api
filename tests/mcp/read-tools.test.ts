@@ -129,6 +129,87 @@ describe("MCP read tools", () => {
     expect(summary.data.spending_by_category).toContainEqual(expect.objectContaining({ category_id: "groceries", amount: "35" }))
   })
 
+  describe("search_transactions filters", () => {
+    const NETFLIX = "66666666-6666-4666-8666-666666666666"
+    type Found = { description: string; recurring_rule_id: string | null }
+
+    async function filtered() {
+      const connection = await connected()
+      const at = "2026-10-01T12:00:00.000Z"
+      await syncClient(connection.http, connection.cookie).push([
+        event("recurringRule", { ...rentRule(at), id: NETFLIX, name: "Netflix", amount: "15", start_date: "2026-11-10T15:00:00.000Z", next_date: "2026-11-10T15:00:00.000Z", is_subscription: true }, "create"),
+        // NIO 3,662.43 at its own 36.6243 is USD 100.
+        event("transaction", transactionRow(randomUUID(), "2026-11-07T15:00:00.000Z", { amount: "3662.43", currency: "NIO", description: "Cine" }), "create"),
+        event("transaction", transactionRow(randomUUID(), "2026-11-08T15:00:00.000Z", { amount: "40", description: "Flores", tags: ["boda"] }), "create"),
+        event("transaction", transactionRow(randomUUID(), "2026-11-09T15:00:00.000Z", { amount: "60", description: "Vestido", tags: ["bodas-2027"] }), "create"),
+        event("transaction", transactionRow(randomUUID(), "2026-11-11T15:00:00.000Z", { amount: "80", description: "Hotel", tags: ["boda", "viaje"] }), "create"),
+      ])
+      const search = async (args: Record<string, unknown>) => {
+        const { result, data } = await connection.mcp.tool("search_transactions", { limit: 50, ...args })
+        return { result, data, names: ((data?.transactions as Found[] | undefined) ?? []).map((t) => t.description).sort() }
+      }
+      return search
+    }
+
+    it("narrows by a minimum, a maximum or both, inclusive, in the principal currency", async () => {
+      const search = await filtered()
+      expect((await search({ min_amount: "450" })).names).toEqual(["Alquiler", "Salario"])
+      expect((await search({ max_amount: "40" })).names).toEqual(["Flores", "Netflix"])
+      const both = await search({ min_amount: "60", max_amount: "120.50" })
+      expect(both.names).toEqual(["Cine", "Hotel", "Supermercado La Colonia", "Vestido"])
+      expect(both.data.amount_currency).toBe("USD")
+    })
+
+    it("compares a NIO movement by its amount in USD at its own rate", async () => {
+      const search = await filtered()
+      expect((await search({ min_amount: "100", max_amount: "100" })).names).toEqual(["Cine"])
+      expect((await search({ min_amount: "100.01", max_amount: "119" })).names).toEqual([])
+    })
+
+    it("rejects a minimum above the maximum and empty tags", async () => {
+      const search = await filtered()
+      const range = await search({ min_amount: "500", max_amount: "100" })
+      expect(range.result.isError).toBe(true)
+      expect(JSON.parse(range.result.content[0]!.text)).toEqual({ error: "min_amount must not exceed max_amount" })
+      const tags = await search({ tags: ["#"] })
+      expect(tags.result.isError).toBe(true)
+      expect(JSON.parse(tags.result.content[0]!.text)).toEqual({ error: "tags must not be empty" })
+    })
+
+    it("matches tags exactly once normalized, and needs all of them", async () => {
+      const search = await filtered()
+      expect((await search({ tags: ["#Boda"] })).names).toEqual(["Flores", "Hotel"])
+      expect((await search({ tags: ["boda", "Viaje"] })).names).toEqual(["Hotel"])
+    })
+
+    it("narrows to what a recurring rule recorded, or to subscriptions, and says which rule", async () => {
+      const search = await filtered()
+      const rent = await search({ recurring_rule_id: RULE })
+      expect(rent.names).toEqual(["Alquiler"])
+      expect((rent.data.transactions as Found[])[0]!.recurring_rule_id).toBe(RULE)
+      expect((await search({ subscriptions_only: true })).names).toEqual(["Netflix"])
+      expect((await search({ recurring_rule_id: RULE, subscriptions_only: true })).names).toEqual([])
+    })
+
+    it("counts and pages only what the filters keep", async () => {
+      const search = await filtered()
+      const first = await search({ min_amount: "40", limit: 2 })
+      expect(first.data).toMatchObject({ total_matches: 7, next_cursor: 2 })
+      const last = await search({ min_amount: "40", limit: 2, cursor: 6 })
+      expect(last.data).toMatchObject({ total_matches: 7, next_cursor: null })
+      expect((last.data.transactions as Found[]).length).toBe(1)
+    })
+
+    it("leaves searches without the new filters as they were", async () => {
+      const search = await filtered()
+      const plain = await search({})
+      expect(plain.data.total_matches).toBe(8)
+      expect(plain.data).not.toHaveProperty("amount_currency")
+      // Text still finds tags as a substring.
+      expect((await search({ text: "boda" })).names).toEqual(["Flores", "Hotel", "Vestido"])
+    })
+  })
+
   it("lists upcoming payments", async () => {
     const { mcp } = await connected()
     const { data } = await mcp.tool("get_upcoming_payments", { days: 30 })

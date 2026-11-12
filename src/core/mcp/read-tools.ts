@@ -1,13 +1,19 @@
 import {
   addMonths,
+  amountInRange,
+  amountRangeError,
   balanceOf,
   budgetStatuses,
   dayKey,
   daysInMonth,
+  dec,
   inSecondCurrency,
   lastMonths,
   monthlySummary,
   netWorth,
+  normalizedTag,
+  normalizedTags,
+  originMatches,
   savings,
   trendReport,
   upcoming,
@@ -15,8 +21,10 @@ import {
   yearMonthContaining,
   zonedDate,
   zonedParts,
+  type AmountRange,
   type Ledger,
   type Money,
+  type TransactionOrigin,
   type YearMonth,
 } from "../domain/domain"
 import type { Transaction } from "../domain/schema"
@@ -167,12 +175,50 @@ export interface TransactionSearch {
   currency?: string
   text?: string
   status?: "confirmed" | "planned"
+  /** Positive decimal text, inclusive, in the principal currency at each movement's own rate. */
+  min_amount?: string
+  max_amount?: string
+  /** Movements carrying all of them, compared normalized ("#Boda" is "boda"). */
+  tags?: string[]
+  /** Movements a recurring rule recorded; kept even once the rule is deleted. */
+  recurring_rule_id?: string
+  /** Movements of rules that are subscriptions today. */
+  subscriptions_only?: boolean
   limit: number
   cursor?: number
 }
 
+/** The tags asked for, normalized as stored; one that normalizes to nothing is an error. */
+function searchedTags(tags: readonly string[] | undefined): string[] | undefined {
+  if (tags === undefined) return undefined
+  const normalized = tags.map(normalizedTag)
+  if (normalized.length === 0 || normalized.some((tag) => tag === undefined)) throw new Error("tags must not be empty")
+  return normalizedTags(normalized as string[])
+}
+
+function searchedRange(query: TransactionSearch): AmountRange | undefined {
+  if (query.min_amount === undefined && query.max_amount === undefined) return undefined
+  const range: AmountRange = {
+    ...(query.min_amount !== undefined ? { min: dec(query.min_amount) } : {}),
+    ...(query.max_amount !== undefined ? { max: dec(query.max_amount) } : {}),
+  }
+  if (amountRangeError(range)) throw new Error("min_amount must not exceed max_amount")
+  return range
+}
+
+function searchedOrigin(query: TransactionSearch): TransactionOrigin[] {
+  return [
+    ...(query.recurring_rule_id !== undefined ? [{ kind: "rule" as const, id: query.recurring_rule_id }] : []),
+    ...(query.subscriptions_only ? [{ kind: "subscriptions" as const }] : []),
+  ]
+}
+
 export function searchTransactions(ledger: Ledger, query: TransactionSearch) {
   const text = query.text?.toLocaleLowerCase()
+  const tags = searchedTags(query.tags)
+  const range = searchedRange(query)
+  const origins = searchedOrigin(query)
+  const principal = ledger.settings.currencies.principal
   const matches = ledger.transactions.filter((transaction: Transaction) => {
     const date = dayKey(new Date(transaction.date), ledger.timeZone)
     if (query.from && date < query.from) return false
@@ -183,6 +229,9 @@ export function searchTransactions(ledger: Ledger, query: TransactionSearch) {
     if (query.currency && transaction.currency !== query.currency.toUpperCase()) return false
     if (query.status && transaction.status !== query.status) return false
     if (text && !`${transaction.description} ${transaction.note ?? ""} ${(transaction.tags ?? []).join(" ")}`.toLocaleLowerCase().includes(text)) return false
+    if (range && !amountInRange(transaction, range, principal)) return false
+    if (tags && !tags.every((tag) => (transaction.tags ?? []).includes(tag))) return false
+    if (!origins.every((origin) => originMatches(transaction, origin, ledger.recurringRules))) return false
     return true
   })
   const start = query.cursor ?? 0
@@ -190,6 +239,8 @@ export function searchTransactions(ledger: Ledger, query: TransactionSearch) {
   return {
     total_matches: matches.length,
     next_cursor: start + page.length < matches.length ? start + page.length : null,
+    // Echoed only with a range, so the model knows which currency the bounds were read in.
+    ...(range ? { amount_currency: principal } : {}),
     transactions: page.map((transaction) => ({
       id: transaction.id,
       date: transaction.date,
@@ -203,6 +254,7 @@ export function searchTransactions(ledger: Ledger, query: TransactionSearch) {
       account_id: transaction.accountId,
       destination_account_id: transaction.destinationAccountId ?? null,
       tags: transaction.tags ?? [],
+      recurring_rule_id: transaction.recurringId ?? null,
       recorded_by: transaction.source === "mcp" ? "mcp" : "app",
     })),
   }
