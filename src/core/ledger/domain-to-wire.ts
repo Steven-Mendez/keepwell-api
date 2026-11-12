@@ -154,6 +154,8 @@ export function settingsColumns(settings: Settings): Columns<"settings"> {
     rate: settings.currencies.rate,
     payment_reminder_days_before: settings.paymentReminderDaysBefore,
     has_completed_onboarding: settings.hasCompletedOnboarding,
+    // Left out while there is none: the stored zone is kept rather than cleared (`decide`).
+    ...(settings.timeZone ? { time_zone: settings.timeZone } : {}),
   }
 }
 

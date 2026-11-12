@@ -89,6 +89,25 @@ describe("MCP manage tools", () => {
     expect(data(await tool("get_net_worth"))).toMatchObject({ net_worth: { amount: "981.5" } })
   })
 
+  it("reads a date without a time as that day in the person's home zone, which update_settings changes (T21)", async () => {
+    const { tool, data } = await setup()
+    const accountId = data<{ result: { account_id: string } }>(await tool("create_account", { id: randomUUID(), kind: "cash", name: "Efectivo", balance: "0", currency: "USD" })).result.account_id
+    const stored = async (id: string) => ((await admin.db.execute(sql`select date from transactions where id = ${id}`)).rows[0] as { date: string }).date
+    // No zone in the settings and no device: the deployment's default (America/Managua, UTC-6).
+    const managua = randomUUID()
+    await tool("create_transaction", { id: managua, kind: "expense", amount: "1", currency: "USD", account_id: accountId, category_id: "groceries", description: "Uno", date: "2026-11-12" })
+    expect(await stored(managua)).toBe("2026-11-12T18:00:00.000Z")
+    expect(data(await tool("get_financial_context"))).toMatchObject({ time_zone: "America/Managua" })
+
+    expect(data(await tool("update_settings", { time_zone: "Asia/Tokyo" }))).toMatchObject({ ok: true, result: { time_zone: "Asia/Tokyo" } })
+    expect((await admin.db.execute(sql`select time_zone from settings`)).rows).toEqual([{ time_zone: "Asia/Tokyo" }])
+    const tokyo = randomUUID()
+    await tool("create_transaction", { id: tokyo, kind: "expense", amount: "1", currency: "USD", account_id: accountId, category_id: "groceries", description: "Dos", date: "2026-11-12" })
+    expect(await stored(tokyo)).toBe("2026-11-12T03:00:00.000Z")
+    expect(data(await tool("get_financial_context"))).toMatchObject({ time_zone: "Asia/Tokyo" })
+    expect((await tool("update_settings", { time_zone: "Mars/Olympus" })).isError).toBe(true)
+  })
+
   it("deletes an account with its cascade, and restore_deleted brings it all back under new ids", async () => {
     const { tool, data } = await setup()
     const accountId = data<{ result: { account_id: string } }>(await tool("create_account", { id: randomUUID(), kind: "cash", name: "Efectivo", balance: "200", currency: "USD" })).result.account_id

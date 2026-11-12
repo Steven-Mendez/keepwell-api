@@ -1,4 +1,3 @@
-import { resolveTimeZone } from "../notifications/time-zone"
 import { statesOf, unreadCount } from "../notifications/compose"
 import { forgetGoneDevice, type PushDeviceStore, type PushSender } from "../ports/push"
 import type { JobLog } from "./send-due-notifications"
@@ -22,10 +21,9 @@ export class ClearReadNotifications {
       const all = await devices.list(input.userId)
       const others = all.filter((device) => device.clientId !== input.clientId)
       if (others.length === 0) return
-      const zone = resolveTimeZone([...all].sort((a, b) => b.lastSeenAt.getTime() - a.lastSeenAt.getTime())[0]!.timeZone)
       const { ledger, rows } = await this.deps.ledger.load(input.userId)
       const now = (this.deps.clock ?? (() => new Date()))()
-      const badge = unreadCount(ledger, statesOf(rows.notificationState), now, zone)
+      const badge = unreadCount(ledger, statesOf(rows.notificationState), now)
       await Promise.all(
         others.map(async (device) => {
           const outcome = await sender.send(device, { type: "clear", ids: input.ids, badge }).catch((error: unknown) => {

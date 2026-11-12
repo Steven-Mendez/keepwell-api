@@ -8,6 +8,7 @@ import {
   IsoDateTime,
   PositiveDecimalString,
   RecordSource,
+  TimeZoneId,
   TransactionKind,
   TransactionStatus,
   isPositiveDecimal,
@@ -371,6 +372,13 @@ export const Settings = z.object({
   isICloudBackupEnabled: z.boolean(),
   paymentReminderDaysBefore: z.number().int().nonnegative(),
   hasCompletedOnboarding: z.boolean(),
+  /**
+   * The person's home time zone: the one the server uses for "today", month boundaries and recurring
+   * occurrences. Set once from the device when missing and changed by hand in Settings, never
+   * updated on its own, so two devices in different zones don't keep flipping it. The apps still
+   * show days in the device's zone.
+   */
+  timeZone: TimeZoneId.optional(),
 })
 export type Settings = z.infer<typeof Settings>
 

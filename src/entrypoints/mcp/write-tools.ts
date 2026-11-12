@@ -8,7 +8,7 @@ import { CreatePending, McpWriteError } from "../../core/use-cases/create-pendin
 import { VIEWS_URI } from "./ui/resources"
 
 const decimal = z.string().regex(/^[0-9]+(\.[0-9]+)?$/, "a positive exact decimal such as 12.50")
-const instant = z.string().refine((text) => !Number.isNaN(Date.parse(text)), "an ISO 8601 date or date-time")
+const instant = z.string().refine((text) => !Number.isNaN(Date.parse(text)), "an ISO 8601 date or date-time").describe("YYYY-MM-DD is that day in the person's time zone (get_financial_context); a date-time is that instant")
 
 const common = {
   id: z.string().uuid().describe("A new UUID you generate once and reuse if you retry, so the call is never recorded twice"),

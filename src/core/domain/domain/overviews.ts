@@ -1,7 +1,7 @@
 import type { Account, Card, CategorizationRule, CurrencySettings, Loan, PersonalDebt, RecurringRule, SavingsGoal, Settings, Transaction, TransactionCategory } from "../schema"
 import { DEFAULT_SETTINGS } from "../schema"
 
-import { addMonths, contains, daysInMonth, sameMonth, yearMonthContaining, type DateInterval, type YearMonth } from "./calendar"
+import { addMonths, contains, daysInMonth, sameMonth, yearMonthContaining, zonedParts, type DateInterval, type TimeZone, type YearMonth } from "./calendar"
 import { Decimal, ZERO, dec, sum } from "./decimal"
 import { DomainError } from "./errors"
 import { balanceForecast, type BalanceForecast } from "./forecast"
@@ -47,6 +47,8 @@ export interface Ledger {
   personalDebts: PersonalDebt[]
   /** In the person's order: the first that matches wins. */
   categorizationRules: CategorizationRule[]
+  /** The zone its days and months are read in: the store's (`LedgerStore.timeZone`). */
+  timeZone: TimeZone
 }
 
 export async function loadLedger(store: LedgerStore): Promise<Ledger> {
@@ -73,6 +75,7 @@ export async function loadLedger(store: LedgerStore): Promise<Ledger> {
     loans,
     personalDebts,
     categorizationRules,
+    timeZone: store.timeZone,
   }
 }
 
@@ -116,12 +119,12 @@ export interface HomeOverview {
 
 export function homeOverview(ledger: Ledger, now: Date = new Date(), recentCount = HOME_RECENT_COUNT): HomeOverview {
   const currencies = ledger.settings.currencies
-  const { accounts, cards, transactions } = ledger
+  const { accounts, cards, transactions, timeZone: zone } = ledger
   const allBalances: Money[] = []
   let balances: HomeOverview["balances"] = []
   let cardDebt = ZERO
   for (const account of accounts) {
-    const accountBalances = balanceOf(account, transactions)
+    const accountBalances = balanceOf(account, transactions, zone)
     allBalances.push(...accountBalances)
     if (account.kind === "credit") cardDebt = cardDebt.plus(netWorth(accountBalances, currencies).amount)
     else if (accountBalances[0]) balances.push({ account, balance: accountBalances[0] })
@@ -148,7 +151,7 @@ export function homeOverview(ledger: Ledger, now: Date = new Date(), recentCount
     netWorthExcluded: excludedCurrencies(allBalances, currencies),
     accountCount: accounts.filter((account) => account.kind !== "credit").length,
     cardCount: cards.filter((card) => card.kind !== "transfer").length,
-    month: monthlySummary(yearMonthContaining(now), transactions, currencies.principal),
+    month: monthlySummary(yearMonthContaining(now, zone), transactions, currencies.principal, zone),
     hasTransactions: transactions.length > 0,
     recent,
     planned,
@@ -157,11 +160,11 @@ export function homeOverview(ledger: Ledger, now: Date = new Date(), recentCount
     ...(accounts.some((account) => account.kind === "credit") ? { cardDebt: { amount: cardDebt, currency: currencies.principal } } : {}),
     frequentExpenseCategoryIds: frequent,
     paymentReminderDaysBefore: ledger.settings.paymentReminderDaysBefore,
-    cardSubscriptions: new Map(cards.filter((card) => card.expiry).map((card) => [card.id, subscriptionsCharged(card.id, transactions, ledger.recurringRules)])),
+    cardSubscriptions: new Map(cards.filter((card) => card.expiry).map((card) => [card.id, subscriptionsCharged(card.id, transactions, zone, ledger.recurringRules)])),
     ...(accounts.some((account) => account.kind !== "credit")
-      ? { forecast: balanceForecast(accounts, transactions, ledger.recurringRules, currencies, now) }
+      ? { forecast: balanceForecast(accounts, transactions, ledger.recurringRules, currencies, zone, now) }
       : {}),
-    priceIncreases: priceIncreases(transactions, now),
+    priceIncreases: priceIncreases(transactions, zone, now),
   }
 }
 
@@ -176,11 +179,11 @@ export interface AccountsOverview {
   cash: { account: Account; balance: Money; principalEquivalent?: Money }[]
 }
 
-export function accountsOverview(accounts: readonly Account[], cards: readonly Card[], transactions: readonly Transaction[], currencies: CurrencySettings): AccountsOverview {
+export function accountsOverview(accounts: readonly Account[], cards: readonly Card[], transactions: readonly Transaction[], currencies: CurrencySettings, zone: TimeZone): AccountsOverview {
   const result: AccountsOverview = { settings: currencies, netWorth: zeroMoney(currencies.principal), creditCards: [], deposits: [], cash: [] }
   const all: Money[] = []
   for (const account of accounts) {
-    const balances = balanceOf(account, transactions)
+    const balances = balanceOf(account, transactions, zone)
     all.push(...balances)
     const own = cards.filter((card) => card.accountId === account.id)
     switch (account.kind) {
@@ -229,7 +232,7 @@ export function debitCardDetail(ledger: Ledger, accountId: string): DebitCardDet
   if (!account) throw DomainError.notFound(accountId)
   const card = ledger.cards.find((candidate) => candidate.accountId === accountId && candidate.kind === "debit")
   if (!card) throw DomainError.notFound(accountId)
-  const balance = balanceOf(account, ledger.transactions)[0] ?? zeroMoney(ledger.settings.currencies.principal)
+  const balance = balanceOf(account, ledger.transactions, ledger.timeZone)[0] ?? zeroMoney(ledger.settings.currencies.principal)
   const touching = ledger.transactions.filter((transaction) => scopeIncludes({ kind: "account", id: accountId }, transaction))
   return {
     card,
@@ -262,10 +265,11 @@ export function creditCardDetail(ledger: Ledger, accountId: string, now: Date = 
   const account = ledger.accounts.find((candidate) => candidate.id === accountId && candidate.kind === "credit")
   if (!account) throw DomainError.notFound(accountId)
   const currencies = ledger.settings.currencies
-  const balances = balanceOf(account, ledger.transactions)
+  const zone = ledger.timeZone
+  const balances = balanceOf(account, ledger.transactions, zone)
   const totalDebt = netWorth(balances, currencies)
   const terms = account.creditTerms
-  const cycle = billingCycle(now, terms?.cutoffDay)
+  const cycle = billingCycle(now, terms?.cutoffDay, zone)
   let available: Money | undefined
   if (terms?.limit) {
     try {
@@ -285,8 +289,8 @@ export function creditCardDetail(ledger: Ledger, accountId: string, now: Date = 
     ...(available ? { available } : {}),
     cycle,
     cycleTransactions: ledger.transactions.filter((t) => t.accountId === accountId && contains(cycle, new Date(t.date))).sort(newestFirst),
-    ...(terms?.cutoffDay ? { nextCutoff: nextOccurrence(terms.cutoffDay, now) } : {}),
-    ...(terms?.dueDay ? { nextDue: nextOccurrence(terms.dueDay, now) } : {}),
+    ...(terms?.cutoffDay ? { nextCutoff: nextOccurrence(terms.cutoffDay, now, zone) } : {}),
+    ...(terms?.dueDay ? { nextDue: nextOccurrence(terms.dueDay, now, zone) } : {}),
     limitCurrency: terms?.limit?.currency ?? (terms?.debtMode === "second" ? currencies.second : undefined) ?? currencies.principal,
   }
 }
@@ -396,12 +400,12 @@ export interface SpendingPace {
   previous: { day: number; cumulative: Decimal }[]
 }
 
-function pacePoints(month: YearMonth, lastDay: number, transactions: readonly Transaction[]) {
+function pacePoints(month: YearMonth, lastDay: number, transactions: readonly Transaction[], zone: TimeZone) {
   const perDay = new Map<number, Decimal>()
   for (const transaction of transactions) {
-    const date = new Date(transaction.date)
-    if (!isConfirmed(transaction) || transaction.kind !== "expense" || !sameMonth(yearMonthContaining(date), month)) continue
-    perDay.set(date.getDate(), (perDay.get(date.getDate()) ?? ZERO).plus(principalAmount(transaction)))
+    const date = zonedParts(new Date(transaction.date), zone)
+    if (!isConfirmed(transaction) || transaction.kind !== "expense" || !sameMonth(date, month)) continue
+    perDay.set(date.day, (perDay.get(date.day) ?? ZERO).plus(principalAmount(transaction)))
   }
   let running = ZERO
   return Array.from({ length: Math.max(lastDay, 1) }, (_, index) => {
@@ -410,11 +414,12 @@ function pacePoints(month: YearMonth, lastDay: number, transactions: readonly Tr
   })
 }
 
-export function spendingPace(month: YearMonth, transactions: readonly Transaction[], now: Date): SpendingPace {
+export function spendingPace(month: YearMonth, transactions: readonly Transaction[], now: Date, zone: TimeZone): SpendingPace {
   const previousMonth = addMonths(month, -1)
   const days = daysInMonth(month)
-  const lastDay = sameMonth(yearMonthContaining(now), month) ? Math.min(now.getDate(), days) : days
-  return { month, previousMonth, current: pacePoints(month, lastDay, transactions), previous: pacePoints(previousMonth, daysInMonth(previousMonth), transactions) }
+  const today = zonedParts(now, zone)
+  const lastDay = sameMonth(today, month) ? Math.min(today.day, days) : days
+  return { month, previousMonth, current: pacePoints(month, lastDay, transactions, zone), previous: pacePoints(previousMonth, daysInMonth(previousMonth), transactions, zone) }
 }
 
 export const paceComparisonDay = (pace: SpendingPace) => pace.current.at(-1)?.day ?? 1
@@ -438,11 +443,11 @@ export interface SummaryReport {
   paces: SpendingPace[]
 }
 
-export function summaryReport(transactions: readonly Transaction[], currency: string, now: Date = new Date(), count = SUMMARY_MONTH_COUNT): SummaryReport {
-  const current = yearMonthContaining(now)
-  const months = Array.from({ length: count }, (_, index) => monthlySummary(addMonths(current, index - (count - 1)), transactions, currency))
-  const averageExpense = averageMonthlyTotal("expense", transactions)
-  const averageIncome = averageMonthlyTotal("income", transactions)
+export function summaryReport(transactions: readonly Transaction[], currency: string, zone: TimeZone, now: Date = new Date(), count = SUMMARY_MONTH_COUNT): SummaryReport {
+  const current = yearMonthContaining(now, zone)
+  const months = Array.from({ length: count }, (_, index) => monthlySummary(addMonths(current, index - (count - 1)), transactions, currency, zone))
+  const averageExpense = averageMonthlyTotal("expense", transactions, zone)
+  const averageIncome = averageMonthlyTotal("income", transactions, zone)
   return {
     currency,
     months,
@@ -451,7 +456,7 @@ export function summaryReport(transactions: readonly Transaction[], currency: st
     cashFlow: cashFlowTrend(months),
     expenseBreakdowns: months.map((month) => categoryBreakdown(month.categories)),
     incomeBreakdowns: months.map((month) => categoryBreakdown(month.incomeCategories)),
-    paces: months.map((month) => spendingPace(month.month, transactions, now)),
+    paces: months.map((month) => spendingPace(month.month, transactions, now, zone)),
   }
 }
 

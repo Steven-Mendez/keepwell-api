@@ -1,25 +1,19 @@
 import { describe, expect, it } from "vitest"
 
 import { dueNotifications, localeOf, NotificationWording, statesOf, unreadCount } from "../../src/core/notifications/compose"
-import { inTimeZone, isTimeZone, resolveTimeZone } from "../../src/core/notifications/time-zone"
 import { ledger, noStates, stateRow, VISA } from "../support/notifications"
-import { ledgerNotifications } from "../../src/core/domain/domain"
+import { isTimeZone, ledgerNotifications, resolveTimeZone } from "../../src/core/domain/domain"
 
 const none = { read: new Set<string>(), dismissed: new Set<string>() }
 const due = (now: string, zone: string, extra: Partial<Parameters<typeof dueNotifications>[0]> = {}) =>
-  dueNotifications({ ledger: ledger(), states: none, delivered: new Set(), now: new Date(now), zone, ...extra }).map((n) => n.id)
+  dueNotifications({ ledger: ledger({ timeZone: zone }), states: none, delivered: new Set(), now: new Date(now), ...extra }).map((n) => n.id)
+/** In `zone`, with the process left in its own (America/Managua in this suite). */
+const inZone = (zone: string, extra: Parameters<typeof ledger>[0] = {}) => ledger({ ...extra, timeZone: zone })
 
 describe("time zones", () => {
-  it("switches the process zone for the calculation and restores it", () => {
+  it("computes in the ledger's zone and never touches the process's", () => {
     const before = process.env.TZ
-    const hours = inTimeZone("Asia/Tokyo", () => new Date("2026-11-13T00:30:00Z").getHours())
-    expect(hours).toBe(9)
-    expect(process.env.TZ).toBe(before)
-    expect(() =>
-      inTimeZone("Asia/Tokyo", () => {
-        throw new Error("boom")
-      })
-    ).toThrow("boom")
+    expect(due("2026-11-13T10:00:00Z", "Asia/Tokyo")).toContain(`cutoff:${VISA}:2026-11-13`)
     expect(process.env.TZ).toBe(before)
   })
 
@@ -27,7 +21,6 @@ describe("time zones", () => {
     expect(isTimeZone("America/Managua")).toBe(true)
     expect(isTimeZone("Mars/Olympus")).toBe(false)
     expect(resolveTimeZone("Mars/Olympus")).toBe("UTC")
-    expect(inTimeZone("Mars/Olympus", () => new Date("2026-11-13T10:00:00Z").getHours())).toBe(10)
   })
 
   it("names the day by the device's calendar: the same instant is a different day in each zone", () => {
@@ -37,7 +30,7 @@ describe("time zones", () => {
     expect(due(instant, "Pacific/Auckland")).toContain(cutoff) // 23:00 on the 13th
     expect(due(instant, "Pacific/Kiritimati")).not.toContain(cutoff) // already the 14th
     expect(due(instant, "Pacific/Pago_Pago")).not.toContain(cutoff) // still the 12th
-    expect(inTimeZone("Pacific/Pago_Pago", () => ledgerNotifications(ledger(), new Date(instant)).map((n) => n.id))).toContain(`payment:${VISA}:2026-11-15`)
+    expect(ledgerNotifications(inZone("Pacific/Pago_Pago"), new Date(instant)).map((n) => n.id)).toContain(`payment:${VISA}:2026-11-15`)
   })
 })
 
@@ -84,12 +77,12 @@ describe("dueNotifications", () => {
       exchangeRate: { principal: "USD", second: "USD", rate: "1" },
       isShared: false,
     }
-    const withDraft = ledger({ transactions: [draft, ...ledger().transactions] })
-    expect(inTimeZone("Asia/Tokyo", () => ledgerNotifications(withDraft, now).some((n) => n.kind === "planned"))).toBe(true)
+    const withDraft = inZone("Asia/Tokyo", { transactions: [draft, ...ledger().transactions] })
+    expect(ledgerNotifications(withDraft, now).some((n) => n.kind === "planned")).toBe(true)
     // payment + cutoff + budget; the draft isn't counted.
-    expect(unreadCount(withDraft, none, now, "Asia/Tokyo")).toBe(3)
-    expect(unreadCount(withDraft, statesOf([stateRow(`cutoff:${VISA}:2026-11-13`, { read_at: "x" })]), now, "Asia/Tokyo")).toBe(2)
-    expect(unreadCount(withDraft, statesOf([stateRow(`cutoff:${VISA}:2026-11-13`, { dismissed_at: "x" })]), now, "Asia/Tokyo")).toBe(2)
+    expect(unreadCount(withDraft, none, now)).toBe(3)
+    expect(unreadCount(withDraft, statesOf([stateRow(`cutoff:${VISA}:2026-11-13`, { read_at: "x" })]), now)).toBe(2)
+    expect(unreadCount(withDraft, statesOf([stateRow(`cutoff:${VISA}:2026-11-13`, { dismissed_at: "x" })]), now)).toBe(2)
     expect(statesOf(noStates).read.size).toBe(0)
   })
 })
@@ -101,10 +94,10 @@ describe("wording", () => {
   })
 
   it("words a notification with the apps' catalogs, in the device's language", () => {
-    const l = ledger()
+    const l = inZone("Asia/Tokyo")
     const now = new Date("2026-11-13T10:00:00Z")
-    const payment = inTimeZone("Asia/Tokyo", () => ledgerNotifications(l, now).find((n) => n.kind === "payment")!)
-    const wording = new NotificationWording(l, "Asia/Tokyo")
+    const payment = ledgerNotifications(l, now).find((n) => n.kind === "payment")!
+    const wording = new NotificationWording(l)
     const en = wording.copy(payment, "en")
     const es = wording.copy(payment, "es")
     expect(en.title).toBe("Visa: payment in 2 days")
@@ -114,9 +107,9 @@ describe("wording", () => {
   })
 
   it("shows amounts, as a push to one's own device does", () => {
-    const l = ledger()
-    const budget = inTimeZone("UTC", () => ledgerNotifications(l, new Date("2026-11-13T10:00:00Z")).find((n) => n.kind === "budget")!)
-    expect(new NotificationWording(l, "UTC").copy(budget, "en")).toMatchObject({ title: "Groceries is close to its budget" })
-    expect(new NotificationWording(l, "UTC").copy(budget, "en").body).not.toContain("••••")
+    const l = inZone("UTC")
+    const budget = ledgerNotifications(l, new Date("2026-11-13T10:00:00Z")).find((n) => n.kind === "budget")!
+    expect(new NotificationWording(l).copy(budget, "en")).toMatchObject({ title: "Groceries is close to its budget" })
+    expect(new NotificationWording(l).copy(budget, "en").body).not.toContain("••••")
   })
 })

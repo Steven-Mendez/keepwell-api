@@ -9,18 +9,20 @@ const NOW = new Date("2026-11-13T10:00:00Z") // 19:00 in Tokyo, 02:00 in Los Ang
 const CUTOFF = `cutoff:${VISA}:2026-11-13`
 const PAYMENT = `payment:${VISA}:2026-11-15`
 const BUDGET = "budget:groceries:2026-11:near"
+/** The ledger as ReadLedger hands it over: read in the person's zone (here Tokyo's, like their device). */
+const tokyo = (extra: Parameters<typeof ledger>[0] = {}) => ledger({ ...extra, timeZone: "Asia/Tokyo" })
 
 describe("SendDueNotifications", () => {
   let stores: MemoryStores
   let sender: RecordingSender
-  const job = (now = NOW, value = ledger(), states: Parameters<typeof fakeLedger>[1] = []) => new SendDueNotifications({ devices: stores, deliveries: stores, ledger: fakeLedger(value, states), sender, log: silentLog, clock: () => now })
+  const job = (now = NOW, value = tokyo(), states: Parameters<typeof fakeLedger>[1] = []) => new SendDueNotifications({ devices: stores, deliveries: stores, ledger: fakeLedger(value, states), sender, log: silentLog, clock: () => now })
 
   beforeEach(() => {
     stores = new MemoryStores()
     sender = new RecordingSender()
   })
 
-  it("sends what is due once, in the device's zone, and not again on the next run", async () => {
+  it("sends what is due once, in the person's zone, and not again on the next run", async () => {
     await stores.upsert("user-1", { clientId: "c1", platform: "ios", token: "ab".repeat(32), timeZone: "Asia/Tokyo", locale: "en-US", environment: "production" }, NOW)
     const first = await job().execute()
     expect(sender.notifications.map((c) => (c.message as { id: string }).id).sort()).toEqual([BUDGET, CUTOFF, PAYMENT].sort())
@@ -33,11 +35,12 @@ describe("SendDueNotifications", () => {
 
   it("holds dated notifications until 09:00 local but sends budget ones at once", async () => {
     await stores.upsert("user-1", { clientId: "c1", platform: "ios", token: "ab".repeat(32), timeZone: "America/Los_Angeles", locale: "en", environment: "production" }, NOW)
-    await job().execute()
+    const losAngeles = ledger({ timeZone: "America/Los_Angeles" })
+    await job(NOW, losAngeles).execute()
     expect(sender.notifications.map((c) => (c.message as { id: string }).id)).toEqual([BUDGET])
     // Seven hours later it is 09:00 in Los Angeles.
     sender.calls = []
-    await job(new Date("2026-11-13T17:00:00Z")).execute()
+    await job(new Date("2026-11-13T17:00:00Z"), losAngeles).execute()
     expect(sender.notifications.map((c) => (c.message as { id: string }).id).sort()).toEqual([CUTOFF, PAYMENT].sort())
   })
 
@@ -55,7 +58,7 @@ describe("SendDueNotifications", () => {
 
   it("skips what was read or deleted on another device", async () => {
     await stores.upsert("user-1", { clientId: "c1", platform: "ios", token: "ab".repeat(32), timeZone: "Asia/Tokyo", locale: "en", environment: "production" }, NOW)
-    await job(NOW, ledger(), [stateRow(CUTOFF, { read_at: "2026-11-13T09:00:00Z" }), stateRow(PAYMENT, { dismissed_at: "2026-11-13T09:00:00Z" })]).execute()
+    await job(NOW, tokyo(), [stateRow(CUTOFF, { read_at: "2026-11-13T09:00:00Z" }), stateRow(PAYMENT, { dismissed_at: "2026-11-13T09:00:00Z" })]).execute()
     expect(sender.notifications.map((c) => (c.message as { id: string }).id)).toEqual([BUDGET])
   })
 
@@ -106,12 +109,11 @@ describe("SendDueNotifications", () => {
     expect(ids).toHaveLength(3)
   })
 
-  it("uses the zone of the most recently seen device for the person", async () => {
-    await stores.upsert("user-1", { clientId: "old", platform: "web", token: "{}", timeZone: "Asia/Tokyo", locale: "en", environment: null }, new Date("2026-11-01T00:00:00Z"))
-    await stores.upsert("user-1", { clientId: "new", platform: "ios", token: "ab".repeat(32), timeZone: "America/Los_Angeles", locale: "en", environment: "production" }, new Date("2026-11-13T00:00:00Z"))
-    await job().execute()
-    // 02:00 in Los Angeles: only the budget one.
-    expect(sender.notifications.map((c) => (c.message as { id: string }).id)).toEqual([BUDGET, BUDGET])
+  it("computes in the person's home zone, whatever zone their devices are in", async () => {
+    await stores.upsert("user-1", { clientId: "c1", platform: "ios", token: "ab".repeat(32), timeZone: "Asia/Tokyo", locale: "en", environment: "production" }, NOW)
+    await job(NOW, ledger({ timeZone: "America/Los_Angeles" })).execute()
+    // 02:00 in Los Angeles (19:00 on the Tokyo phone): only the budget one.
+    expect(sender.notifications.map((c) => (c.message as { id: string }).id)).toEqual([BUDGET])
   })
 
   it("caps a run so a new device on an old ledger isn't flooded", async () => {
@@ -128,7 +130,7 @@ describe("SendDueNotifications", () => {
       isShared: false,
     }))
     await stores.upsert("user-1", { clientId: "c1", platform: "ios", token: "ab".repeat(32), timeZone: "Asia/Tokyo", locale: "en", environment: "production" }, NOW)
-    await job(NOW, ledger({ transactions: [...drafts, ...ledger().transactions] })).execute()
+    await job(NOW, tokyo({ transactions: [...drafts, ...ledger().transactions] })).execute()
     expect(sender.notifications).toHaveLength(MAX_PER_USER_RUN)
     const planned = sender.notifications.find((c) => c.message.type === "notification" && c.message.kind === "planned")!.message
     expect(planned).toMatchObject({ transactionId: expect.stringMatching(/^00000000-/) })
@@ -140,7 +142,7 @@ describe("SendDueNotifications", () => {
     const failing = new SendDueNotifications({
       devices: stores,
       deliveries: stores,
-      ledger: { load: async (userId: string) => (userId === "user-1" ? Promise.reject(new Error("db down")) : fakeLedger(ledger()).load(userId)) } as never,
+      ledger: { load: async (userId: string) => (userId === "user-1" ? Promise.reject(new Error("db down")) : fakeLedger(tokyo()).load(userId)) } as never,
       sender,
       log: silentLog,
       clock: () => NOW,
@@ -161,7 +163,7 @@ describe("ClearReadNotifications", () => {
     for (const [clientId, platform] of [["a", "ios"], ["b", "ios"], ["c", "web"]] as const) {
       await stores.upsert("user-1", { clientId, platform, token: platform === "ios" ? "ab".repeat(32) : "{}", timeZone: "Asia/Tokyo", locale: "en", environment: platform === "ios" ? "production" : null }, NOW)
     }
-    const clear = new ClearReadNotifications({ devices: stores, ledger: fakeLedger(ledger(), [stateRow(CUTOFF, { read_at: "x" })]), sender, log: silentLog, clock: () => NOW })
+    const clear = new ClearReadNotifications({ devices: stores, ledger: fakeLedger(tokyo(), [stateRow(CUTOFF, { read_at: "x" })]), sender, log: silentLog, clock: () => NOW })
     await clear.execute({ userId: "user-1", clientId: "a", ids: [CUTOFF] })
     expect(sender.calls.map((c) => c.device.clientId).sort()).toEqual(["b", "c"])
     expect(sender.calls[0]!.message).toEqual({ type: "clear", ids: [CUTOFF], badge: 2 })
@@ -173,7 +175,7 @@ describe("ClearReadNotifications", () => {
     await stores.upsert("user-1", { clientId: "a", platform: "ios", token: "ab".repeat(32), timeZone: "UTC", locale: "en", environment: "production" }, NOW)
     await stores.upsert("user-1", { clientId: "b", platform: "ios", token: "cd".repeat(32), timeZone: "UTC", locale: "en", environment: "production" }, new Date(NOW.getTime() - GONE_GRACE_MS))
     sender.outcomes.set("b", "gone")
-    const clear = new ClearReadNotifications({ devices: stores, ledger: fakeLedger(ledger()), sender, log: silentLog, clock: () => NOW })
+    const clear = new ClearReadNotifications({ devices: stores, ledger: fakeLedger(tokyo()), sender, log: silentLog, clock: () => NOW })
     await clear.execute({ userId: "user-1", clientId: "a", ids: ["x"] })
     expect((await stores.list("user-1")).map((d) => d.clientId)).toEqual(["a"])
     const broken = new ClearReadNotifications({ devices: stores, ledger: { load: async () => Promise.reject(new Error("db")) } as never, sender, log: silentLog })

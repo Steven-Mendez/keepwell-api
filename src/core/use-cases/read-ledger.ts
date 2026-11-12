@@ -1,8 +1,16 @@
-import { InMemoryStore, loadLedger, materializeRecurring, type Ledger } from "../domain/domain"
+import { InMemoryStore, isTimeZone, loadLedger, materializeRecurring, resolveTimeZone, type Ledger, type TimeZone } from "../domain/domain"
 import { uuidV5 } from "../domain/schema"
-import { recurringRuleToWire, toDomain, transactionToWire } from "../ledger/wire-to-domain"
+import { recurringRuleToWire, toDomain, transactionToWire, type LedgerRows } from "../ledger/wire-to-domain"
 import type { LedgerReader } from "../ports/ledger-reader"
 import type { ApplySyncBatch } from "./apply-sync-batch"
+
+/**
+ * The zone for people who have none at all: `KEEPWELL_TIME_ZONE`, or Managua, where Keepwell started.
+ * An unknown name falls back to UTC.
+ */
+export function defaultTimeZone(env: Record<string, string | undefined>): TimeZone {
+  return resolveTimeZone(env.KEEPWELL_TIME_ZONE ?? "America/Managua")
+}
 
 /** The client id the server writes under when it changes data itself. */
 export const SERVER_CLIENT_ID = "00000000-0000-5000-8000-000000000000"
@@ -19,11 +27,25 @@ export const SERVER_CLIENT_ID = "00000000-0000-5000-8000-000000000000"
  * there, so only the rule is written).
  */
 export class ReadLedger {
+  /** `defaultTimeZone`: the deployment's (`KEEPWELL_TIME_ZONE`), for people with no zone at all. */
   constructor(
     private readonly reader: LedgerReader,
     private readonly writer: ApplySyncBatch,
+    private readonly defaultTimeZone: TimeZone,
     private readonly clock: () => Date = () => new Date()
   ) {}
+
+  /**
+   * The zone the server reads this person's days and months in: the home zone in their settings;
+   * without one (an account no app has set it for yet), the zone of their most recently seen device,
+   * the one their own app computes in, as notifications always did; without a device either, the
+   * deployment's default. Never the process's.
+   */
+  async timeZone(userId: string, rows: LedgerRows): Promise<TimeZone> {
+    const home = rows.settings.find((row) => row.deleted_at === null)?.time_zone
+    if (isTimeZone(home)) return home
+    return resolveTimeZone(await this.reader.latestDeviceTimeZone(userId), this.defaultTimeZone)
+  }
 
   async execute(userId: string): Promise<Ledger> {
     return (await this.load(userId)).ledger
@@ -36,7 +58,7 @@ export class ReadLedger {
   async load(userId: string): Promise<{ ledger: Ledger; rows: Awaited<ReturnType<LedgerReader["load"]>>; fresh: boolean }> {
     const now = this.clock()
     const rows = await this.reader.load(userId)
-    const store = new InMemoryStore(toDomain(rows))
+    const store = new InMemoryStore(await this.timeZone(userId, rows), toDomain(rows))
     const before = new Map((await store.fetchRecurringRules()).map((rule) => [rule.id, rule.nextDate]))
     const created = await materializeRecurring(store, now)
     const advanced = (await store.fetchRecurringRules()).filter((rule) => before.get(rule.id) !== rule.nextDate)

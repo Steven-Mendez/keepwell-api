@@ -1,7 +1,9 @@
 import {
+  addMonths,
   balanceOf,
   budgetStatuses,
   dayKey,
+  daysInMonth,
   inSecondCurrency,
   lastMonths,
   monthlySummary,
@@ -11,6 +13,8 @@ import {
   upcoming,
   yearMonth,
   yearMonthContaining,
+  zonedDate,
+  zonedParts,
   type Ledger,
   type Money,
   type YearMonth,
@@ -32,12 +36,11 @@ export interface MoneyJSON {
 const amountText = (value: Money["amount"]) => value.toDecimalPlaces(2).toString()
 const money = (value: Money): MoneyJSON => ({ amount: amountText(value.amount), currency: value.currency })
 const monthText = (value: YearMonth) => `${value.year}-${String(value.month).padStart(2, "0")}`
-// Days are the domain's local calendar day (`dayKey`), the same one the monthly summary groups by,
-// never the UTC day of `toISOString`.
-const day = dayKey
+// Days are the person's calendar day in their home zone (`ledger.timeZone`), the same one the
+// monthly summary groups by, never the UTC day of `toISOString`.
 
-export function parseMonth(text: string | undefined, now: Date): YearMonth {
-  if (!text) return yearMonthContaining(now)
+export function parseMonth(text: string | undefined, now: Date, zone: string): YearMonth {
+  if (!text) return yearMonthContaining(now, zone)
   const match = /^(\d{4})-(\d{2})$/.exec(text)
   const parsed = match ? yearMonth(Number(match[1]), Number(match[2])) : undefined
   if (!parsed) throw new Error("month must be YYYY-MM")
@@ -54,7 +57,7 @@ export function listAccounts(ledger: Ledger) {
     name: account.name,
     bank: account.bank ?? null,
     kind: account.kind,
-    balances: balanceOf(account, ledger.transactions).map(money),
+    balances: balanceOf(account, ledger.transactions, ledger.timeZone).map(money),
     credit: account.creditTerms
       ? { limit: account.creditTerms.limit ?? null, cutoff_day: account.creditTerms.cutoffDay ?? null, due_day: account.creditTerms.dueDay ?? null }
       : null,
@@ -67,10 +70,10 @@ export function listAccounts(ledger: Ledger) {
 export function getNetWorth(ledger: Ledger) {
   const currencies = ledger.settings.currencies
   const perAccount = ledger.accounts.map((account) => {
-    const balances = balanceOf(account, ledger.transactions)
+    const balances = balanceOf(account, ledger.transactions, ledger.timeZone)
     return { account_id: account.id, name: account.name, kind: account.kind, total: money(netWorth(balances, currencies)) }
   })
-  const total = netWorth(ledger.accounts.flatMap((account) => balanceOf(account, ledger.transactions)), currencies)
+  const total = netWorth(ledger.accounts.flatMap((account) => balanceOf(account, ledger.transactions, ledger.timeZone)), currencies)
   const second = inSecondCurrency(total, currencies)
   return {
     currency: currencies.principal,
@@ -83,7 +86,7 @@ export function getNetWorth(ledger: Ledger) {
 
 export function getMonthlySummary(ledger: Ledger, month: YearMonth) {
   const currency = ledger.settings.currencies.principal
-  const summary = monthlySummary(month, ledger.transactions, currency)
+  const summary = monthlySummary(month, ledger.transactions, currency, ledger.timeZone)
   return {
     month: monthText(month),
     currency,
@@ -109,7 +112,7 @@ export function getMonthlySummary(ledger: Ledger, month: YearMonth) {
 
 export function getTrends(ledger: Ledger, months: number, now: Date) {
   const currency = ledger.settings.currencies.principal
-  const report = trendReport(ledger.transactions, currency, lastMonths(months, now), now)
+  const report = trendReport(ledger.transactions, currency, lastMonths(months, now, ledger.timeZone), ledger.timeZone, now)
   return {
     currency,
     months: report.months.map((month) => ({
@@ -122,7 +125,9 @@ export function getTrends(ledger: Ledger, months: number, now: Date) {
 }
 
 export function getUpcomingPayments(ledger: Ledger, days: number, now: Date) {
-  const recurring = upcoming(ledger.recurringRules, now, days).map((entry) => ({
+  const zone = ledger.timeZone
+  const day = (date: Date) => dayKey(date, zone)
+  const recurring = upcoming(ledger.recurringRules, now, days, zone).map((entry) => ({
     type: "recurring" as const,
     date: day(entry.date),
     name: entry.rule.name,
@@ -135,22 +140,22 @@ export function getUpcomingPayments(ledger: Ledger, days: number, now: Date) {
   const cards = ledger.accounts.flatMap((account) => {
     const terms = account.creditTerms
     if (!terms?.dueDay) return []
-    const due = nextDay(now, terms.dueDay)
+    const due = nextDay(now, terms.dueDay, zone)
     if (due > until) return []
     return [{ type: "card_due" as const, date: day(due), name: account.name, account_id: account.id, cutoff_day: terms.cutoffDay ?? null, due_day: terms.dueDay }]
   })
   return { from: day(now), days, payments: [...recurring, ...cards].sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0)) }
 }
 
-function nextDay(now: Date, dayOfMonth: number): Date {
+function nextDay(now: Date, dayOfMonth: number, zone: string): Date {
+  const today = zonedParts(now, zone)
+  const startOfToday = zonedDate(zone, today.year, today.month, today.day)
   for (let offset = 0; offset < 2; offset++) {
-    const year = now.getFullYear()
-    const month = now.getMonth() + offset
-    const last = new Date(year, month + 1, 0).getDate()
-    const candidate = new Date(year, month, Math.min(dayOfMonth, last), 12)
-    if (candidate >= new Date(now.getFullYear(), now.getMonth(), now.getDate())) return candidate
+    const month = addMonths(today, offset)
+    const candidate = zonedDate(zone, month.year, month.month, Math.min(dayOfMonth, daysInMonth(month)), 12)
+    if (candidate >= startOfToday) return candidate
   }
-  return new Date(now.getFullYear(), now.getMonth() + 1, dayOfMonth, 12)
+  return zonedDate(zone, today.year, today.month + 1, dayOfMonth, 12)
 }
 
 export interface TransactionSearch {
@@ -169,7 +174,7 @@ export interface TransactionSearch {
 export function searchTransactions(ledger: Ledger, query: TransactionSearch) {
   const text = query.text?.toLocaleLowerCase()
   const matches = ledger.transactions.filter((transaction: Transaction) => {
-    const date = dayKey(new Date(transaction.date))
+    const date = dayKey(new Date(transaction.date), ledger.timeZone)
     if (query.from && date < query.from) return false
     if (query.to && date > query.to) return false
     if (query.account_id && transaction.accountId !== query.account_id && transaction.destinationAccountId !== query.account_id) return false
@@ -206,9 +211,11 @@ export function searchTransactions(ledger: Ledger, query: TransactionSearch) {
 /** One call instead of five: what a model needs to start a conversation about money. */
 export function getFinancialContext(ledger: Ledger, now: Date) {
   const worth = getNetWorth(ledger)
-  const month = getMonthlySummary(ledger, yearMonthContaining(now))
+  const month = getMonthlySummary(ledger, yearMonthContaining(now, ledger.timeZone))
   return {
-    today: day(now),
+    today: dayKey(now, ledger.timeZone),
+    /** The home zone "today" and months are read in (settings, else the latest device, else the default). */
+    time_zone: ledger.timeZone,
     currencies: worth.rate ?? { principal: worth.currency },
     net_worth: worth.net_worth,
     net_worth_in_second_currency: worth.net_worth_in_second_currency,

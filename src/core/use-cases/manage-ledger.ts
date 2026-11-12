@@ -119,7 +119,7 @@ export class ManageLedger {
     // only when that wrote something.
     const loaded = await this.deps.ledger.load(userId)
     const rows = loaded.fresh ? loaded.rows : await this.deps.reader.load(userId)
-    const store = new RecordingStore(toDomain(rows))
+    const store = new RecordingStore(loaded.ledger.timeZone, toDomain(rows))
     for (const row of rows.category) if (row.deleted_at !== null) store.deletedCategoryIds.add(row.id)
     // The defaults every app shows even before it stored them.
     await store.fetchCategories()

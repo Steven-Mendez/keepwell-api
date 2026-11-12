@@ -178,6 +178,7 @@ export function toDomain(rows: LedgerRows) {
         currencies: stored.second ? { principal: stored.principal, second: stored.second, rate: stored.rate } : { principal: stored.principal, rate: "1" },
         paymentReminderDaysBefore: stored.payment_reminder_days_before,
         hasCompletedOnboarding: stored.has_completed_onboarding,
+        ...present("timeZone", stored.time_zone),
       }
     : DEFAULT_SETTINGS
   return { accounts, cards, categories, transactions, recurringRules, savingsGoals, loans, personalDebts, categorizationRules, settings }

@@ -1,6 +1,7 @@
 import { checkRecurringRule, dec, DomainError, firstNextDate, getTransactionContext, InMemoryStore, validatedTransaction, type Ledger } from "../domain/domain"
 import { uuidV5, type RecurringFrequency, type RecurringRule, type Transaction } from "../domain/schema"
 import { recurringRuleToWire, transactionToWire } from "../ledger/wire-to-domain"
+import { instantIn } from "../mcp/dates"
 import type { McpWriteCounter } from "../ports/mcp-writes"
 import type { ApplySyncBatch } from "./apply-sync-batch"
 import type { ReadLedger } from "./read-ledger"
@@ -101,7 +102,7 @@ export class CreatePending {
       throw new McpWriteError("not_editable", "That id belongs to a movement that is already confirmed or was made in the app.")
     }
     checkReferences(ledger, input)
-    const context = await getTransactionContext(new InMemoryStore(ledgerSeed(ledger)))
+    const context = await getTransactionContext(new InMemoryStore(ledger.timeZone, ledgerSeed(ledger)))
     let transaction: Transaction
     try {
       transaction = validatedTransaction(
@@ -114,7 +115,7 @@ export class CreatePending {
           source: input.card_id ? { type: "card", id: input.card_id } : { type: "account", id: input.account_id },
           ...(input.destination_account_id ? { destinationAccountId: input.destination_account_id } : {}),
           description: input.description,
-          date: new Date(input.date),
+          date: instantIn(input.date, ledger.timeZone),
           note: input.note ?? "",
           isDraft: true,
         },
@@ -137,7 +138,7 @@ export class CreatePending {
       throw new McpWriteError("not_editable", "That id belongs to a recurring payment that is already active or was made in the app.")
     }
     checkReferences(ledger, input)
-    const schedule = { frequency: input.frequency, interval: input.interval, startDate: new Date(input.start_date).toISOString() }
+    const schedule = { frequency: input.frequency, interval: input.interval, startDate: instantIn(input.start_date, ledger.timeZone).toISOString() }
     const rule: RecurringRule = {
       id: input.id,
       name: input.name.trim(),
@@ -149,8 +150,8 @@ export class CreatePending {
       ...(input.card_id ? { cardId: input.card_id } : {}),
       ...(input.kind === "transfer" && input.destination_account_id ? { destinationAccountId: input.destination_account_id } : {}),
       ...schedule,
-      nextDate: firstNextDate(schedule, this.now()).toISOString(),
-      ...(input.end_date ? { endDate: new Date(input.end_date).toISOString() } : {}),
+      nextDate: firstNextDate(schedule, ledger.timeZone, this.now()).toISOString(),
+      ...(input.end_date ? { endDate: instantIn(input.end_date, ledger.timeZone).toISOString() } : {}),
       isSubscription: input.is_subscription,
       autoConfirm: false,
       // Pending: a paused rule records nothing until the person confirms it in an app.
@@ -159,7 +160,7 @@ export class CreatePending {
       source: "mcp",
     }
     try {
-      checkRecurringRule(rule, await getTransactionContext(new InMemoryStore(ledgerSeed(ledger))))
+      checkRecurringRule(rule, await getTransactionContext(new InMemoryStore(ledger.timeZone, ledgerSeed(ledger))))
     } catch (error) {
       throw new McpWriteError("invalid", error instanceof DomainError ? `${error.code}${error.detail ? `: ${error.detail}` : ""}` : "Invalid recurring payment")
     }

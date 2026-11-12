@@ -100,7 +100,7 @@ export function testAuthApp(db: Database, config: Partial<AppConfig> = {}, optio
   const now = options.now ?? (() => new Date())
   const writer = new ApplySyncBatch(sync)
   const ledgerReader = new ScopedLedgerReader((userId) => scopedDb(db, userId))
-  const readLedger = new ReadLedger(ledgerReader, writer, now)
+  const readLedger = new ReadLedger(ledgerReader, writer, "America/Managua", now)
   const counter = new ChangeLogWriteCounter((userId) => scopedDb(db, userId))
   const createPending = new CreatePending({ ledger: readLedger, writer, counter, clock: now })
   const manage = new ManageLedger({ reader: ledgerReader, ledger: readLedger, writer, counter, trash: new ScopedMcpTrash((userId) => scopedDb(db, userId)), clock: now })

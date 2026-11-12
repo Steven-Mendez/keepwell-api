@@ -1,6 +1,5 @@
 import type { LedgerNotification } from "../domain/domain"
 import { dueNotifications, localeOf, NotificationWording, statesOf, unreadCount } from "../notifications/compose"
-import { resolveTimeZone } from "../notifications/time-zone"
 import { forgetGoneDevice, type DeliveryStore, type PushDeviceStore, type PushMessage, type PushSender } from "../ports/push"
 import type { ReadLedger } from "./read-ledger"
 
@@ -32,8 +31,8 @@ export interface SendSummary {
  * The scheduled job (ADR 0012): for each person with a push device, the notifications that apply
  * today, minus the ones read or deleted on any device and the ones already delivered, sent once.
  *
- * - The clock that matters is the person's: the calculation runs in the time zone of their most
- *   recently seen device and the 09:00 rule is read there. The pushes go to all their devices,
+ * - The clock that matters is the person's: the calculation runs in their home zone (settings, else
+ *   their most recently seen device, see `ReadLedger.timeZone`) and the 09:00 rule is read there. The pushes go to all their devices,
  *   worded in each device's language.
  * - A delivery is recorded (`claim`, a unique insert) *before* sending, so two overlapping runs, or
  *   a retry after a crash, can't notify twice. If the send fails everywhere the claim is released
@@ -82,14 +81,12 @@ export class SendDueNotifications {
     const result = { sent: 0, failed: 0, removed: 0 }
     let targets = await devices.list(userId)
     if (targets.length === 0) return result
-    const zone = resolveTimeZone([...targets].sort((a, b) => b.lastSeenAt.getTime() - a.lastSeenAt.getTime())[0]!.timeZone)
-
     const { ledger, rows } = await this.deps.ledger.load(userId)
     const states = statesOf(rows.notificationState)
-    const due = dueNotifications({ ledger, states, delivered: new Set(), now, zone })
+    const due = dueNotifications({ ledger, states, delivered: new Set(), now })
     if (due.length === 0) return result
-    const badge = unreadCount(ledger, states, now, zone)
-    const wording = new NotificationWording(ledger, zone)
+    const badge = unreadCount(ledger, states, now)
+    const wording = new NotificationWording(ledger)
 
     let budget = MAX_PER_USER_RUN
     for (const notification of due) {

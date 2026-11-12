@@ -22,6 +22,10 @@ export const SOURCED_ENTITIES: ReadonlySet<SyncEntity> = new Set(["transaction",
  *   edits from a device whose clock runs ahead both land on the server's "now".)
  * - `source` is the server's: `createdBy` when the row is created, kept as stored afterwards,
  *   whatever the client sends.
+ * - A column the incoming row lacks keeps its stored value. Only optional wire columns can be
+ *   absent, and only from an app older than the column (settings `time_zone` from an app that
+ *   predates it): replacing the row whole would clear it here and, through the change log, on every
+ *   other device. Sending `null` still clears it.
  */
 export function decide(
   entity: SyncEntity,
@@ -35,8 +39,14 @@ export function decide(
   const row: StoredRow = SOURCED_ENTITIES.has(entity) ? { ...capped, source: existing?.source ?? createdBy } : stripSource(capped)
   if (row.deleted_at !== null) return { result: "applied", row, operation: "delete" }
   if (!existing) return { result: "applied", row, operation: "create" }
-  if (row.updated_at >= existing.updated_at) return { result: "applied", row, operation: "update" }
+  if (row.updated_at >= existing.updated_at) return { result: "applied", row: keepAbsentColumns(row, existing), operation: "update" }
   return { result: "stale", why: "older_than_stored" }
+}
+
+function keepAbsentColumns(row: StoredRow, existing: StoredRow): StoredRow {
+  const kept: Record<string, unknown> = {}
+  for (const [column, value] of Object.entries(existing)) if (!(column in row) && column !== "source") kept[column] = value
+  return Object.keys(kept).length === 0 ? row : ({ ...kept, ...row } as StoredRow)
 }
 
 function stripSource(row: SyncRow): StoredRow {
