@@ -116,6 +116,19 @@ describe("MCP read tools", () => {
     expect((data.transactions as { description: string; recorded_by: string }[])[0]).toMatchObject({ description: "Supermercado La Colonia", recorded_by: "app" })
   })
 
+  it("reads a movement on the local day: 01:00 UTC on November 1 is October 31 in Managua", async () => {
+    const { http, cookie, mcp } = await connected()
+    await syncClient(http, cookie).push([
+      event("transaction", transactionRow(randomUUID(), "2026-11-01T01:00:00.000Z", { amount: "35", account_id: ACCOUNT, description: "Cena de Halloween" }), "create"),
+    ])
+    const october = await mcp.tool("search_transactions", { to: "2026-10-31", limit: 10 })
+    expect((october.data.transactions as { description: string }[]).map((t) => t.description)).toEqual(["Cena de Halloween"])
+    const november = await mcp.tool("search_transactions", { from: "2026-11-01", text: "halloween", limit: 10 })
+    expect(november.data).toMatchObject({ total_matches: 0 })
+    const summary = await mcp.tool("get_monthly_summary", { month: "2026-10" })
+    expect(summary.data.spending_by_category).toContainEqual(expect.objectContaining({ category_id: "groceries", amount: "35" }))
+  })
+
   it("lists upcoming payments", async () => {
     const { mcp } = await connected()
     const { data } = await mcp.tool("get_upcoming_payments", { days: 30 })
