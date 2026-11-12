@@ -3057,6 +3057,16 @@
   "%@, went out": {
    "es": "%@, salió"
   },
+  "%lld budgets are in %@ and aren't compared": {
+   "en": {
+    "one": "%lld budget is in %@ and isn't compared",
+    "other": "%lld budgets are in %@ and aren't compared"
+   },
+   "es": {
+    "one": "%lld presupuesto está en %@ y no se compara",
+    "other": "%lld presupuestos están en %@ y no se comparan"
+   }
+  },
   "%lld categories": {
    "en": {
     "one": "%lld category",
@@ -3133,6 +3143,9 @@
   },
   "Dropped the most": {
    "es": "Lo que más bajó"
+  },
+  "Edit budgets": {
+   "es": "Editar presupuestos"
   },
   "Every year you've logged, whatever range is picked above": {
    "es": "Todos los años que registraste, sin importar el rango elegido arriba"
