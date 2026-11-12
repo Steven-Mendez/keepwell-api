@@ -1487,6 +1487,49 @@
     "other": "%lld tarjetas"
    }
   },
+  "%lld due today": {
+   "en": {
+    "one": "%lld due today",
+    "other": "%lld due today"
+   },
+   "es": {
+    "one": "%lld vence hoy",
+    "other": "%lld vencen hoy"
+   }
+  },
+  "%lld due tomorrow": {
+   "en": {
+    "one": "%lld due tomorrow",
+    "other": "%lld due tomorrow"
+   },
+   "es": {
+    "one": "%lld vence mañana",
+    "other": "%lld vencen mañana"
+   }
+  },
+  "%lld installments overdue": {
+   "en": {
+    "one": "%lld installment overdue",
+    "other": "%lld installments overdue"
+   },
+   "es": {
+    "one": "%lld cuota atrasada",
+    "other": "%lld cuotas atrasadas"
+   }
+  },
+  "%lld payments to confirm": {
+   "en": {
+    "one": "%lld payment to confirm",
+    "other": "%lld payments to confirm"
+   },
+   "es": {
+    "one": "%lld pago por confirmar",
+    "other": "%lld pagos por confirmar"
+   }
+  },
+  "All caught up": {
+   "es": "Todo al día"
+  },
   "Available today": {
    "es": "Disponible hoy"
   },
@@ -2051,6 +2094,9 @@
   "Amount": {
    "es": "Monto"
   },
+  "Billing day": {
+   "es": "Día de cobro"
+  },
   "Bills and other expenses": {
    "es": "Facturas y otros gastos"
   },
@@ -2105,6 +2151,9 @@
   "Give it a name.": {
    "es": "Ponle un nombre."
   },
+  "Half-yearly": {
+   "es": "Semestral"
+  },
   "Hide amounts": {
    "es": "Ocultar montos"
   },
@@ -2126,11 +2175,20 @@
   "Monthly": {
    "es": "Mensual"
   },
+  "More options": {
+   "es": "Más opciones"
+  },
   "Name": {
    "es": "Nombre"
   },
   "New recurring": {
    "es": "Nuevo recurrente"
+  },
+  "New subscription": {
+   "es": "Nueva suscripción"
+  },
+  "Next charge": {
+   "es": "Próximo cobro"
   },
   "Next dates": {
    "es": "Próximas fechas"
@@ -2178,6 +2236,9 @@
   },
   "Proposed by Claude · resume to confirm": {
    "es": "Propuesto por Claude · reanúdalo para confirmar"
+  },
+  "Quarterly": {
+   "es": "Trimestral"
   },
   "Record automatically": {
    "es": "Registrar automáticamente"
@@ -3953,6 +4014,16 @@
   }
  },
  "plan": {
+  "%lld debts to pay": {
+   "en": {
+    "one": "%lld debt to pay",
+    "other": "%lld debts to pay"
+   },
+   "es": {
+    "one": "%lld deuda por pagar",
+    "other": "%lld deudas por pagar"
+   }
+  },
   "%lld goals": {
    "en": {
     "one": "%lld goal",
@@ -3963,8 +4034,28 @@
     "other": "%lld metas"
    }
   },
+  "%lld people owe you": {
+   "en": {
+    "one": "%lld person owes you",
+    "other": "%lld people owe you"
+   },
+   "es": {
+    "one": "%lld persona te debe",
+    "other": "%lld personas te deben"
+   }
+  },
   "Next: %@ · %@": {
    "es": "Próximo: %@ · %@"
+  },
+  "Per month · %lld subscriptions": {
+   "en": {
+    "one": "Per month · %lld subscription",
+    "other": "Per month · %lld subscriptions"
+   },
+   "es": {
+    "one": "Al mes · %lld suscripción",
+    "other": "Al mes · %lld suscripciones"
+   }
   },
   "Plan": {
    "es": "Planificar"
