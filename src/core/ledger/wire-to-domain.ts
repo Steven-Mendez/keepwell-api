@@ -165,8 +165,10 @@ export function toDomain(rows: LedgerRows) {
     ...present("settledAt", row.settled_at),
     ...present("transactionId", row.transaction_id),
   }))
+  // Two offline devices can give rules the same `sort_index`; the `id` breaks the tie as the apps do,
+  // so every platform picks the same winning rule.
   const categorizationRules: CategorizationRule[] = alive(rows.categorizationRule)
-    .sort((a, b) => a.sort_index - b.sort_index)
+    .sort((a, b) => a.sort_index - b.sort_index || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
     .map((row) => ({ id: row.id, match: row.match, categoryId: row.category_id, kind: row.kind, ...tags(row.tags) }))
   const stored = alive(rows.settings)[0]
   // Device preferences don't sync; the server uses the defaults, which no computation here reads.
