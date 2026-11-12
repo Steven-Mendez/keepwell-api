@@ -20,6 +20,7 @@ export type DomainErrorCode =
   | "invalidTransferDestination"
   | "invalidInterval"
   | "invalidEndDate"
+  | "invalidDueDate"
   | "notFound"
   | "corruptedData"
 
@@ -51,6 +52,8 @@ export class DomainError extends Error {
   static invalidInterval = (interval: number) => new DomainError("invalidInterval", String(interval))
   /** A recurring rule can't end before the day it starts. */
   static invalidEndDate = () => new DomainError("invalidEndDate")
+  /** A personal debt can't be due before the day it was lent or borrowed. */
+  static invalidDueDate = () => new DomainError("invalidDueDate")
   static notFound = (id: string) => new DomainError("notFound", id)
   static corruptedData = (detail: string) => new DomainError("corruptedData", detail)
 }

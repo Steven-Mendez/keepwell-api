@@ -10,7 +10,7 @@ import {
   type PersonalDebt,
 } from "../schema"
 
-import { startOfDay, type TimeZone } from "./calendar"
+import { dayKey, startOfDay, type TimeZone } from "./calendar"
 import { Decimal, ZERO, dec, decimalText } from "./decimal"
 import { DomainError } from "./errors"
 import type { Money } from "./money"
@@ -156,12 +156,54 @@ export function debtRemaining(debt: PersonalDebt): Decimal {
 
 export const isSettled = (debt: PersonalDebt) => debt.settledAt !== undefined
 
-/** Open debts first, newest first; settled ones after them, also newest first. */
+/** Where an open debt with a due date stands on a day. */
+export type DebtDue =
+  | { state: "upcoming"; daysLeft: number }
+  | { state: "today" }
+  | { state: "overdue"; daysLate: number }
+
+const DAY_MS = 86_400_000
+
+/** Calendar days from `from` to `to` in `zone`, negative when `to` is earlier. */
+function daysFrom(from: Date, to: Date, zone: TimeZone): number {
+  return Math.round(
+    (startOfDay(to, zone).getTime() - startOfDay(from, zone).getTime()) / DAY_MS
+  )
+}
+
+/**
+ * How far the due date is from `today`, by calendar days in `zone`. `undefined` for a debt without
+ * a due date, settled, or with nothing left to pay: none of those is due anymore.
+ */
+export function debtDueStatus(
+  debt: PersonalDebt,
+  today: Date,
+  zone: TimeZone
+): DebtDue | undefined {
+  if (debt.dueDate === undefined || isSettled(debt)) return undefined
+  if (debtRemaining(debt).isZero()) return undefined
+  const days = daysFrom(today, new Date(debt.dueDate), zone)
+  if (days > 0) return { state: "upcoming", daysLeft: days }
+  if (days === 0) return { state: "today" }
+  return { state: "overdue", daysLate: -days }
+}
+
+/**
+ * Open debts with a due date first, the soonest first (so overdue ones lead); then open debts
+ * without one, newest first; settled ones last, also newest first.
+ */
 export function orderedPersonalDebts(
   debts: readonly PersonalDebt[]
 ): PersonalDebt[] {
+  const group = (debt: PersonalDebt) =>
+    isSettled(debt) ? 2 : debt.dueDate === undefined ? 1 : 0
   return [...debts].sort((a, b) => {
-    if (isSettled(a) !== isSettled(b)) return isSettled(a) ? 1 : -1
+    if (group(a) !== group(b)) return group(a) - group(b)
+    if (group(a) === 0) {
+      const byDue =
+        new Date(a.dueDate!).getTime() - new Date(b.dueDate!).getTime()
+      if (byDue !== 0) return byDue
+    }
     const byDate = new Date(b.date).getTime() - new Date(a.date).getTime()
     return byDate || byName(a.person, a.id, b.person, b.id)
   })
@@ -424,6 +466,11 @@ export interface PersonalDebtDraft {
   currency: string
   date: Date
   note: string
+  /**
+   * When it should be paid back, saved as the start of that day. `undefined` saves it without one,
+   * also when editing: that is how a due date is removed.
+   */
+  dueDate?: Date | undefined
 }
 
 async function existingDebt(
@@ -449,6 +496,11 @@ export async function savePersonalDebt(
     draft.id === undefined ? undefined : await existingDebt(store, draft.id)
   if (!current) await checkNewCurrency(store, draft.currency)
   const note = draft.note.trim()
+  const zone = store.timeZone
+  const dueDate =
+    draft.dueDate === undefined ? undefined : startOfDay(draft.dueDate, zone)
+  if (dueDate !== undefined && dayKey(dueDate, zone) < dayKey(draft.date, zone))
+    throw DomainError.invalidDueDate()
   const debt: PersonalDebt = {
     id: current?.id ?? newID(),
     person,
@@ -466,6 +518,7 @@ export async function savePersonalDebt(
     ...(current?.transactionId === undefined
       ? {}
       : { transactionId: current.transactionId }),
+    ...(dueDate === undefined ? {} : { dueDate: dueDate.toISOString() }),
   }
   if (debtRepaid(debt).gt(amount)) throw DomainError.invalidAmount()
   await store.savePersonalDebt(debt)

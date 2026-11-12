@@ -1071,6 +1071,15 @@
   "Due": {
    "es": "Pendiente"
   },
+  "Due %@": {
+   "es": "Vence el %@"
+  },
+  "Due date": {
+   "es": "Fecha de pago"
+  },
+  "Due today": {
+   "es": "Vence hoy"
+  },
   "Each person gets a debt that owes you their share. Your movement doesn't change.": {
    "es": "A cada persona se le anota una deuda por su parte. Tu movimiento no cambia."
   },
@@ -1164,6 +1173,16 @@
   "Optional": {
    "es": "Opcional"
   },
+  "Overdue · %lld days": {
+   "en": {
+    "one": "Overdue · %lld day",
+    "other": "Overdue · %lld days"
+   },
+   "es": {
+    "one": "Atrasada · %lld día",
+    "other": "Atrasada · %lld días"
+   }
+  },
   "Overdue: %@ on %@ · %@": {
    "es": "Atrasada: %1$@ el %2$@ · %3$@"
   },
@@ -1218,6 +1237,9 @@
   "Schedule": {
    "es": "Calendario de cuotas"
   },
+  "Set a due date": {
+   "es": "Poner fecha de pago"
+  },
   "Settled": {
    "es": "Saldada"
   },
@@ -1238,6 +1260,9 @@
   },
   "That's more than what's left.": {
    "es": "Es más de lo que falta."
+  },
+  "The due date can't be before the debt's date.": {
+   "es": "La fecha de pago no puede ser anterior a la de la deuda."
   },
   "The expense it recorded is deleted, so balances go back to before you paid it.": {
    "es": "Se elimina el gasto que registró, así que los saldos vuelven a como estaban antes de pagarla."
@@ -1443,6 +1468,16 @@
   },
   "%@%% saved": {
    "es": "%@%% ahorrado"
+  },
+  "%@: due in %lld days": {
+   "en": {
+    "one": "%@: due in %lld day",
+    "other": "%@: due in %lld days"
+   },
+   "es": {
+    "one": "%@: vence en %lld día",
+    "other": "%@: vence en %lld días"
+   }
   },
   "%@: installment in %lld days": {
    "en": {
@@ -1677,6 +1712,9 @@
   "They don't count toward balances until you confirm them · %@": {
    "es": "No cuentan en saldos hasta que los confirmes · %@"
   },
+  "They owe you %@.": {
+   "es": "Te debe %@."
+  },
   "Upcoming": {
    "es": "Próximos"
   },
@@ -1717,6 +1755,9 @@
     "one": "gastado · %lld borrador",
     "other": "gastado · %lld borradores"
    }
+  },
+  "You owe %@.": {
+   "es": "Le debes %@."
   },
   "≈ %@": {
    "es": "≈ %@"

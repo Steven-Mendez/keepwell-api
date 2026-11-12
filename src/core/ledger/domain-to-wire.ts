@@ -133,6 +133,8 @@ export function personalDebtColumns(debt: PersonalDebt): Columns<"personalDebt">
     note: orNull(debt.note),
     settled_at: orNull(debt.settledAt),
     transaction_id: orNull(debt.transactionId),
+    // Always written, null for none: removing the date clears it on every device.
+    due_date: orNull(debt.dueDate),
   }
 }
 

@@ -44,6 +44,7 @@ month's is a new one:
 | card payment | `payment:<account>:<due yyyy-mm-dd>` |
 | statement closing | `cutoff:<account>:<cutoff yyyy-mm-dd>` |
 | loan installment | `installment:<loan>:<number>` |
+| personal debt due | `debt:<debt>:<due yyyy-mm-dd>` |
 | subscription renewal | `renewal:<rule>:<occurrence yyyy-mm-dd>` |
 | bill (recurring expense recorded as a draft) | `bill:<rule>:<occurrence yyyy-mm-dd>` |
 | card expiring | `expiry:<card>:<yyyy-mm>` |
@@ -146,6 +147,7 @@ are `ledgerNotifications` and `tests/notifications.test.ts` on the web.
 | payment | `payment:<account>:<due day>` | credit account with `dueDay`; next due (today or later) within `payment_reminder_days_before` days | due − window |
 | cutoff | `cutoff:<account>:<today>` | next cutoff is today | today |
 | installment | `installment:<loan>:<number>` | next unpaid installment due in 0…window days | due − window |
+| debt | `debt:<debt>:<due day>` | open personal debt with something left, due in 0…window days (either direction; never once overdue) | due − window |
 | renewal | `renewal:<rule>:<occurrence day>` | subscription occurrence tomorrow | today |
 | bill | `bill:<rule>:<occurrence day>` | occurrence tomorrow of an expense rule that is neither a subscription nor auto-confirmed | today |
 | expiry | `expiry:<card>:<yyyy-mm>` | card expiring this month | 1st of month |
@@ -155,7 +157,7 @@ are `ledgerNotifications` and `tests/notifications.test.ts` on the web.
 
 The inbox leaves `planned` out (Home lists drafts); native notifications include it.
 
-**New kinds.** `bill` was added after apps were installed. A kind is only added if an app that
+**New kinds.** `bill` and `debt` were added after apps were installed. A kind is only added if an app that
 doesn't know it can ignore it without failing: the push carries no field such an app doesn't read
 (the kind travels only in `thread-id`), its `target` is a screen they already decode, and its id is
 opaque to them (they store its `notificationState` and prune it by the day in the id). Such an app

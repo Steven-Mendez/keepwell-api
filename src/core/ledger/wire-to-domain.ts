@@ -164,6 +164,7 @@ export function toDomain(rows: LedgerRows) {
       .map((repayment) => ({ id: repayment.id, amount: repayment.amount, date: repayment.date })),
     ...present("settledAt", row.settled_at),
     ...present("transactionId", row.transaction_id),
+    ...present("dueDate", row.due_date),
   }))
   // Two offline devices can give rules the same `sort_index`; the `id` breaks the tie as the apps do,
   // so every platform picks the same winning rule.

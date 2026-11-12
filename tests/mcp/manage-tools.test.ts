@@ -189,6 +189,28 @@ describe("MCP manage tools", () => {
     expect(data<{ rules: unknown[] }>(await tool("list_categorization_rules")).rules).toHaveLength(1)
   })
 
+  it("gives a personal debt a due date, keeps it when an update leaves it out and removes it with null", async () => {
+    const { tool, data } = await setup()
+    type Listed = { debts: { id: string; due_date: string | null; due_status: string | null; days_left?: number }[] }
+    const listed = async (id: string) => data<Listed>(await tool("list_personal_debts")).debts.find((debt) => debt.id === id)
+    const fields = { person: "Ana", direction: "theyOweMe", amount: "12", currency: "USD", date: "2026-09-01" }
+    const debtId = data<{ result: { debt_id: string } }>(await tool("create_personal_debt", { id: randomUUID(), ...fields, due_date: "2099-12-15" })).result.debt_id
+    const created = await listed(debtId)
+    expect(created).toMatchObject({ due_date: "2099-12-15", due_status: "upcoming" })
+    expect(created?.days_left).toBeGreaterThan(0)
+
+    expect((await tool("update_personal_debt", { debt_id: debtId, ...fields, note: "Dinner" })).isError).toBeFalsy()
+    expect(await listed(debtId)).toMatchObject({ due_date: "2099-12-15", due_status: "upcoming" })
+
+    const before = await tool("update_personal_debt", { debt_id: debtId, ...fields, due_date: "2026-08-31" })
+    expect(before.isError).toBe(true)
+    expect(await listed(debtId)).toMatchObject({ due_date: "2099-12-15" })
+
+    expect((await tool("update_personal_debt", { debt_id: debtId, ...fields, due_date: null })).isError).toBeFalsy()
+    expect(await listed(debtId)).toMatchObject({ due_date: null, due_status: null })
+    expect((await admin.db.execute(sql`select due_date from personal_debts where id = ${debtId}`)).rows).toEqual([{ due_date: null }])
+  })
+
   it("applies a batch in one call: an account and its movements, all or nothing, never twice", async () => {
     const { tool, data } = await setup()
     const accountId = randomUUID()

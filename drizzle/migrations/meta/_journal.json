@@ -134,6 +134,13 @@
       "when": 1794514965759,
       "tag": "0018_add_settings_time_zone",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1794519531315,
+      "tag": "0019_personal_debt_due_date",
+      "breakpoints": true
     }
   ]
 }

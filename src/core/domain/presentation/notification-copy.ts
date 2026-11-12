@@ -84,6 +84,15 @@ export function notificationCopy(t: Translator, ledger: Ledger, notification: Le
         body: t.in("home", "Installment %lld of %lld · %@", number, count, money(value)),
       }
     }
+    case "debt": {
+      const { person, direction, remaining, daysLeft } = notification.params
+      return {
+        icon: "cash",
+        tone: "pending",
+        title: daysLeft === 0 ? t.in("home", "%@: due today", person) : t.in("home", "%@: due in %lld days", person, daysLeft),
+        body: direction === "theyOweMe" ? t.in("home", "They owe you %@.", money(remaining)) : t.in("home", "You owe %@.", money(remaining)),
+      }
+    }
     case "renewal": {
       const { name, amount: value, accountId, cardId } = notification.params
       return {

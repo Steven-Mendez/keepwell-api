@@ -644,6 +644,11 @@
         "nullable": true,
         "optional": false
       },
+      "due_date": {
+        "type": "string",
+        "nullable": true,
+        "optional": true
+      },
       "created_at": {
         "type": "string",
         "nullable": false,

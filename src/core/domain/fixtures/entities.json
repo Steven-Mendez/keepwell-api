@@ -450,6 +450,21 @@
               }
             ]
           }
+        },
+        {
+          "name": "with a due date",
+          "value": {
+            "id": "55555555-5555-4555-8555-555555555555",
+            "person": "Ana",
+            "direction": "theyOweMe",
+            "amount": {
+              "amount": "12",
+              "currency": "USD"
+            },
+            "date": "2026-09-01T12:00:00.000Z",
+            "repayments": [],
+            "dueDate": "2026-11-15T06:00:00.000Z"
+          }
         }
       ],
       "invalid": [
@@ -475,6 +490,22 @@
                 "date": "2026-11-01T12:00:00.000Z"
               }
             ]
+          }
+        },
+        {
+          "name": "due date that isn't a date",
+          "reason": "dueDate must be an ISO date-time",
+          "value": {
+            "id": "55555555-5555-4555-8555-555555555555",
+            "person": "Ana",
+            "direction": "theyOweMe",
+            "amount": {
+              "amount": "12",
+              "currency": "USD"
+            },
+            "date": "2026-09-01T12:00:00.000Z",
+            "repayments": [],
+            "dueDate": "next month"
           }
         }
       ]
