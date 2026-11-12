@@ -103,6 +103,7 @@ export function toDomain(rows: LedgerRows) {
       ...present("recurringId", row.recurring_id),
       ...tags(row.tags),
       ...(row.source === "mcp" ? { source: "mcp" as const } : {}),
+      ...present("importedId", row.imported_id ?? null),
     }))
     .sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0))
   const recurringRules: RecurringRule[] = alive(rows.recurringRule).map((row) => ({
@@ -208,6 +209,7 @@ export function transactionToWire(transaction: Transaction, audit: { created_at:
     note: transaction.note ?? null,
     recurring_id: transaction.recurringId ?? null,
     tags: transaction.tags ?? [],
+    imported_id: transaction.importedId ?? null,
     ...audit,
     deleted_at: null,
   }

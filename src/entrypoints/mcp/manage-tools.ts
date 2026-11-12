@@ -21,9 +21,14 @@ import {
   deletePersonalDebt,
   deleteRecurringRule,
   deleteSavingsGoal,
+  dayKey,
   deleteTransaction,
   DomainError,
   draftFrom,
+  importedLineIds,
+  importedTransactionId,
+  importTransactions,
+  MAX_IMPORT_LINES,
   payLoanInstallment,
   renameAccount,
   reopenAccount,
@@ -47,6 +52,7 @@ import {
   updateCreditTerms,
   withRate,
   withdrawFromSavingsGoal,
+  type IncomingLine,
   type PaymentSource,
   type RecurringRuleDraft,
   type TransactionDraft,
@@ -84,6 +90,11 @@ function source(input: { account_id: string; card_id?: string | undefined }): Pa
 }
 
 
+/** A statement line as the domain reads it (`matchIncoming`). */
+function incomingLine(line: { day: string; direction: "out" | "in"; amount: string; currency: string; description: string; imported_id?: string | undefined }): IncomingLine {
+  return { day: line.day, direction: line.direction, amount: line.amount, currency: line.currency.toUpperCase(), description: line.description, ...(line.imported_id ? { importedId: line.imported_id } : {}) }
+}
+
 function find<T extends { id: string }>(list: readonly T[], id: string, what: string): T {
   const found = list.find((item) => item.id === id)
   if (!found) throw new ManageError("not_found", `${what} ${id} isn't one of this person's (see the list tools)`)
@@ -115,7 +126,14 @@ export function registerManageTools(server: McpServer, options: { manage: Manage
    */
   const tool = <Args extends z.ZodRawShape>(
     name: string,
-    meta: { title: string; description: string; annotations: ToolAnnotations; view?: boolean },
+    meta: {
+      title: string
+      description: string
+      annotations: ToolAnnotations
+      view?: boolean
+      /** Ids the operation derives itself and that must stay as they are (by default, the `id` argument). */
+      keepIds?: (args: z.infer<z.ZodObject<Args>>) => string[]
+    },
     input: Args,
     key: (args: z.infer<z.ZodObject<Args>>) => string,
     operation: (store: RecordingStore, args: z.infer<z.ZodObject<Args>>, now: Date) => Promise<unknown>,
@@ -125,7 +143,7 @@ export function registerManageTools(server: McpServer, options: { manage: Manage
     const config = { title: meta.title, description: meta.description, inputSchema: meta.view ? { ...input, lang } : input, annotations: meta.annotations }
     const handler = (async (args: z.infer<z.ZodObject<Args>>) => {
       try {
-        const { result, changes } = await manage.run(userId, clientId, { key: `${name}|${key(args)}`, keepIds: typeof (args as { id?: unknown }).id === "string" ? [(args as { id: string }).id] : [], ...(trash ? { trashLabel: (store: RecordingStore) => trash(store, args) } : {}) }, (store, now) => operation(store, args, now))
+        const { result, changes } = await manage.run(userId, clientId, { key: `${name}|${key(args)}`, keepIds: meta.keepIds ? meta.keepIds(args) : typeof (args as { id?: unknown }).id === "string" ? [(args as { id: string }).id] : [], ...(trash ? { trashLabel: (store: RecordingStore) => trash(store, args) } : {}) }, (store, now) => operation(store, args, now))
         const data = { ok: true, ...(result && typeof result === "object" ? { result } : {}), changes }
         log.info({ mcp_tool: name, client_id: clientId, ok: true, created: changes.created, updated: changes.updated, deleted: changes.deleted }, "mcp manage")
         return { content: [{ type: "text", text: JSON.stringify(data) }], structuredContent: data } satisfies CallToolResult
@@ -490,6 +508,61 @@ export function registerManageTools(server: McpServer, options: { manage: Manage
     (args) => args.transaction_id,
     async (store, args) => deleteTransaction(store, args.transaction_id),
     (store, args) => `Movement ${find(store.transactions, args.transaction_id, "Movement").description}`
+  )
+
+  const statementLine = z.object({
+    day: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "YYYY-MM-DD").describe("The day the statement shows"),
+    direction: z.enum(["out", "in"]).describe("out: money left the account (a charge); in: money entered it"),
+    amount: decimal.describe("Always positive; direction gives the sign"),
+    currency,
+    description: z.string().min(1).max(200).describe("As the statement words it, or tidied up"),
+    imported_id: z.string().min(1).max(128).optional().describe("The bank's id for the line (FITID, reference number) when the statement has one"),
+    category_id: ref("From list_categories, for the movement if the line is new; left out means Other").optional(),
+    note: z.string().max(500).optional(),
+  })
+
+  tool(
+    "import_transactions",
+    {
+      title: "Import a bank statement",
+      description:
+        "Imports a bank statement's lines into one account without duplicating what is already recorded. Run with dry_run first, show the person the new, existing and skipped lines, and only then call it again with dry_run false. Don't split one day's lines across calls.",
+      annotations: { ...WRITE, idempotentHint: true },
+      keepIds: (args) => importedLineIds(args.account_id, args.lines.map(incomingLine)).map((id) => importedTransactionId(args.account_id, id)),
+    },
+    {
+      account_id: ref("From list_accounts: the account the statement is from"),
+      card_id: ref("A card of that account, for a card's statement").optional(),
+      dry_run: z.boolean().default(true).describe("true (the default) only says what would happen; false saves the new lines"),
+      lines: z.array(statementLine).min(1).max(MAX_IMPORT_LINES),
+      lang,
+    },
+    (args) => JSON.stringify(args),
+    async (store, args) => {
+      find(store.accounts, args.account_id, "Account")
+      const outcome = await importTransactions(store, {
+        accountId: args.account_id,
+        ...(args.card_id ? { cardId: args.card_id } : {}),
+        lines: args.lines.map((line) => ({ ...incomingLine(line), ...(line.category_id ? { categoryId: line.category_id } : {}), ...(line.note ? { note: line.note } : {}) })),
+        dryRun: args.dry_run,
+      })
+      // What each matched line matched, so Claude can show it next to the statement's line.
+      const movement = (id: string | undefined) => {
+        const found = id ? store.transactions.find((transaction) => transaction.id === id) : undefined
+        return found ? { movement: { description: found.description, date: dayKey(new Date(found.date), store.timeZone), status: found.status } } : {}
+      }
+      return {
+        dry_run: outcome.dryRun,
+        counts: outcome.counts,
+        lines: outcome.lines.map((match) =>
+          match.result === "new"
+            ? { line: match.line, result: match.result, imported_id: match.importedId }
+            : match.result === "existing"
+              ? { line: match.line, result: match.result, by: match.by, transaction_id: match.transactionId, ...movement(match.transactionId) }
+              : { line: match.line, result: match.result, reason: match.reason, ...(match.transactionId ? { transaction_id: match.transactionId } : {}), ...movement(match.transactionId) }
+        ),
+      }
+    }
   )
 
   // Recurring payments -------------------------------------------------------------------------
@@ -868,7 +941,8 @@ export function registerManageTools(server: McpServer, options: { manage: Manage
   // Batches ------------------------------------------------------------------------------------
 
   // Deletes stay one by one: each is destructive, so Claude asks about each.
-  const batchable = [...specs.keys()].filter((name) => !name.startsWith("delete_") && name !== "unpay_loan_installment")
+  // import_transactions neither: it has its own preview (dry_run) and ids derived from each line.
+  const batchable = [...specs.keys()].filter((name) => !name.startsWith("delete_") && name !== "unpay_loan_installment" && name !== "import_transactions")
   registerAppTool(
     server,
     "apply_changes",

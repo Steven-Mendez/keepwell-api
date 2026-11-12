@@ -1,6 +1,6 @@
 import { z } from "zod"
 
-import { CardColor, CardKind, CardNetwork, DebtDirection, DebtMode, LoanFrequency, RecurringFrequency, AccountKind } from "./entities"
+import { CardColor, CardKind, CardNetwork, DebtDirection, DebtMode, ImportedId, LoanFrequency, RecurringFrequency, AccountKind } from "./entities"
 import { CurrencyCode, DecimalString, Id, IsoDateTime, PositiveDecimalString, RecordSource, TimeZoneId, TransactionKind, TransactionStatus } from "./primitives"
 
 // The sync wire format (ADR 0005): each event carries one row as stored, in snake_case, the same
@@ -111,6 +111,12 @@ export const TransactionWire = z.object({
   tags: z.array(z.string()),
   /** Optional for apps older than the field; the server keeps what it has. */
   source: RecordSource.optional(),
+  /**
+   * Optional, not only nullable: apps older than imports lack the key. Once set it is the server's
+   * to keep, like `source`: a row that lacks it or sends null doesn't clear it (`decide` in
+   * keepwell-api), so an app that doesn't know the field can edit an imported movement.
+   */
+  imported_id: ImportedId.nullable().optional(),
   ...Audit,
 })
 

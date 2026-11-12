@@ -93,6 +93,8 @@ export interface TransactionDraft {
   recurringId?: string
   /** Normalized when saved; absent or empty means none. */
   tags?: string[]
+  /** The statement line a new movement is imported from (`importTransactions`); an edit keeps the one it had. */
+  importedId?: string
 }
 
 export interface TransactionContext {
@@ -195,6 +197,8 @@ export function categorizedTransaction(
   const note = draft.note.trim()
   const debited = draft.currency === rate.principal ? undefined : draft.actualDebitedPrincipal
   const recurringId = draft.recurringId ?? existing?.recurringId
+  // Nobody types it: an edit from any editor keeps the statement line the movement came from.
+  const importedId = existing?.importedId ?? draft.importedId
   const built: Transaction = {
     id: draft.id,
     date: draft.date.toISOString(),
@@ -213,6 +217,7 @@ export function categorizedTransaction(
     ...(note === "" ? {} : { note }),
     ...(recurringId === undefined ? {} : { recurringId }),
     ...tagsField(draft.tags),
+    ...(importedId === undefined ? {} : { importedId }),
   }
   // The rule reads the text as typed, before the safety net below fills in a category's name.
   const rule = isNew ? categorizingRule(built, context.rules) : undefined

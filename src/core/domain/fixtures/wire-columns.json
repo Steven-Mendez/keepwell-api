@@ -304,6 +304,11 @@
         "nullable": false,
         "optional": true
       },
+      "imported_id": {
+        "type": "string",
+        "nullable": true,
+        "optional": true
+      },
       "created_at": {
         "type": "string",
         "nullable": false,
