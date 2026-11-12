@@ -1,0 +1,342 @@
+{
+  "version": 1,
+  "about": "Shared cases for upcomingPayments (web src/lib/domain/upcoming-payments.ts, iOS UpcomingPayments.swift). keepwell-api and keepwell-ios copy this file verbatim.",
+  "cases": [
+    {
+      "name": "a week with every kind",
+      "now": "2026-11-12T18:00:00.000Z",
+      "timeZone": "America/Managua",
+      "ledger": {
+        "currencies": {
+          "principal": "USD",
+          "rate": "1"
+        },
+        "accounts": [
+          {
+            "id": "00000000-0000-4000-8000-0000000000a1",
+            "name": "Bank",
+            "kind": "deposit",
+            "openingBalances": [
+              {
+                "amount": "1000",
+                "currency": "USD"
+              }
+            ],
+            "openingDate": "2026-01-01T18:00:00.000Z"
+          },
+          {
+            "id": "00000000-0000-4000-8000-0000000000a2",
+            "name": "Visa",
+            "kind": "credit",
+            "openingBalances": [
+              {
+                "amount": "0",
+                "currency": "USD"
+              }
+            ],
+            "openingDate": "2026-01-01T18:00:00.000Z",
+            "creditTerms": {
+              "debtMode": "principal",
+              "dueDay": 15
+            }
+          },
+          {
+            "id": "00000000-0000-4000-8000-0000000000a3",
+            "name": "Amex",
+            "kind": "credit",
+            "openingBalances": [
+              {
+                "amount": "0",
+                "currency": "USD"
+              }
+            ],
+            "openingDate": "2026-01-01T18:00:00.000Z",
+            "creditTerms": {
+              "debtMode": "principal",
+              "dueDay": 13
+            }
+          }
+        ],
+        "transactions": [
+          {
+            "id": "00000000-0000-4000-8000-0000000001b1",
+            "date": "2026-11-09T18:00:00.000Z",
+            "status": "planned",
+            "description": "Rent",
+            "kind": "expense",
+            "amount": "300",
+            "currency": "USD",
+            "accountId": "00000000-0000-4000-8000-0000000000a1",
+            "exchangeRate": {
+              "principal": "USD",
+              "second": "USD",
+              "rate": "1"
+            },
+            "isShared": false,
+            "recurringId": "00000000-0000-4000-8000-0000000000c1"
+          },
+          {
+            "id": "00000000-0000-4000-8000-0000000001b0",
+            "date": "2026-11-09T18:00:00.000Z",
+            "status": "planned",
+            "description": "Water",
+            "kind": "expense",
+            "amount": "20",
+            "currency": "USD",
+            "accountId": "00000000-0000-4000-8000-0000000000a1",
+            "exchangeRate": {
+              "principal": "USD",
+              "second": "USD",
+              "rate": "1"
+            },
+            "isShared": false
+          },
+          {
+            "id": "00000000-0000-4000-8000-0000000001b2",
+            "date": "2026-11-12T18:00:00.000Z",
+            "status": "planned",
+            "description": "Phone",
+            "kind": "expense",
+            "amount": "15",
+            "currency": "USD",
+            "accountId": "00000000-0000-4000-8000-0000000000a1",
+            "exchangeRate": {
+              "principal": "USD",
+              "second": "USD",
+              "rate": "1"
+            },
+            "isShared": false
+          },
+          {
+            "id": "00000000-0000-4000-8000-0000000001b3",
+            "date": "2026-11-30T18:00:00.000Z",
+            "status": "planned",
+            "description": "Later",
+            "kind": "expense",
+            "amount": "10",
+            "currency": "USD",
+            "accountId": "00000000-0000-4000-8000-0000000000a1",
+            "exchangeRate": {
+              "principal": "USD",
+              "second": "USD",
+              "rate": "1"
+            },
+            "isShared": false
+          },
+          {
+            "id": "00000000-0000-4000-8000-0000000001b4",
+            "date": "2026-11-01T18:00:00.000Z",
+            "status": "confirmed",
+            "description": "Groceries",
+            "kind": "expense",
+            "amount": "200",
+            "currency": "USD",
+            "accountId": "00000000-0000-4000-8000-0000000000a2",
+            "exchangeRate": {
+              "principal": "USD",
+              "second": "USD",
+              "rate": "1"
+            },
+            "isShared": false
+          },
+          {
+            "id": "00000000-0000-4000-8000-0000000001b5",
+            "date": "2026-11-17T18:00:00.000Z",
+            "status": "planned",
+            "description": "Dentist",
+            "kind": "expense",
+            "amount": "60",
+            "currency": "USD",
+            "accountId": "00000000-0000-4000-8000-0000000000a1",
+            "exchangeRate": {
+              "principal": "USD",
+              "second": "USD",
+              "rate": "1"
+            },
+            "isShared": false
+          }
+        ],
+        "recurringRules": [
+          {
+            "id": "00000000-0000-4000-8000-0000000000c1",
+            "name": "Gym",
+            "kind": "expense",
+            "amount": "25",
+            "currency": "USD",
+            "accountId": "00000000-0000-4000-8000-0000000000a1",
+            "frequency": "monthly",
+            "interval": 1,
+            "startDate": "2026-01-14T18:00:00.000Z",
+            "nextDate": "2026-11-14T18:00:00.000Z",
+            "isSubscription": true,
+            "autoConfirm": false,
+            "isPaused": false
+          },
+          {
+            "id": "00000000-0000-4000-8000-0000000000c2",
+            "name": "Paused",
+            "kind": "expense",
+            "amount": "25",
+            "currency": "USD",
+            "accountId": "00000000-0000-4000-8000-0000000000a1",
+            "frequency": "monthly",
+            "interval": 1,
+            "startDate": "2026-01-13T18:00:00.000Z",
+            "nextDate": "2026-11-13T18:00:00.000Z",
+            "isSubscription": false,
+            "autoConfirm": false,
+            "isPaused": true
+          },
+          {
+            "id": "00000000-0000-4000-8000-0000000000c3",
+            "name": "Salary",
+            "kind": "income",
+            "amount": "25",
+            "currency": "USD",
+            "accountId": "00000000-0000-4000-8000-0000000000a1",
+            "frequency": "monthly",
+            "interval": 1,
+            "startDate": "2026-01-12T18:00:00.000Z",
+            "nextDate": "2026-11-12T18:00:00.000Z",
+            "isSubscription": false,
+            "autoConfirm": false,
+            "isPaused": false
+          },
+          {
+            "id": "00000000-0000-4000-8000-0000000000c4",
+            "name": "Ended",
+            "kind": "expense",
+            "amount": "25",
+            "currency": "USD",
+            "accountId": "00000000-0000-4000-8000-0000000000a1",
+            "frequency": "monthly",
+            "interval": 1,
+            "startDate": "2026-01-13T18:00:00.000Z",
+            "nextDate": "2026-11-13T18:00:00.000Z",
+            "isSubscription": false,
+            "autoConfirm": false,
+            "isPaused": false,
+            "endDate": "2026-10-31T18:00:00.000Z"
+          }
+        ],
+        "loans": [
+          {
+            "id": "00000000-0000-4000-8000-0000000000d1",
+            "name": "Motorbike",
+            "borrowed": {
+              "amount": "1200",
+              "currency": "USD"
+            },
+            "installmentAmount": "100",
+            "installmentCount": 12,
+            "frequency": "monthly",
+            "firstDueDate": "2026-09-10T06:00:00.000Z",
+            "payments": [
+              {
+                "number": 1,
+                "paidAt": "2026-09-10T18:00:00.000Z"
+              }
+            ]
+          },
+          {
+            "id": "00000000-0000-4000-8000-0000000000d2",
+            "name": "Phone plan",
+            "borrowed": {
+              "amount": "90",
+              "currency": "NIO"
+            },
+            "installmentAmount": "30",
+            "installmentCount": 3,
+            "frequency": "weekly",
+            "firstDueDate": "2026-11-12T06:00:00.000Z",
+            "payments": []
+          }
+        ]
+      },
+      "windows": [
+        {
+          "days": 7,
+          "expected": [
+            {
+              "id": "installment:00000000-0000-4000-8000-0000000000d1:2",
+              "status": "overdue"
+            },
+            {
+              "id": "draft:00000000-0000-4000-8000-0000000001b0",
+              "status": "overdue"
+            },
+            {
+              "id": "draft:00000000-0000-4000-8000-0000000001b1",
+              "status": "overdue"
+            },
+            {
+              "id": "installment:00000000-0000-4000-8000-0000000000d1:3",
+              "status": "overdue"
+            },
+            {
+              "id": "draft:00000000-0000-4000-8000-0000000001b2",
+              "status": "today"
+            },
+            {
+              "id": "installment:00000000-0000-4000-8000-0000000000d2:1",
+              "status": "today"
+            },
+            {
+              "id": "recurring:00000000-0000-4000-8000-0000000000c3:2026-11-12",
+              "status": "today"
+            },
+            {
+              "id": "recurring:00000000-0000-4000-8000-0000000000c1:2026-11-14",
+              "status": "upcoming"
+            },
+            {
+              "id": "card:00000000-0000-4000-8000-0000000000a2:2026-11-15",
+              "status": "upcoming"
+            },
+            {
+              "id": "draft:00000000-0000-4000-8000-0000000001b5",
+              "status": "upcoming"
+            },
+            {
+              "id": "installment:00000000-0000-4000-8000-0000000000d2:2",
+              "status": "upcoming"
+            }
+          ]
+        },
+        {
+          "days": 0,
+          "expected": [
+            {
+              "id": "installment:00000000-0000-4000-8000-0000000000d1:2",
+              "status": "overdue"
+            },
+            {
+              "id": "draft:00000000-0000-4000-8000-0000000001b0",
+              "status": "overdue"
+            },
+            {
+              "id": "draft:00000000-0000-4000-8000-0000000001b1",
+              "status": "overdue"
+            },
+            {
+              "id": "installment:00000000-0000-4000-8000-0000000000d1:3",
+              "status": "overdue"
+            },
+            {
+              "id": "draft:00000000-0000-4000-8000-0000000001b2",
+              "status": "today"
+            },
+            {
+              "id": "installment:00000000-0000-4000-8000-0000000000d2:1",
+              "status": "today"
+            },
+            {
+              "id": "recurring:00000000-0000-4000-8000-0000000000c3:2026-11-12",
+              "status": "today"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

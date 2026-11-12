@@ -214,6 +214,7 @@ describe("MCP read tools", () => {
     const { mcp } = await connected()
     const { data } = await mcp.tool("get_upcoming_payments", { days: 30 })
     expect((data.payments as { name: string; date: string }[]).map((p) => [p.name, p.date])).toEqual([["Alquiler", "2026-12-01"]])
+    expect(data.payments).toEqual([expect.objectContaining({ id: `recurring:${RULE}:2026-12-01`, type: "recurring", status: "upcoming", days_from_today: 16, amount: { amount: "450", currency: "USD" } })])
   })
 
   it("answers 401 with WWW-Authenticate without credentials, and 403 needs_plan without the coffee", async () => {
