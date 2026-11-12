@@ -1,7 +1,9 @@
-import type { Account, Card, CurrencySettings, ExchangeRate, Transaction, TransactionCategory, TransactionKind } from "../schema"
+import type { Account, Card, CategorizationRule, CurrencySettings, ExchangeRate, Transaction, TransactionCategory, TransactionKind } from "../schema"
+import { OTHER_EXPENSE_ID, OTHER_INCOME_ID } from "../schema"
 
 import { Decimal, ZERO, decimalText } from "./decimal"
 import { yearMonthContaining, type TimeZone } from "./calendar"
+import { applyingRule, categorizingRule, usableRules } from "./categorization"
 import { DomainError } from "./errors"
 import { INITIAL_CURRENCIES, settingsRate, type Money } from "./money"
 import { balanceOf, checkAmounts, isConfirmed, monthlySummary } from "./rules"
@@ -105,6 +107,8 @@ export interface TransactionContext {
   transactions: Transaction[]
   /** The store's zone, for the days and months its rules read. */
   zone: TimeZone
+  /** Categorization rules in the person's order, only those whose category exists with their kind. */
+  rules: CategorizationRule[]
 }
 
 export function accountIdFor(context: Pick<TransactionContext, "cards">, source: PaymentSource): string | undefined {
@@ -121,7 +125,13 @@ export function lastUsedSource(context: TransactionContext): PaymentSource | und
 
 export async function getTransactionContext(store: LedgerStore): Promise<TransactionContext> {
   const currencies = (await store.loadSettings())?.currencies ?? INITIAL_CURRENCIES
-  const [accounts, cards, transactions, categories] = await Promise.all([store.fetchAccounts(), store.fetchCards(), store.fetchTransactions(), store.fetchCategories()])
+  const [accounts, cards, transactions, categories, allRules] = await Promise.all([
+    store.fetchAccounts(),
+    store.fetchCards(),
+    store.fetchTransactions(),
+    store.fetchCategories(),
+    store.fetchCategorizationRules(),
+  ])
   const zone = store.timeZone
   const balances = new Map(accounts.map((account) => [account.id, balanceOf(account, transactions, zone)]))
   const lastUsed = new Map<string, Date>()
@@ -133,40 +143,54 @@ export async function getTransactionContext(store: LedgerStore): Promise<Transac
     if (!previous || date > previous) lastUsed.set(key, date)
     if (movement.categoryId) categoryUsage.set(movement.categoryId, (categoryUsage.get(movement.categoryId) ?? 0) + 1)
   }
-  return { currencies, categories, accounts, cards, balances, lastUsed, categoryUsage, transactions, zone }
+  return { currencies, categories, accounts, cards, balances, lastUsed, categoryUsage, transactions, zone, rules: usableRules(allRules, categories) }
 }
 
 /** Checks a draft against the iOS rules and builds the movement to store. */
 export function validatedTransaction(draft: TransactionDraft, context: TransactionContext, existing?: Transaction): Transaction {
+  return categorizedTransaction(draft, context, existing).transaction
+}
+
+/**
+ * `validatedTransaction`, plus the categorization rule that chose its category. Only a new movement
+ * goes through the rules: one without a category, or in "Other" of its kind, takes the first rule
+ * that matches; a new one without a category and no matching rule goes to "Other". An edit never.
+ */
+export function categorizedTransaction(
+  draft: TransactionDraft,
+  context: TransactionContext,
+  existing?: Transaction,
+): { transaction: Transaction; rule?: CategorizationRule } {
   checkAmounts(draft.amount, draft.actualDebitedPrincipal)
   // An edit keeps the rate it was recorded with (rule 2), so its currencies are the allowed ones.
   const rate: ExchangeRate = existing?.exchangeRate ?? settingsRate(context.currencies)
   if (draft.currency !== rate.principal && draft.currency !== rate.second) throw DomainError.invalidCurrency(draft.currency)
   const accountId = draft.source ? accountIdFor(context, draft.source) : undefined
   if (!draft.source || !accountId) throw DomainError.notFound("source")
-  let category: TransactionCategory | undefined
+  const isNew = existing === undefined
+  const categoryId =
+    draft.kind === "transfer" || draft.categoryId !== undefined || !isNew ? draft.categoryId : draft.kind === "income" ? OTHER_INCOME_ID : OTHER_EXPENSE_ID
   if (draft.kind === "transfer") {
     const destination = draft.destinationAccountId
     if (!destination || destination === accountId || !context.accounts.some((account) => account.id === destination)) {
       throw DomainError.invalidTransferDestination()
     }
   } else {
-    category = context.categories.find((candidate) => candidate.id === draft.categoryId)
-    if (!category) throw DomainError.notFound(draft.categoryId ?? "category")
+    const category = context.categories.find((candidate) => candidate.id === categoryId)
+    if (!category) throw DomainError.notFound(categoryId ?? "category")
     if (category.kind !== draft.kind) throw DomainError.categoryKindMismatch(draft.kind, category.kind)
   }
   const description = draft.description.trim()
   const note = draft.note.trim()
   const debited = draft.currency === rate.principal ? undefined : draft.actualDebitedPrincipal
   const recurringId = draft.recurringId ?? existing?.recurringId
-  return {
+  const built: Transaction = {
     id: draft.id,
     date: draft.date.toISOString(),
     status: draft.isDraft ? "planned" : "confirmed",
-    // Safety net only: the flow fills a localized description before saving.
-    description: description === "" ? (category?.name ?? "Transfer") : description,
+    description,
     kind: draft.kind,
-    ...(draft.kind === "transfer" || draft.categoryId === undefined ? {} : { categoryId: draft.categoryId }),
+    ...(draft.kind === "transfer" || categoryId === undefined ? {} : { categoryId }),
     amount: decimalText(draft.amount),
     currency: draft.currency,
     accountId,
@@ -179,6 +203,15 @@ export function validatedTransaction(draft: TransactionDraft, context: Transacti
     ...(recurringId === undefined ? {} : { recurringId }),
     ...tagsField(draft.tags),
   }
+  // The rule reads the text as typed, before the safety net below fills in a category's name.
+  const rule = isNew ? categorizingRule(built, context.rules) : undefined
+  const transaction = rule ? applyingRule(rule, built) : built
+  if (description === "") {
+    const category = context.categories.find((candidate) => candidate.id === transaction.categoryId)
+    // Safety net only: the flow fills a localized description before saving.
+    transaction.description = category?.name ?? "Transfer"
+  }
+  return rule ? { transaction, rule } : { transaction }
 }
 
 export interface SavedTransaction {
@@ -188,15 +221,18 @@ export interface SavedTransaction {
   newBalances: Money[]
   /** Spending in the movement's category that month, in the principal currency. */
   categoryMonthTotal?: Money
+  /** The categorization rule that chose a new movement's category. */
+  rule?: CategorizationRule
 }
 
 /** Saves a new movement, or replaces the one with the draft's id (edit). */
 export async function saveTransaction(store: LedgerStore, draft: TransactionDraft): Promise<SavedTransaction> {
   const context = await getTransactionContext(store)
   const existing = context.transactions.find((transaction) => transaction.id === draft.id)
-  const transaction = validatedTransaction(draft, context, existing)
+  const { transaction, rule } = categorizedTransaction(draft, context, existing)
   await store.saveTransaction(transaction)
-  return savedTransactionOf(transaction, context.accounts, await store.fetchTransactions(), context.currencies.principal, context.zone)
+  const saved = savedTransactionOf(transaction, context.accounts, await store.fetchTransactions(), context.currencies.principal, context.zone)
+  return rule ? { ...saved, rule } : saved
 }
 
 /**

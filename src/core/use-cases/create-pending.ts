@@ -1,6 +1,7 @@
-import { checkRecurringRule, dec, DomainError, firstNextDate, getTransactionContext, InMemoryStore, validatedTransaction, type Ledger } from "../domain/domain"
-import { uuidV5, type RecurringFrequency, type RecurringRule, type Transaction } from "../domain/schema"
+import { categorizedTransaction, checkRecurringRule, dec, DomainError, firstNextDate, getTransactionContext, InMemoryStore, type Ledger } from "../domain/domain"
+import { uuidV5, type CategorizationRule, type RecurringFrequency, type RecurringRule, type Transaction } from "../domain/schema"
 import { recurringRuleToWire, transactionToWire } from "../ledger/wire-to-domain"
+import { categoryOutcome } from "../mcp/category-outcome"
 import { instantIn } from "../mcp/dates"
 import type { McpWriteCounter } from "../ports/mcp-writes"
 import type { ApplySyncBatch } from "./apply-sync-batch"
@@ -104,8 +105,9 @@ export class CreatePending {
     checkReferences(ledger, input)
     const context = await getTransactionContext(new InMemoryStore(ledger.timeZone, ledgerSeed(ledger)))
     let transaction: Transaction
+    let rule: CategorizationRule | undefined
     try {
-      transaction = validatedTransaction(
+      ;({ transaction, rule } = categorizedTransaction(
         {
           id: input.id,
           kind: input.kind,
@@ -120,14 +122,21 @@ export class CreatePending {
           isDraft: true,
         },
         context
-      )
+      ))
     } catch (error) {
       throw new McpWriteError("invalid", error instanceof DomainError ? `${error.code}${error.detail ? `: ${error.detail}` : ""}` : "Invalid movement")
     }
     const at = this.now().toISOString()
     const row = transactionToWire({ ...transaction, status: "planned" }, { created_at: at, updated_at: at })
     await this.write(userId, clientId, "transaction", row, input.id, JSON.stringify(input))
-    return { id: input.id, status: "pending_confirmation", amount: { amount: transaction.amount, currency: transaction.currency }, date: transaction.date, description: transaction.description }
+    return {
+      id: input.id,
+      status: "pending_confirmation",
+      amount: { amount: transaction.amount, currency: transaction.currency },
+      date: transaction.date,
+      description: transaction.description,
+      ...categoryOutcome(ledger, transaction, rule),
+    }
   }
 
   async recurringRule(userId: string, clientId: string, input: PendingRuleInput) {
