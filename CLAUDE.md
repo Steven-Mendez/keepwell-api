@@ -21,6 +21,11 @@ start from `config.local.example.json`. In a git worktree, Compose names the pro
 folder and its container clashes on port 54329 with the main checkout's: run
 `COMPOSE_PROJECT_NAME=keepwell-api pnpm db:up` there to reuse the same one.
 
+## Branches
+
+`develop`, `staging` and `main`. Pull requests go to `develop`; `develop` is promoted to `staging`
+and `staging` to `main`. Only `main` deploys (README, "Deploying"); there is no staging environment.
+
 ## Layers
 
 `entrypoints` → `adapters` → `core`, never the other way. `core` holds no HTTP, SQL, AWS or auth
