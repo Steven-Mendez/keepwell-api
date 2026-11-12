@@ -1,6 +1,7 @@
 import {
   balanceOf,
   budgetStatuses,
+  dayKey,
   inSecondCurrency,
   lastMonths,
   monthlySummary,
@@ -31,7 +32,9 @@ export interface MoneyJSON {
 const amountText = (value: Money["amount"]) => value.toDecimalPlaces(2).toString()
 const money = (value: Money): MoneyJSON => ({ amount: amountText(value.amount), currency: value.currency })
 const monthText = (value: YearMonth) => `${value.year}-${String(value.month).padStart(2, "0")}`
-const day = (date: Date) => date.toISOString().slice(0, 10)
+// Days are the domain's local calendar day (`dayKey`), the same one the monthly summary groups by,
+// never the UTC day of `toISOString`.
+const day = dayKey
 
 export function parseMonth(text: string | undefined, now: Date): YearMonth {
   if (!text) return yearMonthContaining(now)
@@ -166,7 +169,7 @@ export interface TransactionSearch {
 export function searchTransactions(ledger: Ledger, query: TransactionSearch) {
   const text = query.text?.toLocaleLowerCase()
   const matches = ledger.transactions.filter((transaction: Transaction) => {
-    const date = transaction.date.slice(0, 10)
+    const date = dayKey(new Date(transaction.date))
     if (query.from && date < query.from) return false
     if (query.to && date > query.to) return false
     if (query.account_id && transaction.accountId !== query.account_id && transaction.destinationAccountId !== query.account_id) return false
