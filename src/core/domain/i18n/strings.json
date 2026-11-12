@@ -1414,6 +1414,9 @@
   "%@ is close to its budget": {
    "es": "%@ está cerca de su presupuesto"
   },
+  "%@ is due tomorrow": {
+   "es": "%@ vence mañana"
+  },
   "%@ of %@": {
    "es": "%@ de %@"
   },

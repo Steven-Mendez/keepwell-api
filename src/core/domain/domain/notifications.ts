@@ -15,7 +15,7 @@ import { monthlySummary, nextOccurrence } from "./rules"
 //
 // Days in ids are the device's (or, on the server, the person's) calendar days, `yyyy-mm-dd`.
 
-export type NotificationKind = "planned" | "payment" | "cutoff" | "installment" | "renewal" | "expiry" | "budget" | "price" | "proposal"
+export type NotificationKind = "planned" | "payment" | "cutoff" | "installment" | "renewal" | "bill" | "expiry" | "budget" | "price" | "proposal"
 
 /** Where tapping a notification leads; each app maps it to its own screen. */
 export type NotificationTarget =
@@ -41,6 +41,7 @@ export type LedgerNotification =
   | Base<"cutoff", { accountId: string }>
   | Base<"installment", { loanId: string; name: string; number: number; count: number; amount: Money; daysLeft: number }>
   | Base<"renewal", { ruleId: string; name: string; amount: Money; accountId: string; cardId?: string | undefined }>
+  | Base<"bill", { ruleId: string; name: string; amount: Money; accountId: string; cardId?: string | undefined }>
   | Base<"expiry", { cardId: string; services: string[] }>
   | Base<"budget", { categoryId: string; level: Exclude<BudgetLevel, "onTrack">; spent: Decimal; budget: Decimal; currency: string }>
   | Base<"price", { transactionId: string; name: string; previous: Money; current: Money }>
@@ -55,7 +56,8 @@ const daysBetween = (from: Date, to: Date) => Math.round((startOfDay(to).getTime
  * - drafts dated today or before (`planned`),
  * - card payments from `paymentReminderDaysBefore` days ahead until the due day,
  * - statements closing today, loan installments inside the same window as card payments,
- * - subscriptions renewing tomorrow, plastics expiring this month,
+ * - subscriptions renewing tomorrow, and other recurring expenses due tomorrow that are recorded as
+ *   drafts (`bill`; one recorded on its own needs nothing from the person), plastics expiring this month,
  * - budgets from 80% of the month's limit (a second notification once spent),
  * - subscriptions whose latest charge cost more than the one before,
  * - recurring payments an assistant proposed, paused until confirmed (ADR 0007).
@@ -137,14 +139,16 @@ export function ledgerNotifications(ledger: Ledger, now: Date): LedgerNotificati
 
   const tomorrow = addDays(today, 1).getTime()
   for (const { rule, date } of upcoming(ledger.recurringRules, now, 1)) {
-    if (!rule.isSubscription || startOfDay(date).getTime() !== tomorrow) continue
-    found.push({
-      id: `renewal:${rule.id}:${dayKey(date)}`,
-      kind: "renewal",
-      date: today,
-      params: { ruleId: rule.id, name: rule.name, amount: fromStored({ amount: rule.amount, currency: rule.currency }), accountId: rule.accountId, cardId: rule.cardId },
-      target: { screen: "recurring" },
-    })
+    if (startOfDay(date).getTime() !== tomorrow) continue
+    const params = { ruleId: rule.id, name: rule.name, amount: fromStored({ amount: rule.amount, currency: rule.currency }), accountId: rule.accountId, cardId: rule.cardId }
+    if (rule.isSubscription) {
+      found.push({ id: `renewal:${rule.id}:${dayKey(date)}`, kind: "renewal", date: today, params, target: { screen: "recurring" } })
+    } else if (rule.kind === "expense" && !rule.autoConfirm) {
+      // A bill (rent, school, a loan from family) is recorded as a draft the person has to pay and
+      // confirm, so the day before is when a reminder helps. Its target is one every app already
+      // knows: an installed app that predates this kind still opens a pushed one (ADR 0012).
+      found.push({ id: `bill:${rule.id}:${dayKey(date)}`, kind: "bill", date: today, params, target: { screen: "recurring" } })
+    }
   }
 
   const thisMonth = yearMonthContaining(now)
