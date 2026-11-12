@@ -57,6 +57,8 @@ export interface UpcomingFixtures {
       transactions: unknown[]
       recurringRules: unknown[]
       loans: unknown[]
+      /** Absent in the cases written before personal debts had a due date: none. */
+      personalDebts?: unknown[]
     }
     windows: { days: number; expected: { id: string; status: "overdue" | "today" | "upcoming" }[] }[]
   }[]

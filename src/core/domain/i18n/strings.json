@@ -1525,6 +1525,16 @@
     "other": "%lld tarjetas"
    }
   },
+  "%lld debts overdue": {
+   "en": {
+    "one": "%lld debt overdue",
+    "other": "%lld debts overdue"
+   },
+   "es": {
+    "one": "%lld deuda atrasada",
+    "other": "%lld deudas atrasadas"
+   }
+  },
   "%lld due today": {
    "en": {
     "one": "%lld due today",

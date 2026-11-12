@@ -87,7 +87,7 @@ export function createMcpServer(context: McpContext): McpServer {
   )
   tool(
     "get_upcoming_payments",
-    { title: "Upcoming payments", description: "Drafts to confirm, recurring movements, card payments and loan installments from today on, overdue first.", view: true },
+    { title: "Upcoming payments", description: "Drafts to confirm, recurring movements, card payments, loan installments and personal debts with a due date, from today on, overdue first. Closed accounts are left out.", view: true },
     { days: z.number().int().min(1).max(90).default(30) },
     (args, ledger) => getUpcomingPayments(ledger, args.days, context.now())
   )

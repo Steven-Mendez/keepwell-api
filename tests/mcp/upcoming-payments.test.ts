@@ -9,13 +9,27 @@ import { upcomingFixtureLedger } from "../support/upcoming"
 // same entries, in the same order, as Home on the web and on iOS.
 const data = fixtures as UpcomingFixtures
 const entry = data.cases[0]!
+const debtsEntry = data.cases.find((candidate) => candidate.ledger.personalDebts !== undefined)!
 
 describe("get_upcoming_payments", () => {
   it("returns the shared fixture's ids and statuses, overdue first", () => {
-    for (const window of entry.windows) {
-      const { payments } = getUpcomingPayments(upcomingFixtureLedger(entry), window.days, new Date(entry.now))
-      expect(payments.map(({ id, status }) => ({ id, status }))).toEqual(window.expected)
+    for (const shared of data.cases) {
+      for (const window of shared.windows) {
+        const { payments } = getUpcomingPayments(upcomingFixtureLedger(shared), window.days, new Date(shared.now))
+        expect(payments.map(({ id, status }) => ({ id, status }))).toEqual(window.expected)
+      }
     }
+  })
+
+  it("lists personal debts with a due date for what's left, and nothing from a closed account", () => {
+    const { payments } = getUpcomingPayments(upcomingFixtureLedger(debtsEntry), 7, new Date(debtsEntry.now))
+    expect(payments.filter((payment) => payment.type === "personal_debt")).toEqual([
+      expect.objectContaining({ name: "Ana", direction: "theyOweMe", status: "overdue", days_from_today: -7, date: "2026-11-05", amount: { amount: "60", currency: "USD" } }),
+      expect.objectContaining({ name: "Luis", direction: "iOwe", status: "today", days_from_today: 0, amount: { amount: "50", currency: "USD" } }),
+      expect.objectContaining({ name: "Marta", direction: "theyOweMe", status: "upcoming", days_from_today: 1, amount: { amount: "900", currency: "NIO" } }),
+    ])
+    expect(payments.some((payment) => payment.type === "card_due")).toBe(false)
+    expect(payments.filter((payment) => payment.type === "recurring").map((payment) => payment.name)).toEqual(["Rent"])
   })
 
   it("describes each kind with plain fields and its own currency", () => {

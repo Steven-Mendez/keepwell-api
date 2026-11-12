@@ -337,6 +337,269 @@
           ]
         }
       ]
+    },
+    {
+      "name": "personal debts with a due date, and closed accounts",
+      "now": "2026-11-12T18:00:00.000Z",
+      "timeZone": "America/Managua",
+      "ledger": {
+        "currencies": {
+          "principal": "USD",
+          "second": "NIO",
+          "rate": "36.6"
+        },
+        "accounts": [
+          {
+            "id": "00000000-0000-4000-8000-0000000000a1",
+            "name": "Bank",
+            "kind": "deposit",
+            "openingBalances": [
+              {
+                "amount": "1000",
+                "currency": "USD"
+              }
+            ],
+            "openingDate": "2026-01-01T18:00:00.000Z"
+          },
+          {
+            "id": "00000000-0000-4000-8000-0000000000a4",
+            "name": "Closed Visa",
+            "kind": "credit",
+            "openingBalances": [
+              {
+                "amount": "0",
+                "currency": "USD"
+              }
+            ],
+            "openingDate": "2026-01-01T18:00:00.000Z",
+            "creditTerms": {
+              "debtMode": "principal",
+              "dueDay": 14
+            },
+            "closedAt": "2026-11-02T18:00:00.000Z"
+          },
+          {
+            "id": "00000000-0000-4000-8000-0000000000a5",
+            "name": "Old savings",
+            "kind": "deposit",
+            "openingBalances": [
+              {
+                "amount": "0",
+                "currency": "USD"
+              }
+            ],
+            "openingDate": "2026-01-01T18:00:00.000Z",
+            "closedAt": "2026-11-02T18:00:00.000Z"
+          }
+        ],
+        "transactions": [
+          {
+            "id": "00000000-0000-4000-8000-0000000001b6",
+            "date": "2026-11-01T18:00:00.000Z",
+            "status": "confirmed",
+            "description": "Groceries",
+            "kind": "expense",
+            "amount": "200",
+            "currency": "USD",
+            "accountId": "00000000-0000-4000-8000-0000000000a4",
+            "exchangeRate": {
+              "principal": "USD",
+              "second": "NIO",
+              "rate": "36.6"
+            },
+            "isShared": false
+          }
+        ],
+        "recurringRules": [
+          {
+            "id": "00000000-0000-4000-8000-0000000000c5",
+            "name": "Rent",
+            "kind": "expense",
+            "amount": "40",
+            "currency": "USD",
+            "accountId": "00000000-0000-4000-8000-0000000000a1",
+            "frequency": "monthly",
+            "interval": 1,
+            "startDate": "2026-01-16T18:00:00.000Z",
+            "nextDate": "2026-11-16T18:00:00.000Z",
+            "isSubscription": false,
+            "autoConfirm": false,
+            "isPaused": false
+          },
+          {
+            "id": "00000000-0000-4000-8000-0000000000c6",
+            "name": "Streaming on the closed card",
+            "kind": "expense",
+            "amount": "40",
+            "currency": "USD",
+            "accountId": "00000000-0000-4000-8000-0000000000a4",
+            "frequency": "monthly",
+            "interval": 1,
+            "startDate": "2026-01-13T18:00:00.000Z",
+            "nextDate": "2026-11-13T18:00:00.000Z",
+            "isSubscription": false,
+            "autoConfirm": false,
+            "isPaused": false
+          },
+          {
+            "id": "00000000-0000-4000-8000-0000000000c7",
+            "name": "Saving into a closed account",
+            "kind": "transfer",
+            "amount": "40",
+            "currency": "USD",
+            "accountId": "00000000-0000-4000-8000-0000000000a1",
+            "destinationAccountId": "00000000-0000-4000-8000-0000000000a5",
+            "frequency": "monthly",
+            "interval": 1,
+            "startDate": "2026-01-14T18:00:00.000Z",
+            "nextDate": "2026-11-14T18:00:00.000Z",
+            "isSubscription": false,
+            "autoConfirm": false,
+            "isPaused": false
+          }
+        ],
+        "loans": [],
+        "personalDebts": [
+          {
+            "id": "00000000-0000-4000-8000-0000000000e1",
+            "person": "Ana",
+            "direction": "theyOweMe",
+            "amount": {
+              "amount": "100",
+              "currency": "USD"
+            },
+            "date": "2026-10-01T18:00:00.000Z",
+            "repayments": [
+              {
+                "id": "00000000-0000-4000-8000-0000000002f1",
+                "amount": "40",
+                "date": "2026-10-20T18:00:00.000Z"
+              }
+            ],
+            "dueDate": "2026-11-05T06:00:00.000Z"
+          },
+          {
+            "id": "00000000-0000-4000-8000-0000000000e2",
+            "person": "Luis",
+            "direction": "iOwe",
+            "amount": {
+              "amount": "50",
+              "currency": "USD"
+            },
+            "date": "2026-10-01T18:00:00.000Z",
+            "repayments": [],
+            "dueDate": "2026-11-12T06:00:00.000Z"
+          },
+          {
+            "id": "00000000-0000-4000-8000-0000000000e3",
+            "person": "Marta",
+            "direction": "theyOweMe",
+            "amount": {
+              "amount": "900",
+              "currency": "NIO"
+            },
+            "date": "2026-10-01T18:00:00.000Z",
+            "repayments": [],
+            "dueDate": "2026-11-13T06:00:00.000Z"
+          },
+          {
+            "id": "00000000-0000-4000-8000-0000000000e4",
+            "person": "Pedro",
+            "direction": "iOwe",
+            "amount": {
+              "amount": "30",
+              "currency": "USD"
+            },
+            "date": "2026-10-01T18:00:00.000Z",
+            "repayments": [],
+            "dueDate": "2026-11-25T06:00:00.000Z"
+          },
+          {
+            "id": "00000000-0000-4000-8000-0000000000e5",
+            "person": "Sofía",
+            "direction": "theyOweMe",
+            "amount": {
+              "amount": "20",
+              "currency": "USD"
+            },
+            "date": "2026-10-01T18:00:00.000Z",
+            "repayments": [
+              {
+                "id": "00000000-0000-4000-8000-0000000002f2",
+                "amount": "20",
+                "date": "2026-11-04T18:00:00.000Z"
+              }
+            ],
+            "settledAt": "2026-11-04T18:00:00.000Z",
+            "dueDate": "2026-11-03T06:00:00.000Z"
+          },
+          {
+            "id": "00000000-0000-4000-8000-0000000000e6",
+            "person": "Jorge",
+            "direction": "iOwe",
+            "amount": {
+              "amount": "15",
+              "currency": "USD"
+            },
+            "date": "2026-10-01T18:00:00.000Z",
+            "repayments": []
+          },
+          {
+            "id": "00000000-0000-4000-8000-0000000000e7",
+            "person": "Elena",
+            "direction": "iOwe",
+            "amount": {
+              "amount": "10",
+              "currency": "USD"
+            },
+            "date": "2026-10-01T18:00:00.000Z",
+            "repayments": [
+              {
+                "id": "00000000-0000-4000-8000-0000000002f3",
+                "amount": "10",
+                "date": "2026-11-06T18:00:00.000Z"
+              }
+            ],
+            "dueDate": "2026-11-06T06:00:00.000Z"
+          }
+        ]
+      },
+      "windows": [
+        {
+          "days": 7,
+          "expected": [
+            {
+              "id": "debt:00000000-0000-4000-8000-0000000000e1",
+              "status": "overdue"
+            },
+            {
+              "id": "debt:00000000-0000-4000-8000-0000000000e2",
+              "status": "today"
+            },
+            {
+              "id": "debt:00000000-0000-4000-8000-0000000000e3",
+              "status": "upcoming"
+            },
+            {
+              "id": "recurring:00000000-0000-4000-8000-0000000000c5:2026-11-16",
+              "status": "upcoming"
+            }
+          ]
+        },
+        {
+          "days": 0,
+          "expected": [
+            {
+              "id": "debt:00000000-0000-4000-8000-0000000000e1",
+              "status": "overdue"
+            },
+            {
+              "id": "debt:00000000-0000-4000-8000-0000000000e2",
+              "status": "today"
+            }
+          ]
+        }
+      ]
     }
   ]
 }

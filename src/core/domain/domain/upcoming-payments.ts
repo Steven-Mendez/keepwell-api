@@ -1,12 +1,12 @@
 import type { DebtDirection, RecurringRule, Transaction } from "../schema"
 
 import { addDays, dayKey, startOfDay, type TimeZone } from "./calendar"
-import { loanProgress } from "./debts"
+import { debtDueStatus, debtRemaining, loanProgress } from "./debts"
 import { cardAmountDue } from "./forecast"
 import { fromStored, type Money } from "./money"
 import type { Ledger } from "./overviews"
 import { upcoming } from "./recurring"
-import { isConfirmed, nextOccurrence } from "./rules"
+import { isConfirmed, isOpen, nextOccurrence } from "./rules"
 
 // "What do I have pending in the next N days": one list that Home (web and iOS), the Recurring rows,
 // the line under Home's greeting and the MCP tool all read, so none of them contradicts another.
@@ -35,10 +35,7 @@ export type UpcomingPayment = Base &
     { kind: "card"; accountId: string; dueDay: number; amount: Money }
     | /** An unpaid loan installment, in the loan's currency. Id `installment:<loanId>:<number>`. */
     { kind: "installment"; loanId: string; number: number; count: number; amount: Money }
-    | /**
-     * A personal debt with a due date, what's left of it in its currency. Id `debt:<debtId>`.
-     * Produced once personal debts have a due date (T24); every reader already handles it.
-     */
+    | /** An open personal debt with a due date, what's left of it in its currency. Id `debt:<debtId>`. */
     { kind: "debt"; debtId: string; person: string; direction: DebtDirection; amount: Money }
   )
 
@@ -59,11 +56,14 @@ const byBytes = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0)
  *
  * - drafts (`planned` movements) dated up to the last day, however old: overdue before today;
  * - recurring occurrences not produced yet (`upcoming`), never overdue; paused and ended rules
- *   have none. Income and transfers too: the reader filters by `rule.kind`;
+ *   have none, nor does a rule whose source or destination account is closed. Income and
+ *   transfers too: the reader filters by `rule.kind`;
  * - credit card payments due by the last day (`nextOccurrence`, never overdue: without a payment
  *   linked to the statement a late one can't be told from one recorded late), only when
- *   `cardAmountDue` asks for something;
- * - unpaid loan installments due by the last day, the past ones too (overdue).
+ *   `cardAmountDue` asks for something and the card's account is open;
+ * - unpaid loan installments due by the last day, the past ones too (overdue);
+ * - personal debts, either direction, with a due date by the last day that `debtDueStatus` still
+ *   counts (not settled, something left to pay), the past ones too (overdue), for what's left.
  *
  * Amounts stay in their own currency and are never added up; a card's is in the principal
  * currency, as `cardAmountDue` converts it.
@@ -93,7 +93,13 @@ export function upcomingPayments(ledger: Ledger, now: Date, days: number): Upcom
     })
   }
 
-  for (const { rule, date } of upcoming(ledger.recurringRules, now, days, zone)) {
+  // A closed account expects nothing: closing pauses its rules, but an app that predates closing
+  // (or a resumed rule) may still have one running.
+  const closed = new Set(ledger.accounts.filter((account) => !isOpen(account)).map((account) => account.id))
+  const live = ledger.recurringRules.filter(
+    (rule) => !closed.has(rule.accountId) && (rule.destinationAccountId === undefined || !closed.has(rule.destinationAccountId)),
+  )
+  for (const { rule, date } of upcoming(live, now, days, zone)) {
     found.push({
       ...at(date),
       id: `recurring:${rule.id}:${dayKey(date, zone)}`,
@@ -106,7 +112,7 @@ export function upcomingPayments(ledger: Ledger, now: Date, days: number): Upcom
   const settings = ledger.settings.currencies
   for (const account of ledger.accounts) {
     const dueDay = account.creditTerms?.dueDay
-    if (account.kind !== "credit" || !dueDay) continue
+    if (account.kind !== "credit" || !dueDay || !isOpen(account)) continue
     const due = nextOccurrence(dueDay, now, zone)
     if (!inWindow(due)) continue
     const owed = cardAmountDue(due, account, ledger.transactions, settings, zone)
@@ -137,6 +143,21 @@ export function upcomingPayments(ledger: Ledger, now: Date, days: number): Upcom
         amount,
       })
     }
+  }
+
+  for (const debt of ledger.personalDebts) {
+    if (debt.dueDate === undefined || debtDueStatus(debt, now, zone) === undefined) continue
+    const due = new Date(debt.dueDate)
+    if (!inWindow(due)) continue
+    found.push({
+      ...at(due),
+      id: `debt:${debt.id}`,
+      kind: "debt",
+      debtId: debt.id,
+      person: debt.person,
+      direction: debt.direction,
+      amount: { amount: debtRemaining(debt), currency: debt.amount.currency },
+    })
   }
 
   return found.sort(compareUpcomingPayments)
