@@ -61,7 +61,7 @@ export function orderedGoals(goals: readonly SavingsGoal[], now: Date): SavingsG
 
 /** Then by name, and by id so the order never flickers between equal names. */
 function byName(a: SavingsGoal, b: SavingsGoal): number {
-  return a.name.localeCompare(b.name, undefined, { sensitivity: "base" }) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)
+  return a.name.localeCompare(b.name, undefined, { sensitivity: "accent" }) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)
 }
 
 export interface SavingsGoalDraft {

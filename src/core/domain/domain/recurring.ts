@@ -254,11 +254,13 @@ export async function saveRecurringRule(store: LedgerStore, draft: RecurringRule
     ...schedule,
     nextDate,
     ...(draft.endDate ? { endDate: draft.endDate.toISOString() } : {}),
-    isSubscription: draft.isSubscription,
+    // Only an expense can be a subscription (iOS).
+    isSubscription: draft.kind === "expense" && draft.isSubscription,
     autoConfirm: draft.autoConfirm,
     isPaused: existing?.isPaused ?? false,
     ...(note === "" ? {} : { note }),
     ...tagsField(draft.tags ?? existing?.tags),
+    ...(existing?.source ? { source: existing.source } : {}),
   }
   checkRecurringRule(rule, context)
   await store.saveRecurringRule(rule)
