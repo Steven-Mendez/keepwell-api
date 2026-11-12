@@ -2691,6 +2691,9 @@
   "Command palette": {
    "es": "Paleta de comandos"
   },
+  "Confirmed": {
+   "es": "Confirmado"
+  },
   "Create category": {
    "es": "Crear categoría"
   },
@@ -2988,6 +2991,9 @@
   "Tools": {
    "es": "Herramientas"
   },
+  "Transaction deleted": {
+   "es": "Movimiento eliminado"
+  },
   "Transactions": {
    "es": "Movimientos"
   },
@@ -2996,6 +3002,9 @@
   },
   "Travel": {
    "es": "Viajes"
+  },
+  "Undo": {
+   "es": "Deshacer"
   },
   "Utilities": {
    "es": "Servicios"
