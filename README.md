@@ -23,18 +23,21 @@ pnpm build          # dist/lambda-*.zip, what Terraform deploys
 ```
 src/
   core/                 pure business logic: no HTTP, Lambda, SQL, AWS or auth libraries
-    domain/             entities, money rules, Zod schemas: literal copy of keepwell-web (below)
+    domain/             entities, money rules, Zod schemas, notification wording: literal copy of keepwell-web (below)
+    notifications/      what is due now, in which zone, in which words (ADR 0012)
     use-cases/          ApplySyncBatch, PullChanges, CreatePendingMovement...
     ports/              interfaces the adapters implement (AuditLog, SyncRepository...)
   adapters/             infrastructure implementations
     database/           Drizzle schema, scopedDb, withTransaction, repositories, migrator
     auth/               Better Auth: sessions, OAuth for MCP, allowlist
     external/           third parties: Apple (Sign in with Apple, App Store)
+    push/               APNs and Web Push senders (ADR 0012)
     config/             SSM Parameter Store, or the local JSON in development
     observability/      structured logs and the per-request context
   entrypoints/          network and serverless handlers
     http/               Hono app, routes, middlewares (session, capabilities, errors)
     jobs/               SQS consumers (account deletion), from increment 7
+    notifications.ts    the scheduled Lambda that sends push notifications (ADR 0012)
     lambda.ts           the HTTP handler; dev.ts runs the same app locally
 infra/                  Terraform: bootstrap (once, by hand), modules, envs/prod (the only environment)
 docs/adr/               architecture decisions
@@ -49,15 +52,27 @@ Dependencies point inward: `entrypoints` → `adapters` → `core`. ESLint enfor
 
 ## The shared domain
 
-`src/core/domain/{domain,schema,fixtures}` is a literal copy of `keepwell-web/src/lib/{domain,schema,fixtures}`:
-the same money rules (`Decimal` and ISO 4217), schemas and use cases the web runs. To update it, from
-this folder:
+`src/core/domain/{domain,schema,fixtures,i18n,presentation}` are literal copies of files of
+`keepwell-web/src/lib`: the same money rules (`Decimal` and ISO 4217), schemas and use cases the web
+runs, plus what the server needs to word push notifications with the apps' own text (the translator
+and its catalogs in `i18n/`, `display.ts` and `notification-copy.ts` in `presentation/`). To update
+it, from this folder:
 
 ```bash
-rm -rf src/core/domain/{domain,schema,fixtures}
+rm -rf src/core/domain/{domain,schema,fixtures,i18n,presentation}
 cp -R ../keepwell-web/src/lib/{domain,schema,fixtures} src/core/domain/
+mkdir -p src/core/domain/{i18n,presentation}
+cp ../keepwell-web/src/lib/i18n/{translate.ts,strings.json,web-strings*.ts} src/core/domain/i18n/
+cp ../keepwell-web/src/lib/presentation/{display.ts,notification-copy.ts} src/core/domain/presentation/
 pnpm check
 ```
+
+`i18n/index.ts` and `provider.tsx` (React) and the other presentation files are not copied. The
+copied files import `@/lib/...` as they do in the web: `tsconfig.json` `paths` maps `@/lib/*` to
+`src/core/domain/*` (esbuild reads it when `pnpm build` bundles, `vitest.config.ts` repeats it for
+the tests), and `@/lib/i18n`, the web's React barrel, to `src/core/domain-alias/i18n.ts`, which
+re-exports the `Translator` type from the copied `translate.ts`. That alias file is ours, it's the
+only thing that lives next to the copy, and it is why the copied files never need an edit.
 
 The copy is never edited here. If the server needs something from the domain, it changes in the
 web first and is copied again; reviewers reject a pull request that touches `src/core/domain`

@@ -1,5 +1,6 @@
 // Runs migrations against one environment. In the pipeline: DB_HOST=<cluster endpoint> with the
-// deploy role's credentials (connects as `admin`), and APP_IAM_ROLE_ARN to map keepwell_app.
+// deploy role's credentials (connects as `admin`), and APP_IAM_ROLE_ARN to map keepwell_app
+// (NOTIFICATIONS_IAM_ROLE_ARN maps the notifications Lambda to it too).
 // Locally: DATABASE_URL=postgres://... (see docker-compose.yml).
 import { createDatabase } from "../src/adapters/database/client"
 import { grantIamRole, runMigrations } from "../src/adapters/database/migrate"
@@ -19,6 +20,8 @@ try {
   await runMigrations(db, host ? "dsql" : "postgres", log)
   // Each Lambda logs in as its own database role.
   if (host && process.env.APP_IAM_ROLE_ARN) await grantIamRole(db, process.env.APP_IAM_ROLE_ARN, log, "keepwell_app")
+  // The notifications job reads and writes like the API does (it materializes due occurrences), so it logs in as keepwell_app too.
+  if (host && process.env.NOTIFICATIONS_IAM_ROLE_ARN) await grantIamRole(db, process.env.NOTIFICATIONS_IAM_ROLE_ARN, log, "keepwell_app")
   if (host && process.env.JOBS_IAM_ROLE_ARN) await grantIamRole(db, process.env.JOBS_IAM_ROLE_ARN, log, "keepwell_jobs")
 } finally {
   await close()

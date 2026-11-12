@@ -6,14 +6,15 @@ provider "aws" {
 }
 
 module "environment" {
-  source      = "../../modules/environment"
-  environment = "prod"
-  domain      = var.domain
-  hostname    = var.domain == "" ? "" : "api.${var.domain}"
-  web_origin  = var.domain == "" ? var.web_origin : "https://app.${var.domain}"
-  lambda_zip  = var.lambda_zip
-  jobs_zip    = var.jobs_zip
-  alert_email = var.alert_email
+  source            = "../../modules/environment"
+  environment       = "prod"
+  domain            = var.domain
+  hostname          = var.domain == "" ? "" : "api.${var.domain}"
+  web_origin        = var.domain == "" ? var.web_origin : "https://app.${var.domain}"
+  lambda_zip        = var.lambda_zip
+  jobs_zip          = var.jobs_zip
+  notifications_zip = var.notifications_zip
+  alert_email       = var.alert_email
   # Daily AWS Backup copies kept 35 days (docs/runbooks/restore.md).
   backups = true
   # "Keepwell – Personal Finance" in App Store Connect; verifies Production purchases.

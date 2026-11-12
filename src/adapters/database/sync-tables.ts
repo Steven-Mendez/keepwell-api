@@ -1,4 +1,4 @@
-import { bigint, boolean, index, integer, pgTable, primaryKey, text, timestamp, type PgColumnBuilderBase } from "drizzle-orm/pg-core"
+import { bigint, boolean, index, integer, pgTable, primaryKey, text, timestamp, uniqueIndex, type PgColumnBuilderBase } from "drizzle-orm/pg-core"
 import type { z } from "zod"
 
 import { SYNC_WIRE, type SyncEntity } from "../../core/domain/schema"
@@ -82,6 +82,7 @@ export const personalDebts = ledgerTable("personal_debts", "personalDebt")
 export const personalDebtRepayments = ledgerTable("personal_debt_repayments", "personalDebtRepayment")
 export const categorizationRules = ledgerTable("categorization_rules", "categorizationRule")
 export const settings = ledgerTable("settings", "settings")
+export const notificationStates = ledgerTable("notification_states", "notificationState")
 
 /** The table that stores each sync entity. */
 export const LEDGER_TABLES = {
@@ -97,6 +98,7 @@ export const LEDGER_TABLES = {
   personalDebtRepayment: personalDebtRepayments,
   categorizationRule: categorizationRules,
   settings,
+  notificationState: notificationStates,
 } as const satisfies Record<SyncEntity, unknown>
 
 export type LedgerTable = (typeof LEDGER_TABLES)[SyncEntity]
@@ -257,4 +259,42 @@ export const mcpTrash = pgTable(
     restored_at: timestamp("restored_at", { withTimezone: true }),
   },
   (table) => [primaryKey({ columns: [table.user_id, table.id] }), index("mcp_trash_user_created").on(table.user_id, table.created_at)]
+)
+
+// --- Notifications (ADR 0012) ----------------------------------------------------------------
+
+/**
+ * Where to push a person: one row per installation that registered (APNs token or Web Push
+ * subscription JSON). `token` is a credential for sending to that device, erased with the account.
+ */
+export const pushDevices = pgTable(
+  "push_devices",
+  {
+    id: text("id").primaryKey(),
+    user_id: text("user_id").notNull(),
+    client_id: text("client_id").notNull(),
+    platform: text("platform").notNull(),
+    token: text("token").notNull(),
+    time_zone: text("time_zone").notNull(),
+    locale: text("locale").notNull(),
+    /** APNs only: `sandbox` for development builds, `production` otherwise. */
+    environment: text("environment"),
+    created_at: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    last_seen_at: timestamp("last_seen_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [uniqueIndex("push_devices_user_client").on(table.user_id, table.client_id)]
+)
+
+/**
+ * Notifications already pushed, so a retried or overlapping run of the job doesn't notify twice.
+ * The primary key is the idempotency key; rows older than 120 days are pruned by the job.
+ */
+export const notificationDeliveries = pgTable(
+  "notification_deliveries",
+  {
+    user_id: text("user_id").notNull(),
+    notification_id: text("notification_id").notNull(),
+    sent_at: timestamp("sent_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.user_id, table.notification_id] }), index("notification_deliveries_sent_at").on(table.sent_at)]
 )

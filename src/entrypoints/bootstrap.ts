@@ -27,6 +27,11 @@ import type { JobQueue } from "../core/ports/job-queue"
 import { DeleteAccountData } from "../core/use-cases/delete-account-data"
 import { RequestAccountDeletion } from "../core/use-cases/request-account-deletion"
 import { warmAppleKeys } from "../adapters/external/apple/id-token"
+import { DrizzlePushStore } from "../adapters/database/push-store"
+import { createPushSender } from "../adapters/push/create"
+import { vapidConfig } from "../adapters/config/config"
+import type { PushSender } from "../core/ports/push"
+import { ClearReadNotifications } from "../core/use-cases/clear-read-notifications"
 import { createApp } from "./http/app"
 import { DrizzleInvitationStore } from "../adapters/database/invitation-store"
 import type { HealthCheck } from "./http/routes/health"
@@ -141,13 +146,26 @@ export function bootstrap(options: { logger: Logger; version: string; database: 
     notifications: quiet(verifier.then((v) => new HandleAppStoreNotification(v, purchases, audit))),
   }
 
+  // Push (ADR 0012): devices in the database, the senders once configuration has loaded.
+  const pushStore = new DrizzlePushStore(db, logger)
+  const pushSender: PushSender = {
+    send: async (device, message) => (await quiet(config).then((loaded) => createPushSenderOnce(loaded))).send(device, message),
+  }
+  let pushSenderBuilt: PushSender | undefined
+  const createPushSenderOnce = (loaded: AppConfig) => (pushSenderBuilt ??= createPushSender(loaded, { local: !env.CONFIG_PREFIX, logger }))
+  const push = {
+    devices: pushStore,
+    vapidPublicKey: async () => vapidConfig(await config)?.publicKey,
+    clear: new ClearReadNotifications({ devices: pushStore, ledger: readLedger, sender: pushSender, log: logger }),
+  }
+
   const invitations = { store: new DrizzleInvitationStore(db), secure: urls.apiBaseUrl.startsWith("https://"), cookieDomain: urls.cookieDomain }
 
   const healthChecks: HealthCheck[] = [
     { name: "db", run: () => pingDatabase(db) },
     { name: "config", run: async () => void (await auth) },
   ]
-  const app = createApp({ logger, version, healthChecks, auth, webOrigin: urls.webOrigin, requestDeletion, capabilities, sync, mcp, switches, appStore, invitations, beforeAuth: async () => void (await built).secret.ensureFresh() })
+  const app = createApp({ logger, version, healthChecks, auth, webOrigin: urls.webOrigin, requestDeletion, capabilities, sync, push, mcp, switches, appStore, invitations, beforeAuth: async () => void (await built).secret.ensureFresh() })
 
   /**
    * Does the first request's slow work ahead of it: opens the database connection (DSQL IAM token

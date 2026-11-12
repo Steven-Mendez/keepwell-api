@@ -5,7 +5,7 @@ import { join } from "node:path"
 import { GetParametersByPathCommand, type SSMClient } from "@aws-sdk/client-ssm"
 import { describe, expect, it } from "vitest"
 
-import { configSourceFromEnv, loadConfig, appleBundleIds } from "../../src/adapters/config/config"
+import { AppConfig, apnsConfig, configSourceFromEnv, loadConfig, appleBundleIds, vapidConfig } from "../../src/adapters/config/config"
 
 const secret = "s".repeat(40)
 const apple = {
@@ -68,5 +68,27 @@ describe("configuration", () => {
   it("uses SSM under Lambda and the local file otherwise", () => {
     expect(configSourceFromEnv({ CONFIG_PREFIX: "/keepwell/dev", AWS_REGION: "us-east-1" })).toEqual({ kind: "ssm", prefix: "/keepwell/dev", region: "us-east-1" })
     expect(configSourceFromEnv({})).toEqual({ kind: "file", path: "config.local.json" })
+  })
+})
+
+describe("push configuration (ADR 0012)", () => {
+  const base = { auth_secret: secret, ...apple }
+
+  it("is optional: the `unset` placeholder Terraform seeds, or nothing, leaves push off", () => {
+    const placeholders = Object.fromEntries(["apns_private_key", "apns_key_id", "apns_team_id", "apns_bundle_id", "vapid_public_key", "vapid_private_key", "vapid_subject"].map((key) => [key, "unset"]))
+    for (const raw of [base, { ...base, ...placeholders }, { ...base, vapid_subject: "  " }]) {
+      const config = AppConfig.parse(raw)
+      expect(apnsConfig(config)).toBeUndefined()
+      expect(vapidConfig(config)).toBeUndefined()
+    }
+  })
+
+  it("turns a platform on only when all of its secrets are set", () => {
+    const apns = { apns_private_key: "-----BEGIN PRIVATE KEY-----", apns_key_id: "KEY0000000", apns_team_id: "TEAM000000", apns_bundle_id: "app.keepwell.ios" }
+    expect(apnsConfig(AppConfig.parse({ ...base, ...apns }))).toEqual({ privateKey: apns.apns_private_key, keyId: "KEY0000000", teamId: "TEAM000000", bundleId: "app.keepwell.ios" })
+    expect(apnsConfig(AppConfig.parse({ ...base, ...apns, apns_key_id: "unset" }))).toBeUndefined()
+    const vapid = { vapid_public_key: "BPublic", vapid_private_key: "private", vapid_subject: "mailto:a@b.co" }
+    expect(vapidConfig(AppConfig.parse({ ...base, ...vapid }))).toEqual({ publicKey: "BPublic", privateKey: "private", subject: "mailto:a@b.co" })
+    expect(vapidConfig(AppConfig.parse({ ...base, ...vapid, vapid_private_key: "" }))).toBeUndefined()
   })
 })

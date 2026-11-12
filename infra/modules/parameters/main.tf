@@ -78,6 +78,14 @@ locals {
     apple_services_id  = { type = "String", description = "Services ID used by the web (OAuth client_id)" }
     apple_bundle_id    = { type = "String", description = "iOS bundle identifier (audience of native ID tokens)" }
     allowed_apple_subs = { type = "String", description = "Comma-separated Apple user IDs allowed to sign in" }
+    # Push notifications (ADR 0012). While `unset`, the API and the job leave that platform off.
+    apns_private_key  = { type = "SecureString", description = "APNs auth key (.p8), PEM with \\n" }
+    apns_key_id       = { type = "String", description = "Key ID of the APNs auth key" }
+    apns_team_id      = { type = "String", description = "Apple developer team ID (APNs token issuer)" }
+    apns_bundle_id    = { type = "String", description = "iOS bundle identifier: the apns-topic of the pushes" }
+    vapid_public_key  = { type = "String", description = "VAPID public key, base64url (also served by GET /push/config)" }
+    vapid_private_key = { type = "SecureString", description = "VAPID private key, base64url" }
+    vapid_subject     = { type = "String", description = "VAPID contact: mailto: or https: URL" }
   }
 }
 

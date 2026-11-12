@@ -790,6 +790,38 @@
         "nullable": true,
         "optional": false
       }
+    },
+    "notificationState": {
+      "id": {
+        "type": "string",
+        "nullable": false,
+        "optional": false
+      },
+      "read_at": {
+        "type": "string",
+        "nullable": true,
+        "optional": false
+      },
+      "dismissed_at": {
+        "type": "string",
+        "nullable": true,
+        "optional": false
+      },
+      "created_at": {
+        "type": "string",
+        "nullable": false,
+        "optional": false
+      },
+      "updated_at": {
+        "type": "string",
+        "nullable": false,
+        "optional": false
+      },
+      "deleted_at": {
+        "type": "string",
+        "nullable": true,
+        "optional": false
+      }
     }
   }
 }

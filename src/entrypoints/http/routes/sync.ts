@@ -44,7 +44,18 @@ function parse<T extends z.ZodType>(schema: T, input: unknown): z.infer<T> {
   return parsed.data
 }
 
-export function syncRoutes(deps: { auth: Promise<Auth>; capabilities: Promise<ResolveCapabilities>; repository: SyncRepository; clock?: () => number; switches?: SwitchesSource }) {
+/** How long a push may wait for the silent clear (ADR 0012) before answering anyway. */
+export const CLEAR_BUDGET_MS = 3_000
+
+export function syncRoutes(deps: {
+  auth: Promise<Auth>
+  capabilities: Promise<ResolveCapabilities>
+  repository: SyncRepository
+  clock?: () => number
+  switches?: SwitchesSource
+  /** Called after a push commits that made notifications read or deleted; must not throw. */
+  onNotificationsSettled?: (input: { userId: string; clientId: string; ids: string[] }) => Promise<void>
+}) {
   const clock = deps.clock ?? (() => Date.now())
   const push = new ApplySyncBatch(deps.repository, clock)
   const routes = new Hono<AppEnv>()
@@ -62,6 +73,15 @@ export function syncRoutes(deps: { auth: Promise<Auth>; capabilities: Promise<Re
     })
     // Counts only: what happened, never what the rows contain.
     c.get("log").info({ metric: "sync_push", events: body.events.length, partial: outcome.partial, ...outcome.metrics }, "push")
+    if (deps.onNotificationsSettled && outcome.settledNotifications.length > 0) {
+      // After the commit, and bounded: the work is started now and the answer waits at most
+      // CLEAR_BUDGET_MS for it. Lambda freezes once the response is out, so a send left running
+      // behind it may never finish. A failure is the callback's to log; it never fails the push.
+      const clearing = deps.onNotificationsSettled({ userId: c.get("user").id, clientId: body.client_id, ids: outcome.settledNotifications }).catch(() => undefined)
+      let timer: ReturnType<typeof setTimeout> | undefined
+      await Promise.race([clearing, new Promise((resolve) => (timer = setTimeout(resolve, CLEAR_BUDGET_MS)))])
+      clearTimeout(timer)
+    }
     return c.json({ results: outcome.results, partial: outcome.partial })
   })
 

@@ -6,6 +6,13 @@
   "apple_bundle_id": "app.keepwell.ios",
   "apple_private_key": "-----BEGIN PRIVATE KEY-----\nMIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgGANgpllug9BXnQaX\nwonc5Rh7l1H59pyjoDq/+mwDLUihRANCAAQCx5L0l5IqOWZ0c1LxOng3nTWhC+zL\neOHfW4V1HVUGEGkwY2UO4iyuhryvcvZJPTgtjlF06Df2aSE8w+CQaoyG\n-----END PRIVATE KEY-----\n",
   "allowed_apple_subs": "000000.local.author",
+  "apns_private_key": "unset",
+  "apns_key_id": "unset",
+  "apns_team_id": "unset",
+  "apns_bundle_id": "unset",
+  "vapid_public_key": "unset",
+  "vapid_private_key": "unset",
+  "vapid_subject": "unset",
   "capabilities": {
     "early_access": {
       "cloud_sync": true,

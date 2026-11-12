@@ -30,6 +30,9 @@ import { CachedPlansSource } from "../../src/adapters/config/plans-source"
 import { CLOSED_PLANS, type PlansConfig } from "../../src/core/capabilities"
 import { NORMAL_SWITCHES, type Switches } from "../../src/core/switches"
 import { ResolveCapabilities } from "../../src/core/use-cases/resolve-capabilities"
+import { DrizzlePushStore } from "../../src/adapters/database/push-store"
+import { InMemoryPushSender } from "../../src/adapters/push/senders"
+import { ClearReadNotifications } from "../../src/core/use-cases/clear-read-notifications"
 import { captureLogger } from "./logger"
 
 // A stand-in for Apple: ID tokens signed with a local RSA key. Everything after the signature check
@@ -74,7 +77,7 @@ async function verify(token: string) {
 /** Plans as at launch: sync for everyone during early access, MCP with the coffee. */
 export const LAUNCH_PLANS: PlansConfig = { ...CLOSED_PLANS, early_access: { cloud_sync: true } }
 
-export function testAuthApp(db: Database, config: Partial<AppConfig> = {}, options: { runJobs?: boolean; plans?: () => PlansConfig; clock?: () => number; now?: () => Date; baseURL?: string; switches?: () => Switches; appStoreVerifier?: AppStoreVerifier; acceptSandbox?: boolean } = {}) {
+export function testAuthApp(db: Database, config: Partial<AppConfig> = {}, options: { runJobs?: boolean; plans?: () => PlansConfig; clock?: () => number; now?: () => Date; baseURL?: string; switches?: () => Switches; appStoreVerifier?: AppStoreVerifier; acceptSandbox?: boolean; vapidPublicKey?: string } = {}) {
   const baseURL = options.baseURL ?? "http://localhost:3001"
   const { logger, lines } = captureLogger()
   const audit = new DrizzleAuditLog(db)
@@ -101,6 +104,14 @@ export function testAuthApp(db: Database, config: Partial<AppConfig> = {}, optio
   const counter = new ChangeLogWriteCounter((userId) => scopedDb(db, userId))
   const createPending = new CreatePending({ ledger: readLedger, writer, counter, clock: now })
   const manage = new ManageLedger({ reader: ledgerReader, ledger: readLedger, writer, counter, trash: new ScopedMcpTrash((userId) => scopedDb(db, userId)), clock: now })
+  const pushStore = new DrizzlePushStore(db, logger)
+  const pushSender = new InMemoryPushSender()
+  const push = {
+    devices: pushStore,
+    vapidPublicKey: async () => options.vapidPublicKey,
+    clear: new ClearReadNotifications({ devices: pushStore, ledger: readLedger, sender: pushSender, log: logger, clock: now }),
+    now,
+  }
   const mcp = { readLedger, baseURL, now, connections: new McpConnections(db, audit), createPending, manage }
   const purchases = new DrizzlePurchaseStore(db, logger)
   const verifier = options.appStoreVerifier ?? { transaction: async () => Promise.reject(new Error("no verifier")), notification: async () => Promise.reject(new Error("no verifier")) }
@@ -108,8 +119,8 @@ export function testAuthApp(db: Database, config: Partial<AppConfig> = {}, optio
     redeem: Promise.resolve(new RedeemPurchase(verifier, purchases, audit, { "app.keepwell.coffee": "supporter" }, options.acceptSandbox ?? false)),
     notifications: Promise.resolve(new HandleAppStoreNotification(verifier, purchases, audit)),
   }
-  const app = createApp({ logger, version: "test", auth: Promise.resolve(auth), webOrigin: "http://localhost:3000", requestDeletion, capabilities, sync, clock: options.clock, mcp, switches: { current: async () => options.switches?.() ?? NORMAL_SWITCHES }, appStore, invitations: { store: new DrizzleInvitationStore(db), secure: false, now: options.now } })
-  return { app, auth, lines, queue, accounts, audit, entitlements, capabilities }
+  const app = createApp({ logger, version: "test", auth: Promise.resolve(auth), webOrigin: "http://localhost:3000", requestDeletion, capabilities, sync, push, clock: options.clock, mcp, switches: { current: async () => options.switches?.() ?? NORMAL_SWITCHES }, appStore, invitations: { store: new DrizzleInvitationStore(db), secure: false, now: options.now } })
+  return { app, auth, lines, queue, accounts, audit, entitlements, capabilities, pushSender, pushStore }
 }
 
 /** Signs in through the native-app path and returns the session cookie. */

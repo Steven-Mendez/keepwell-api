@@ -74,6 +74,8 @@ jobs:
             echo "jobs_role=$(terraform output -raw jobs_role_arn)"
             echo "api_fn=$(terraform output -raw api_function)"
             echo "jobs_fn=$(terraform output -raw jobs_function)"
+            echo "notifications_role=$(terraform output -raw notifications_role_arn)"
+            echo "notifications_fn=$(terraform output -raw notifications_function)"
           } >> "$GITHUB_OUTPUT"
 
       - name: 2. migrate
@@ -81,10 +83,11 @@ jobs:
           DB_HOST: ${{ steps.out.outputs.db }}
           APP_IAM_ROLE_ARN: ${{ steps.out.outputs.app_role }}
           JOBS_IAM_ROLE_ARN: ${{ steps.out.outputs.jobs_role }}
+          NOTIFICATIONS_IAM_ROLE_ARN: ${{ steps.out.outputs.notifications_role }}
         run: pnpm db:migrate
 
       - name: 3. deploy code
-        run: scripts/deploy-code.sh "${{ steps.out.outputs.api_fn }}" "${{ steps.out.outputs.jobs_fn }}"
+        run: scripts/deploy-code.sh "${{ steps.out.outputs.api_fn }}" "${{ steps.out.outputs.jobs_fn }}" "${{ steps.out.outputs.notifications_fn }}"
 
       - name: 4. smoke test
         run: ./scripts/smoke.sh "${{ steps.out.outputs.url }}" "${{ github.sha }}"

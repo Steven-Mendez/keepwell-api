@@ -49,6 +49,16 @@ class Device {
     this.record("category", { ...categoryRow(id, name, at), created_at: (existing?.created_at as string) ?? at }, existing ? "update" : "create")
   }
 
+  /** Read, unread, delete and undo of one notification (ADR 0012): the row is never a tombstone. */
+  touchNotification(id: string, action: "read" | "unread" | "dismiss" | "undo") {
+    const existing = this.rows.get(`notificationState:${id}`)
+    if (existing?.deleted_at) return
+    const at = this.now()
+    const read_at = action === "read" ? ((existing?.read_at as string | null) ?? at) : action === "unread" ? null : ((existing?.read_at as string | null) ?? (action === "dismiss" ? at : null))
+    const dismissed_at = action === "dismiss" ? at : action === "undo" ? null : ((existing?.dismissed_at as string | null) ?? null)
+    this.record("notificationState", { id, read_at, dismissed_at, created_at: (existing?.created_at as string) ?? at, updated_at: at, deleted_at: null }, existing ? "update" : "create")
+  }
+
   payInstallment(number: number, undo: boolean) {
     const id = loanPaymentId(LOAN, number)
     const existing = this.rows.get(`loanPayment:${id}`)
@@ -95,6 +105,7 @@ class Device {
 const op = fc.oneof(
   fc.record({ kind: fc.constant("category" as const), device: fc.nat(2), id: fc.constantFrom("groceries", "rent", "fun"), action: fc.constantFrom("save", "save", "delete") as fc.Arbitrary<"save" | "delete">, name: fc.string({ maxLength: 8 }) }),
   fc.record({ kind: fc.constant("pay" as const), device: fc.nat(2), number: fc.integer({ min: 1, max: 4 }), undo: fc.boolean() }),
+  fc.record({ kind: fc.constant("notification" as const), device: fc.nat(2), id: fc.constantFrom("payment:a:2026-11-20", "budget:groceries:2026-11:near", "price:t1"), action: fc.constantFrom("read", "unread", "dismiss", "undo") as fc.Arbitrary<"read" | "unread" | "dismiss" | "undo"> }),
   fc.record({ kind: fc.constant("sync" as const), device: fc.nat(2) }),
   fc.record({ kind: fc.constant("network" as const), device: fc.nat(2) })
 )
@@ -114,6 +125,7 @@ export function convergenceProperty(freshUser: () => Promise<{ http: ReturnType<
           for (const step of ops) {
             const device = devices[step.device]!
             if (step.kind === "category") device.editCategory(step.id, step.action, step.name)
+            if (step.kind === "notification") device.touchNotification(step.id, step.action)
             if (step.kind === "pay") device.payInstallment(step.number, step.undo)
             if (step.kind === "sync") await device.sync()
             if (step.kind === "network") device.online = !device.online
@@ -127,7 +139,7 @@ export function convergenceProperty(freshUser: () => Promise<{ http: ReturnType<
           for (let round = 0; round < 2; round++) for (const device of devices) await device.sync()
 
           const server = new Map<string, Row>()
-          for (const entity of ["category", "loanPayment"]) {
+          for (const entity of ["category", "loanPayment", "notificationState"]) {
             for (const row of (await devices[0]!.api.snapshot(entity)).body.rows as Row[]) server.set(`${entity}:${row.id}`, row)
           }
           for (const device of devices) {

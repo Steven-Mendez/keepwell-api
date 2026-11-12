@@ -13,7 +13,12 @@
     "resolveJsonModule": true,
     "isolatedModules": true,
     "noEmit": true,
-    "types": ["node"]
+    "types": ["node"],
+    // The copied web files import "@/lib/..."; resolved here instead of editing them (README, "The shared domain").
+    "paths": {
+      "@/lib/i18n": ["./src/core/domain-alias/i18n.ts"],
+      "@/lib/*": ["./src/core/domain/*"]
+    }
   },
   "include": ["src", "tests", "scripts", "*.ts"]
 }

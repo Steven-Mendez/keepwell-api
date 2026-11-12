@@ -8,6 +8,9 @@ import type { RequestAccountDeletion } from "../../core/use-cases/request-accoun
 import type { ResolveCapabilities } from "../../core/use-cases/resolve-capabilities"
 import type { SyncRepository } from "../../core/ports/sync-repository"
 import { syncRoutes } from "./routes/sync"
+import { pushRoutes } from "./routes/push"
+import type { PushDeviceStore } from "../../core/ports/push"
+import type { ClearReadNotifications } from "../../core/use-cases/clear-read-notifications"
 import { mcpRoutes, wellKnownRoutes } from "./routes/mcp"
 import type { McpConnections } from "../../adapters/auth/mcp-connections"
 import type { ReadLedger } from "../../core/use-cases/read-ledger"
@@ -45,6 +48,8 @@ export interface AppDependencies {
   sync?: SyncRepository
   clock?: () => number
   switches?: SwitchesSource
+  /** Push registration and the silent clear after sync (ADR 0012); without it the routes aren't mounted. */
+  push?: { devices: PushDeviceStore; vapidPublicKey: () => Promise<string | undefined>; clear?: ClearReadNotifications; now?: () => Date }
   /** Invitation check for the web's first sign-in. */
   invitations?: { store: InvitationStore; secure: boolean; cookieDomain?: string; now?: () => Date }
   appStore?: { redeem: Promise<RedeemPurchase>; notifications: Promise<HandleAppStoreNotification> }
@@ -86,7 +91,14 @@ export function createApp(deps: AppDependencies) {
     app.route("/", authRoutes(deps.auth, { webOrigin: deps.webOrigin, before: deps.beforeAuth }))
     app.route("/", meRoutes(deps.auth, { requestDeletion: deps.requestDeletion, capabilities: deps.capabilities }))
     if (deps.capabilities && deps.sync) {
-      app.route("/", syncRoutes({ auth: deps.auth, capabilities: deps.capabilities, repository: deps.sync, clock: deps.clock, switches: deps.switches }))
+      const clear = deps.push?.clear
+      app.route(
+        "/",
+        syncRoutes({ auth: deps.auth, capabilities: deps.capabilities, repository: deps.sync, clock: deps.clock, switches: deps.switches, onNotificationsSettled: clear ? (input) => clear.execute(input) : undefined })
+      )
+    }
+    if (deps.capabilities && deps.push) {
+      app.route("/", pushRoutes({ auth: deps.auth, capabilities: deps.capabilities, devices: deps.push.devices, vapidPublicKey: deps.push.vapidPublicKey, now: deps.push.now }))
     }
     if (deps.appStore) app.route("/", appStoreRoutes({ auth: deps.auth, ...deps.appStore }))
     if (deps.invitations) app.route("/", invitationRoutes({ invitations: deps.invitations.store, secure: deps.invitations.secure, cookieDomain: deps.invitations.cookieDomain, now: deps.invitations.now }))
