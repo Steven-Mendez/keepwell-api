@@ -1,20 +1,16 @@
 import {
-  addMonths,
   balanceOf,
   budgetStatuses,
   dayKey,
-  daysInMonth,
   inSecondCurrency,
   lastMonths,
   monthlySummary,
   netWorth,
   savings,
   trendReport,
-  upcoming,
+  upcomingPayments,
   yearMonth,
   yearMonthContaining,
-  zonedDate,
-  zonedParts,
   type Ledger,
   type Money,
   type YearMonth,
@@ -124,38 +120,39 @@ export function getTrends(ledger: Ledger, months: number, now: Date) {
   }
 }
 
+/**
+ * What's pending from the domain's `upcomingPayments`, the list the apps' Home reads: drafts to
+ * confirm, recurring movements, card payments and loan installments, overdue first. Every entry
+ * has its `id` (the same on every platform), `status` and `days_from_today`; amounts stay in their
+ * own currency (a card's is in the principal one) and are never added up.
+ */
 export function getUpcomingPayments(ledger: Ledger, days: number, now: Date) {
   const zone = ledger.timeZone
   const day = (date: Date) => dayKey(date, zone)
-  const recurring = upcoming(ledger.recurringRules, now, days, zone).map((entry) => ({
-    type: "recurring" as const,
-    date: day(entry.date),
-    name: entry.rule.name,
-    kind: entry.rule.kind,
-    amount: { amount: entry.rule.amount, currency: entry.rule.currency },
-    is_subscription: entry.rule.isSubscription,
-    rule_id: entry.rule.id,
-  }))
-  const until = new Date(now.getTime() + days * 86_400_000)
-  const cards = ledger.accounts.flatMap((account) => {
-    const terms = account.creditTerms
-    if (!terms?.dueDay) return []
-    const due = nextDay(now, terms.dueDay, zone)
-    if (due > until) return []
-    return [{ type: "card_due" as const, date: day(due), name: account.name, account_id: account.id, cutoff_day: terms.cutoffDay ?? null, due_day: terms.dueDay }]
+  const payments = upcomingPayments(ledger, now, days).map((payment) => {
+    const base = { id: payment.id, date: day(payment.date), status: payment.status, days_from_today: payment.daysFromToday, amount: money(payment.amount) }
+    switch (payment.kind) {
+      case "draft": {
+        const { transaction } = payment
+        return { ...base, type: "draft" as const, name: transaction.description, kind: transaction.kind, transaction_id: transaction.id, rule_id: transaction.recurringId ?? null }
+      }
+      case "recurring": {
+        const { rule } = payment
+        return { ...base, type: "recurring" as const, name: rule.name, kind: rule.kind, is_subscription: rule.isSubscription, rule_id: rule.id }
+      }
+      case "card": {
+        const account = ledger.accounts.find((candidate) => candidate.id === payment.accountId)
+        return { ...base, type: "card_due" as const, name: account?.name ?? "", account_id: payment.accountId, cutoff_day: account?.creditTerms?.cutoffDay ?? null, due_day: payment.dueDay }
+      }
+      case "installment": {
+        const loan = ledger.loans.find((candidate) => candidate.id === payment.loanId)
+        return { ...base, type: "loan_installment" as const, name: loan?.name ?? "", loan_id: payment.loanId, number: payment.number, count: payment.count }
+      }
+      case "debt":
+        return { ...base, type: "personal_debt" as const, name: payment.person, debt_id: payment.debtId, direction: payment.direction }
+    }
   })
-  return { from: day(now), days, payments: [...recurring, ...cards].sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0)) }
-}
-
-function nextDay(now: Date, dayOfMonth: number, zone: string): Date {
-  const today = zonedParts(now, zone)
-  const startOfToday = zonedDate(zone, today.year, today.month, today.day)
-  for (let offset = 0; offset < 2; offset++) {
-    const month = addMonths(today, offset)
-    const candidate = zonedDate(zone, month.year, month.month, Math.min(dayOfMonth, daysInMonth(month)), 12)
-    if (candidate >= startOfToday) return candidate
-  }
-  return zonedDate(zone, today.year, today.month + 1, dayOfMonth, 12)
+  return { from: day(now), days, payments }
 }
 
 export interface TransactionSearch {

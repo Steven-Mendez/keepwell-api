@@ -1723,6 +1723,22 @@
   },
   "≈ %@ · rate %@": {
    "es": "≈ %@ · tasa %@"
+  },
+  "Card payment": {
+   "es": "Pago de tarjeta"
+  },
+  "Installment %lld of %lld": {
+   "es": "Cuota %lld de %lld"
+  },
+  "Overdue · %lld days": {
+   "en": {
+    "one": "Overdue · %lld day",
+    "other": "Overdue · %lld days"
+   },
+   "es": {
+    "one": "Atrasado · %lld día",
+    "other": "Atrasado · %lld días"
+   }
   }
  },
  "lock": {
