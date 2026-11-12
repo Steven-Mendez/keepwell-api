@@ -141,6 +141,13 @@
       "when": 1794519531315,
       "tag": "0019_personal_debt_due_date",
       "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1794521620073,
+      "tag": "0020_account_closed_at",
+      "breakpoints": true
     }
   ]
 }

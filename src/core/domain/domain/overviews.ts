@@ -13,10 +13,12 @@ import {
   folded,
   inSecondCurrency,
   isConfirmed,
+  isOpen,
   monthlySummary,
   netWorth,
   excludedCurrencies,
   nextOccurrence,
+  openAccounts,
   plannedSummary,
   priceIncreases,
   principalAmount,
@@ -92,9 +94,9 @@ export interface HomeOverview {
   netWorthInSecond?: Money
   /** Currencies of balances the net worth leaves out (no rate in the settings); empty when none. */
   netWorthExcluded: string[]
-  /** Deposit and cash accounts. */
+  /** Open deposit and cash accounts. */
   accountCount: number
-  /** Plastics, not transfer channels. */
+  /** Plastics of open accounts, not transfer channels. */
   cardCount: number
   month: MonthlySummary
   hasTransactions: boolean
@@ -103,7 +105,7 @@ export interface HomeOverview {
   /** Planned movements, soonest first. */
   planned: Transaction[]
   plannedSummary: PlannedSummary
-  /** Deposits first, then cash. */
+  /** Open accounts: deposits first, then cash. */
   balances: { account: Account; balance: Money }[]
   /** Every credit card's debt in the principal currency (negative); `undefined` without cards. */
   cardDebt?: Money
@@ -127,10 +129,11 @@ export function homeOverview(ledger: Ledger, now: Date = new Date(), recentCount
     const accountBalances = balanceOf(account, transactions, zone)
     allBalances.push(...accountBalances)
     if (account.kind === "credit") cardDebt = cardDebt.plus(netWorth(accountBalances, currencies).amount)
-    else if (accountBalances[0]) balances.push({ account, balance: accountBalances[0] })
+    else if (accountBalances[0] && isOpen(account)) balances.push({ account, balance: accountBalances[0] })
   }
   balances = [...balances.filter((line) => line.account.kind !== "cash"), ...balances.filter((line) => line.account.kind === "cash")]
   const total = netWorth(allBalances, currencies)
+  const closedIds = new Set(accounts.filter((account) => !isOpen(account)).map((account) => account.id))
   const planned = transactions.filter((transaction) => !isConfirmed(transaction)).sort(oldestFirst)
   const recent = transactions.filter(isConfirmed).sort(newestFirst).slice(0, recentCount)
   const usage = new Map<string, number>()
@@ -149,8 +152,8 @@ export function homeOverview(ledger: Ledger, now: Date = new Date(), recentCount
     netWorth: total,
     ...(second ? { netWorthInSecond: second } : {}),
     netWorthExcluded: excludedCurrencies(allBalances, currencies),
-    accountCount: accounts.filter((account) => account.kind !== "credit").length,
-    cardCount: cards.filter((card) => card.kind !== "transfer").length,
+    accountCount: accounts.filter((account) => account.kind !== "credit" && isOpen(account)).length,
+    cardCount: cards.filter((card) => card.kind !== "transfer" && !closedIds.has(card.accountId)).length,
     month: monthlySummary(yearMonthContaining(now, zone), transactions, currencies.principal, zone),
     hasTransactions: transactions.length > 0,
     recent,
@@ -177,14 +180,20 @@ export interface AccountsOverview {
   creditCards: { account: Account; holder?: Card; balances: Money[] }[]
   deposits: { account: Account; balance: Money; debitCard?: Card }[]
   cash: { account: Account; balance: Money; principalEquivalent?: Money }[]
+  /** Closed accounts, most recently closed first: out of the lists above, still in `netWorth`. */
+  closed: { account: Account; balances: Money[] }[]
 }
 
 export function accountsOverview(accounts: readonly Account[], cards: readonly Card[], transactions: readonly Transaction[], currencies: CurrencySettings, zone: TimeZone): AccountsOverview {
-  const result: AccountsOverview = { settings: currencies, netWorth: zeroMoney(currencies.principal), creditCards: [], deposits: [], cash: [] }
+  const result: AccountsOverview = { settings: currencies, netWorth: zeroMoney(currencies.principal), creditCards: [], deposits: [], cash: [], closed: [] }
   const all: Money[] = []
   for (const account of accounts) {
     const balances = balanceOf(account, transactions, zone)
     all.push(...balances)
+    if (!isOpen(account)) {
+      result.closed.push({ account, balances })
+      continue
+    }
     const own = cards.filter((card) => card.accountId === account.id)
     switch (account.kind) {
       case "credit": {
@@ -212,6 +221,7 @@ export function accountsOverview(accounts: readonly Account[], cards: readonly C
     }
   }
   result.netWorth = netWorth(all, currencies)
+  result.closed.sort((a, b) => ((a.account.closedAt ?? "") < (b.account.closedAt ?? "") ? 1 : -1))
   return result
 }
 
@@ -327,15 +337,16 @@ export function filterTransactions(transactions: readonly Transaction[], query: 
 
 /** Accounts in the Accounts tab's order (credit, bank, cash), each with the card that is its face. */
 export function scopeOptions(accounts: readonly Account[], cards: readonly Card[]): { account: Account; card?: Card }[] {
-  return (["credit", "deposit", "cash"] as const).flatMap((kind) =>
+  // Closed accounts come last, so their history can still be looked up (the screen heads them "Closed").
+  return [true, false].flatMap((open) => (["credit", "deposit", "cash"] as const).flatMap((kind) =>
     accounts
-      .filter((account) => account.kind === kind)
+      .filter((account) => account.kind === kind && isOpen(account) === open)
       .map((account) => {
         const face = kind === "deposit" ? "debit" : kind === "credit" ? "creditHolder" : undefined
         const card = face ? cards.find((candidate) => candidate.accountId === account.id && candidate.kind === face) : undefined
         return { account, ...(card ? { card } : {}) }
       }),
-  )
+  ))
 }
 
 // Summary.
@@ -463,7 +474,7 @@ export function summaryReport(transactions: readonly Transaction[], currency: st
 // Settings › Payment methods: every method grouped by its account; cash has none.
 
 export function paymentMethodGroups(accounts: readonly Account[], cards: readonly Card[]): { account: Account; methods: Card[] }[] {
-  return accounts.flatMap((account) => {
+  return openAccounts(accounts).flatMap((account) => {
     const methods = cards.filter((card) => card.accountId === account.id)
     if (methods.length === 0) return []
     return [{ account, methods: [...methods.filter((card) => card.kind !== "transfer"), ...methods.filter((card) => card.kind === "transfer")] }]

@@ -1,4 +1,5 @@
 import { DomainError } from "../domain/domain"
+import { domainRefusal } from "./domain-refusal"
 import { loanPaymentId, uuidV5, type SyncEntity, type TransactionCategory } from "../domain/schema"
 import {
   accountColumns,
@@ -141,7 +142,7 @@ export class ManageLedger {
       label = request.trashLabel?.(store)
       result = await operation(store, now)
     } catch (error) {
-      if (error instanceof DomainError) throw new ManageError(error.code === "notFound" ? "not_found" : "invalid", error.message)
+      if (error instanceof DomainError) throw new ManageError(error.code === "notFound" ? "not_found" : "invalid", domainRefusal(error))
       throw error
     }
     const at = now.toISOString()

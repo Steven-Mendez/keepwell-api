@@ -54,6 +54,12 @@ export const AccountWire = z.object({
   limit_currency: CurrencyCode.nullable(),
   cutoff_day: Day.nullable(),
   due_day: Day.nullable(),
+  /**
+   * Optional, not only nullable: a row from an app older than the column lacks the key, and the
+   * server then keeps the stored closing instead of reopening the account (`decide` in keepwell-api).
+   * Newer apps always send it, null while open.
+   */
+  closed_at: IsoDateTime.nullable().optional(),
   ...Audit,
 })
 

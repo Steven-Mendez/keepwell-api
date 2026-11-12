@@ -5,8 +5,15 @@ import { instantIn } from "../mcp/dates"
 import type { McpWriteCounter } from "../ports/mcp-writes"
 import type { ApplySyncBatch } from "./apply-sync-batch"
 import type { ReadLedger } from "./read-ledger"
+import { domainRefusal } from "./domain-refusal"
 
 /** Writes per MCP client and user in any hour (ADR 0007): a runaway or manipulated assistant stops here. */
+
+/** Why the domain refused a write. */
+function refusal(error: unknown, fallback: string): string {
+  return error instanceof DomainError ? domainRefusal(error) : fallback
+}
+
 export const MCP_WRITES_PER_HOUR = 50
 
 export class McpWriteError extends Error {
@@ -122,7 +129,7 @@ export class CreatePending {
         context
       )
     } catch (error) {
-      throw new McpWriteError("invalid", error instanceof DomainError ? `${error.code}${error.detail ? `: ${error.detail}` : ""}` : "Invalid movement")
+      throw new McpWriteError("invalid", refusal(error, "Invalid movement"))
     }
     const at = this.now().toISOString()
     const row = transactionToWire({ ...transaction, status: "planned" }, { created_at: at, updated_at: at })
@@ -162,7 +169,7 @@ export class CreatePending {
     try {
       checkRecurringRule(rule, await getTransactionContext(new InMemoryStore(ledger.timeZone, ledgerSeed(ledger))))
     } catch (error) {
-      throw new McpWriteError("invalid", error instanceof DomainError ? `${error.code}${error.detail ? `: ${error.detail}` : ""}` : "Invalid recurring payment")
+      throw new McpWriteError("invalid", refusal(error, "Invalid recurring payment"))
     }
     const at = this.now().toISOString()
     await this.write(userId, clientId, "recurringRule", recurringRuleToWire(rule, { created_at: at, updated_at: at }), input.id, JSON.stringify(input))

@@ -249,4 +249,39 @@ describe("MCP manage tools", () => {
     // Deletes are not batchable: each asks on its own.
     expect((await tool("apply_changes", { changes: [{ tool: "delete_account", arguments: { account_id: accountId } }] })).isError).toBe(true)
   })
+
+  it("closes an account keeping its history, moving what is left, and reopens it", async () => {
+    const { tool, data } = await setup()
+    const account = (name: string, balance: string) => tool("create_account", { id: randomUUID(), kind: "cash", name, balance, currency: "USD" })
+    const oldId = data<{ result: { account_id: string } }>(await account("Old wallet", "200")).result.account_id
+    const newId = data<{ result: { account_id: string } }>(await account("New wallet", "0")).result.account_id
+    const emptyId = data<{ result: { account_id: string } }>(await account("Empty", "0")).result.account_id
+    await tool("create_transaction", { id: randomUUID(), kind: "expense", amount: "20", currency: "USD", account_id: oldId, category_id: "groceries", description: "Súper", date: today() })
+
+    const refused = await tool("close_account", { account_id: oldId })
+    expect(refused.isError).toBe(true)
+    expect(refused.content[0]!.text).toContain("accountNotEmpty")
+
+    const closed = await tool("close_account", { account_id: oldId, transfer_to_account_id: newId })
+    expect(closed.isError).toBeFalsy()
+    expect(data(closed)).toMatchObject({ ok: true, result: { account_id: oldId, transfers: [{ amount: { amount: "180", currency: "USD" }, from_account_id: oldId, to_account_id: newId }] } })
+    expect((await tool("close_account", { account_id: emptyId })).isError).toBeFalsy()
+    // History stays: the expense is still there and the net worth didn't move.
+    expect(await count(sql`select count(*) as n from transactions where deleted_at is null and account_id = ${oldId}`)).toBe(2)
+    expect(data(await tool("get_net_worth"))).toMatchObject({ net_worth: { amount: "180" } })
+
+    const listed = data<{ accounts: { id: string; closed_at: string | null; balances: { amount: string }[] }[] }>(await tool("list_accounts")).accounts
+    expect(listed.find((entry) => entry.id === oldId)).toMatchObject({ closed_at: expect.any(String), balances: [{ amount: "0" }] })
+    expect(listed.find((entry) => entry.id === newId)?.closed_at).toBeNull()
+    const context = data<{ accounts: { id: string }[] }>(await tool("get_financial_context"))
+    expect(context.accounts.map((entry) => entry.id)).toEqual([newId])
+
+    const movement = await tool("create_transaction", { id: randomUUID(), kind: "expense", amount: "5", currency: "USD", account_id: oldId, category_id: "groceries", description: "Café", date: today() })
+    expect(movement.isError).toBe(true)
+    expect(JSON.parse(movement.content[0]!.text)).toMatchObject({ error: "invalid", message: `Account ${oldId} is closed; reopen it first.` })
+
+    expect(data(await tool("reopen_account", { account_id: oldId }))).toMatchObject({ ok: true, result: { account_id: oldId, closed_at: null } })
+    expect((await admin.db.execute(sql`select closed_at from ledger_accounts where id = ${oldId}`)).rows).toEqual([{ closed_at: null }])
+    expect((await tool("create_transaction", { id: randomUUID(), kind: "expense", amount: "5", currency: "USD", account_id: oldId, category_id: "groceries", description: "Café", date: today() })).isError).toBeFalsy()
+  })
 })

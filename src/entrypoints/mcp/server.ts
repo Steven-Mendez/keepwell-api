@@ -67,10 +67,10 @@ export function createMcpServer(context: McpContext): McpServer {
     else server.registerTool(name, config, handler)
   }
 
-  tool("get_financial_context", { title: "Financial overview", description: "Start here: currencies, accounts with balances, net worth, this month's income and spending, budgets and the next 14 days of payments.", view: true }, {}, (_, ledger) =>
+  tool("get_financial_context", { title: "Financial overview", description: "Start here: currencies, open accounts with balances, net worth, this month's income and spending, budgets and the next 14 days of payments.", view: true }, {}, (_, ledger) =>
     getFinancialContext(ledger, context.now())
   )
-  tool("list_accounts", { title: "List accounts", description: "Accounts with their balance in each currency, credit terms, and cards (last four digits only)." }, {}, (_, ledger) => ({ accounts: listAccounts(ledger) }))
+  tool("list_accounts", { title: "List accounts", description: "Accounts with their balance in each currency, credit terms, cards (last four digits only) and closed_at: closed accounts are listed too, so their history can be explained, with the day they were closed (null while open)." }, {}, (_, ledger) => ({ accounts: listAccounts(ledger) }))
   tool("get_net_worth", { title: "Net worth", description: "Net worth in the principal currency (and the second, at the settings rate), with each account's share." }, {}, (_, ledger) => getNetWorth(ledger))
   tool(
     "get_monthly_summary",

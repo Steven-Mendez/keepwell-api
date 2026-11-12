@@ -60,6 +60,7 @@ export function toDomain(rows: LedgerRows) {
           },
         }
       : {}),
+    ...present("closedAt", row.closed_at),
   }))
   const cards: Card[] = alive(rows.card).map((row) => ({
     id: row.id,
