@@ -2264,6 +2264,9 @@
   "Save": {
    "es": "Guardar"
   },
+  "See all": {
+   "es": "Ver todos"
+  },
   "Show amounts": {
    "es": "Mostrar montos"
   },
@@ -3504,6 +3507,12 @@
   "All accounts": {
    "es": "Todas las cuentas"
   },
+  "Amount": {
+   "es": "Monto"
+  },
+  "Apply": {
+   "es": "Aplicar"
+  },
   "Available balance": {
    "es": "Saldo disponible"
   },
@@ -3534,6 +3543,9 @@
   "Confirmed": {
    "es": "Confirmado"
   },
+  "Converted to %@ at each movement's rate": {
+   "es": "Convertido a %@ con la tasa de cada movimiento"
+  },
   "Credit card": {
    "es": "Tarjeta de crédito"
   },
@@ -3548,6 +3560,9 @@
   },
   "Delete this transaction?": {
    "es": "¿Eliminar este movimiento?"
+  },
+  "Deleted rule": {
+   "es": "Regla borrada"
   },
   "Draft": {
    "es": "Borrador"
@@ -3564,6 +3579,9 @@
   "Expenses": {
    "es": "Gastos"
   },
+  "Filters": {
+   "es": "Filtros"
+  },
   "From": {
    "es": "Desde"
   },
@@ -3578,6 +3596,15 @@
   },
   "Log your first expense, income or transfer and it shows up here.": {
    "es": "Anota tu primer gasto, ingreso o transferencia y aparecerá aquí."
+  },
+  "Maximum": {
+   "es": "Máximo"
+  },
+  "Minimum": {
+   "es": "Mínimo"
+  },
+  "Minimum is above maximum": {
+   "es": "El mínimo es mayor que el máximo"
   },
   "Money in": {
    "es": "Entradas"
@@ -3606,6 +3633,9 @@
   "Nothing matches. Try another word or filter.": {
    "es": "Nada coincide. Prueba otra palabra u otro filtro."
   },
+  "Origin": {
+   "es": "Origen"
+  },
   "Paid with": {
    "es": "Pagado con"
   },
@@ -3617,6 +3647,9 @@
   },
   "Reference": {
    "es": "Referencia"
+  },
+  "Remove filter %@": {
+   "es": "Quitar el filtro %@"
   },
   "Repeats": {
    "es": "Se repite"
@@ -3641,6 +3674,12 @@
   },
   "Status": {
    "es": "Estado"
+  },
+  "Subscriptions": {
+   "es": "Suscripciones"
+  },
+  "Subscriptions only": {
+   "es": "Solo suscripciones"
   },
   "Tags": {
    "es": "Etiquetas"

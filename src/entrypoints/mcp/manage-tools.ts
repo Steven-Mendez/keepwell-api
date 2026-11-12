@@ -55,6 +55,7 @@ import { categoryOutcome } from "../../core/mcp/category-outcome"
 import { instantIn } from "../../core/mcp/dates"
 import { ManageError, type ManageLedger } from "../../core/use-cases/manage-ledger"
 import type { RecordingStore } from "../../core/ledger/recording-store"
+import { decimal } from "./inputs"
 import { VIEWS_URI } from "./ui/resources"
 
 // The `manage` tools (ADR 0011): everything the apps' screens do, through the apps' own domain use
@@ -62,7 +63,6 @@ import { VIEWS_URI } from "./ui/resources"
 // `restore_deleted` takes back for 30 days. Ids come from the read tools (list_accounts,
 // list_categories…), never guessed.
 
-const decimal = z.string().regex(/^[0-9]+(\.[0-9]+)?$/, "a positive exact decimal such as 12.50")
 const instant = z.string().refine((text) => !Number.isNaN(Date.parse(text)), "an ISO 8601 date or date-time").describe("YYYY-MM-DD is that day in the person's time zone (get_financial_context); a date-time is that instant")
 const currency = z.string().length(3).describe("ISO 4217, one of the currencies in get_financial_context")
 const newId = z.string().uuid().describe("A new UUID you generate once and reuse if you retry, so the call never creates twice")
