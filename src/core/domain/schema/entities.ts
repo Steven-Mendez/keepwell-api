@@ -111,6 +111,10 @@ export const Card = z.object({
 })
 export type Card = z.infer<typeof Card>
 
+/** A statement line's id: the bank's (FITID, reference) or `kw1:` and a hash (`importedLineIds`). */
+export const MAX_IMPORTED_ID_LENGTH = 128
+export const ImportedId = z.string().min(1).max(MAX_IMPORTED_ID_LENGTH)
+
 /**
  * A movement. `amount` is always positive and `kind` carries the direction, so a mis-signed value
  * can't flip an expense into income (iOS `Transaction.checkAmounts`).
@@ -144,6 +148,12 @@ export const Transaction = z.object({
   tags: z.array(z.string()).optional(),
   /** `mcp` when Claude (or another MCP client) recorded it; absent means `app`. Kept on confirm. */
   source: RecordSource.optional(),
+  /**
+   * The bank's id for the statement line it came from (or one `matchIncoming` derived), so importing
+   * the same statement again finds it instead of duplicating it. Set by an import, never typed; an
+   * edit keeps it.
+   */
+  importedId: ImportedId.optional(),
 })
 export type Transaction = z.infer<typeof Transaction>
 

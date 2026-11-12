@@ -91,6 +91,8 @@ export interface TransactionDraft {
   recurringId?: string
   /** Normalized when saved; absent or empty means none. */
   tags?: string[]
+  /** The statement line a new movement is imported from (`importTransactions`); an edit keeps the one it had. */
+  importedId?: string
 }
 
 export interface TransactionContext {
@@ -170,6 +172,8 @@ export function validatedTransaction(draft: TransactionDraft, context: Transacti
   const note = draft.note.trim()
   const debited = draft.currency === rate.principal ? undefined : draft.actualDebitedPrincipal
   const recurringId = draft.recurringId ?? existing?.recurringId
+  // Nobody types it: an edit from any editor keeps the statement line the movement came from.
+  const importedId = existing?.importedId ?? draft.importedId
   const transaction: Transaction = {
     id: draft.id,
     date: draft.date.toISOString(),
@@ -189,6 +193,7 @@ export function validatedTransaction(draft: TransactionDraft, context: Transacti
     ...(note === "" ? {} : { note }),
     ...(recurringId === undefined ? {} : { recurringId }),
     ...tagsField(draft.tags),
+    ...(importedId === undefined ? {} : { importedId }),
   }
   checkClosedAccounts(transaction, context.accounts, existing)
   return transaction
