@@ -1,7 +1,7 @@
 import type { LedgerNotification } from "../domain/domain"
 import { dueNotifications, localeOf, NotificationWording, statesOf, unreadCount } from "../notifications/compose"
 import { resolveTimeZone } from "../notifications/time-zone"
-import type { DeliveryStore, PushDeviceStore, PushMessage, PushSender } from "../ports/push"
+import { forgetGoneDevice, type DeliveryStore, type PushDeviceStore, type PushMessage, type PushSender } from "../ports/push"
 import type { ReadLedger } from "./read-ledger"
 
 /** Deliveries are kept this long, enough to remember anything the ledger can still produce. */
@@ -107,7 +107,7 @@ export class SendDueNotifications {
         })
       )
       for (const { device, outcome } of outcomes) {
-        if (outcome === "gone") {
+        if (outcome === "gone" && forgetGoneDevice(device, now)) {
           await devices.removeWithToken(userId, device.clientId, device.token)
           result.removed++
         }

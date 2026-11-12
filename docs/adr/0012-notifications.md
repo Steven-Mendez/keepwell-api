@@ -96,8 +96,11 @@ New tables (user-owned, added to `USER_OWNED_TABLES`):
 - `push_devices`: `id`, `user_id`, `client_id`, `platform` (`ios` | `web`), `token` (APNs token or
   the Web Push subscription JSON), `time_zone`, `locale`, `environment` (APNs `sandbox` |
   `production`, null on the web), `created_at`, `last_seen_at`; unique on `(user_id, client_id)`. Registered
-  by `PUT /push/devices/:clientId`, removed by `DELETE`. APNs `410 Unregistered` and Web Push
-  `404/410` delete the row.
+  by `PUT /push/devices/:clientId`, removed by `DELETE` (the web also calls it on sign-out). A
+  registration whose token another of the person's rows already has replaces that row (site data
+  cleared, app reinstalled). APNs `410 Unregistered` and Web Push `404/410` delete the row, unless
+  the device registered within the last hour: a just-made subscription can be refused for a moment,
+  so it is only skipped that run.
 - `notification_deliveries`: `user_id`, `notification_id`, `sent_at`. Idempotency for the job: a
   retried run doesn't notify twice. Rows older than 120 days are pruned by the same job.
 

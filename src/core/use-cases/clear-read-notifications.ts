@@ -1,6 +1,6 @@
 import { resolveTimeZone } from "../notifications/time-zone"
 import { statesOf, unreadCount } from "../notifications/compose"
-import type { PushDeviceStore, PushSender } from "../ports/push"
+import { forgetGoneDevice, type PushDeviceStore, type PushSender } from "../ports/push"
 import type { JobLog } from "./send-due-notifications"
 import type { ReadLedger } from "./read-ledger"
 
@@ -24,14 +24,15 @@ export class ClearReadNotifications {
       if (others.length === 0) return
       const zone = resolveTimeZone([...all].sort((a, b) => b.lastSeenAt.getTime() - a.lastSeenAt.getTime())[0]!.timeZone)
       const { ledger, rows } = await this.deps.ledger.load(input.userId)
-      const badge = unreadCount(ledger, statesOf(rows.notificationState), (this.deps.clock ?? (() => new Date()))(), zone)
+      const now = (this.deps.clock ?? (() => new Date()))()
+      const badge = unreadCount(ledger, statesOf(rows.notificationState), now, zone)
       await Promise.all(
         others.map(async (device) => {
           const outcome = await sender.send(device, { type: "clear", ids: input.ids, badge }).catch((error: unknown) => {
             log.warn({ err: error, platform: device.platform }, "silent clear threw")
             return "failed" as const
           })
-          if (outcome === "gone") await devices.removeWithToken(input.userId, device.clientId, device.token)
+          if (outcome === "gone" && forgetGoneDevice(device, now)) await devices.removeWithToken(input.userId, device.clientId, device.token)
         })
       )
       log.info({ metric: "notifications_clear", devices: others.length, ids: input.ids.length }, "silent clear sent")

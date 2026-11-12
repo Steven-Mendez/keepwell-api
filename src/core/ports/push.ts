@@ -60,6 +60,18 @@ export type PushMessage =
 /** `gone`: the push service says this token is dead for good; the device should be deleted. */
 export type SendResult = "sent" | "gone" | "failed"
 
+/**
+ * How long after a device last registered a `gone` is not believed. A subscription made seconds ago
+ * can be refused for a moment, and deleting it would silence that browser until it next loads
+ * Keepwell. A device really gone stays skipped and is deleted on the first send after this.
+ */
+export const GONE_GRACE_MS = 60 * 60 * 1000
+
+/** Whether a device its push service called `gone` should be deleted now. */
+export function forgetGoneDevice(device: Pick<PushDevice, "lastSeenAt">, now: Date): boolean {
+  return now.getTime() - device.lastSeenAt.getTime() >= GONE_GRACE_MS
+}
+
 export interface PushSender {
   send(device: PushDevice, message: PushMessage): Promise<SendResult>
 }

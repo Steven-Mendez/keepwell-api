@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest"
 
+import { GONE_GRACE_MS } from "../../src/core/ports/push"
 import { ClearReadNotifications } from "../../src/core/use-cases/clear-read-notifications"
 import { DELIVERY_RETENTION_DAYS, MAX_PER_USER_RUN, SendDueNotifications } from "../../src/core/use-cases/send-due-notifications"
 import { fakeLedger, ledger, MemoryStores, RecordingSender, silentLog, stateRow, VISA } from "../support/notifications"
@@ -77,7 +78,7 @@ describe("SendDueNotifications", () => {
 
   it("deletes a device the push service says is gone, and stops sending to it", async () => {
     await stores.upsert("user-1", { clientId: "c1", platform: "ios", token: "ab".repeat(32), timeZone: "Asia/Tokyo", locale: "en", environment: "production" }, NOW)
-    await stores.upsert("user-1", { clientId: "c2", platform: "web", token: "{}", timeZone: "Asia/Tokyo", locale: "en", environment: null }, new Date(NOW.getTime() - 1000))
+    await stores.upsert("user-1", { clientId: "c2", platform: "web", token: "{}", timeZone: "Asia/Tokyo", locale: "en", environment: null }, new Date(NOW.getTime() - GONE_GRACE_MS))
     sender.outcomes.set("c2", "gone")
     const summary = await job().execute()
     expect(summary.devicesRemoved).toBe(1)
@@ -85,6 +86,16 @@ describe("SendDueNotifications", () => {
     // c2 was asked once (for the first notification), never again.
     expect(sender.calls.filter((c) => c.device.clientId === "c2")).toHaveLength(1)
     expect(sender.calls.filter((c) => c.device.clientId === "c1")).toHaveLength(3)
+  })
+
+  it("keeps a device that registered within the last hour even if it is called gone, but stops sending to it this run", async () => {
+    await stores.upsert("user-1", { clientId: "c1", platform: "ios", token: "ab".repeat(32), timeZone: "Asia/Tokyo", locale: "en", environment: "production" }, NOW)
+    await stores.upsert("user-1", { clientId: "c2", platform: "web", token: "{}", timeZone: "Asia/Tokyo", locale: "en", environment: null }, new Date(NOW.getTime() - GONE_GRACE_MS + 60_000))
+    sender.outcomes.set("c2", "gone")
+    const summary = await job().execute()
+    expect(summary.devicesRemoved).toBe(0)
+    expect((await stores.list("user-1")).map((d) => d.clientId).sort()).toEqual(["c1", "c2"])
+    expect(sender.calls.filter((c) => c.device.clientId === "c2")).toHaveLength(1)
   })
 
   it("never double-sends when two runs overlap", async () => {
@@ -160,9 +171,9 @@ describe("ClearReadNotifications", () => {
     const stores = new MemoryStores()
     const sender = new RecordingSender()
     await stores.upsert("user-1", { clientId: "a", platform: "ios", token: "ab".repeat(32), timeZone: "UTC", locale: "en", environment: "production" }, NOW)
-    await stores.upsert("user-1", { clientId: "b", platform: "ios", token: "cd".repeat(32), timeZone: "UTC", locale: "en", environment: "production" }, NOW)
+    await stores.upsert("user-1", { clientId: "b", platform: "ios", token: "cd".repeat(32), timeZone: "UTC", locale: "en", environment: "production" }, new Date(NOW.getTime() - GONE_GRACE_MS))
     sender.outcomes.set("b", "gone")
-    const clear = new ClearReadNotifications({ devices: stores, ledger: fakeLedger(ledger()), sender, log: silentLog })
+    const clear = new ClearReadNotifications({ devices: stores, ledger: fakeLedger(ledger()), sender, log: silentLog, clock: () => NOW })
     await clear.execute({ userId: "user-1", clientId: "a", ids: ["x"] })
     expect((await stores.list("user-1")).map((d) => d.clientId)).toEqual(["a"])
     const broken = new ClearReadNotifications({ devices: stores, ledger: { load: async () => Promise.reject(new Error("db")) } as never, sender, log: silentLog })
