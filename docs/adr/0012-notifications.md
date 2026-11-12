@@ -45,6 +45,7 @@ month's is a new one:
 | statement closing | `cutoff:<account>:<cutoff yyyy-mm-dd>` |
 | loan installment | `installment:<loan>:<number>` |
 | subscription renewal | `renewal:<rule>:<occurrence yyyy-mm-dd>` |
+| bill (recurring expense recorded as a draft) | `bill:<rule>:<occurrence yyyy-mm-dd>` |
 | card expiring | `expiry:<card>:<yyyy-mm>` |
 | budget near / over | `budget:<category>:<yyyy-mm>:<near\|over>` |
 | price increase | `price:<transaction>` |
@@ -146,12 +147,20 @@ are `ledgerNotifications` and `tests/notifications.test.ts` on the web.
 | cutoff | `cutoff:<account>:<today>` | next cutoff is today | today |
 | installment | `installment:<loan>:<number>` | next unpaid installment due in 0…window days | due − window |
 | renewal | `renewal:<rule>:<occurrence day>` | subscription occurrence tomorrow | today |
+| bill | `bill:<rule>:<occurrence day>` | occurrence tomorrow of an expense rule that is neither a subscription nor auto-confirmed | today |
 | expiry | `expiry:<card>:<yyyy-mm>` | card expiring this month | 1st of month |
 | budget | `budget:<category>:<yyyy-mm>:near\|over` | 80% / 100% of the month's budget | latest expense in that category |
 | price | `price:<tx>` | a subscription's latest charge cost more | that charge's day |
 | proposal | `proposal:<rule>` | MCP-made rule still paused | rule's start day |
 
 The inbox leaves `planned` out (Home lists drafts); native notifications include it.
+
+**New kinds.** `bill` was added after apps were installed. A kind is only added if an app that
+doesn't know it can ignore it without failing: the push carries no field such an app doesn't read
+(the kind travels only in `thread-id`), its `target` is a screen they already decode, and its id is
+opaque to them (they store its `notificationState` and prune it by the day in the id). Such an app
+shows the server's wording, opens the target and marks it read, but doesn't list it in its inbox,
+and its own badge count leaves it out until it updates.
 
 **Sync.** Entity `notificationState`, table `notification_states`, wire
 `{ id (≤64 chars), read_at, dismissed_at, created_at, updated_at, deleted_at }`. Mark read keeps the
