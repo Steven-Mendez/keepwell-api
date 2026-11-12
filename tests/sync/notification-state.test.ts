@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto"
 
 import { afterAll, beforeEach, describe, expect, it } from "vitest"
 
+import { GONE_GRACE_MS } from "../../src/core/ports/push"
 import { adminDatabase, appDatabase } from "../support/database"
 import { signIn, testAuthApp } from "../support/auth"
 import { categoryRow, event, syncClient, transactionRow, wipe } from "../support/sync"
@@ -105,6 +106,8 @@ describe("silent clear after a sync push", () => {
 
   it("answers the push even when sending throws, and forgets devices the service says are gone", async () => {
     const { app: http, pushSender, pushStore, userId, pushing, other, cookie } = await setup()
+    // Registered over an hour ago: a `gone` from a just-made subscription isn't believed yet.
+    await pushStore.upsert(userId, ios(other), new Date(NOW.getTime() - GONE_GRACE_MS))
     pushSender.outcomes.set(other, "gone")
     const result = await pushing.push([event("notificationState", state(ID, { dismissed_at: T1, read_at: T1, updated_at: T1 }), "create")])
     expect(result.status).toBe(200)

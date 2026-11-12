@@ -24,6 +24,16 @@ describe("DrizzlePushStore", () => {
     expect((await s.usersWithDevices()).sort()).toEqual(["u1", "u2"])
   })
 
+  it("keeps one device per token: the same subscription under a new installation id replaces the old row, only for that person", async () => {
+    const s = store()
+    await s.upsert("u1", ios("old"), NOW)
+    await s.upsert("u1", ios("other", "cd".repeat(32)), NOW)
+    await s.upsert("u2", ios("theirs"), NOW)
+    await s.upsert("u1", ios("new"), NOW)
+    expect((await s.list("u1")).map((d) => d.clientId).sort()).toEqual(["new", "other"])
+    expect((await s.list("u2")).map((d) => d.clientId)).toEqual(["theirs"])
+  })
+
   it("claims a delivery once, even when two runs race, and lets a released one be claimed again", async () => {
     const s = store()
     const results = await Promise.all(Array.from({ length: 5 }, () => s.claim("u1", "cutoff:x:2026-11-13", NOW)))

@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto"
 
-import { and, eq, lt } from "drizzle-orm"
+import { and, eq, lt, ne } from "drizzle-orm"
 
 import type { DeliveryStore, NewPushDevice, PushDevice, PushDeviceStore } from "../../core/ports/push"
 import type { Logger } from "../observability/logger"
@@ -42,6 +42,9 @@ export class DrizzlePushStore implements PushDeviceStore, DeliveryStore {
       const values = { platform: input.platform, token: input.token, time_zone: input.timeZone, locale: input.locale, environment: input.environment, last_seen_at: at }
       const updated = await scoped.update(pushDevices, values, eq(pushDevices.client_id, input.clientId))
       if (updated === 0) await scoped.insert(pushDevices, [{ id: randomUUID(), client_id: input.clientId, created_at: at, ...values }])
+      // The same subscription or APNs token under another installation id (site data cleared, app
+      // reinstalled): one device, so the old row goes rather than receiving every push twice.
+      await scoped.delete(pushDevices, and(eq(pushDevices.token, input.token), ne(pushDevices.client_id, input.clientId))!)
     })
   }
 
