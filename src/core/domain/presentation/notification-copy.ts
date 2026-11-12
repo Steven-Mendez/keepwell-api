@@ -93,6 +93,15 @@ export function notificationCopy(t: Translator, ledger: Ledger, notification: Le
         body: t.in("home", "%@ on %@", money(value), method(accountId, cardId)),
       }
     }
+    case "bill": {
+      const { name, amount: value, accountId, cardId } = notification.params
+      return {
+        icon: "cash",
+        tone: "pending",
+        title: t.in("home", "%@ is due tomorrow", name),
+        body: t.in("home", "%@ on %@", money(value), method(accountId, cardId)),
+      }
+    }
     case "expiry": {
       const card = cards(notification.params.cardId)
       const { services } = notification.params
