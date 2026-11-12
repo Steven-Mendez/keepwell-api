@@ -63,11 +63,16 @@ export class DrizzlePushStore implements PushDeviceStore, DeliveryStore {
   }
 
   async claim(userId: string, notificationId: string, at: Date): Promise<boolean> {
-    const inserted = await this.db
-      .insert(notificationDeliveries)
-      .values({ user_id: userId, notification_id: notificationId, sent_at: at })
-      .onConflictDoNothing()
-      .returning({ id: notificationDeliveries.notification_id })
+    // Two runs inserting the same row at once: under repeatable read (DSQL, and local Postgres) the
+    // loser fails with a serialization error rather than meeting the conflict. Retried, it sees the
+    // winner's row and claims nothing.
+    const inserted = await withTransaction(this.db, this.log, (tx) =>
+      tx
+        .insert(notificationDeliveries)
+        .values({ user_id: userId, notification_id: notificationId, sent_at: at })
+        .onConflictDoNothing()
+        .returning({ id: notificationDeliveries.notification_id })
+    )
     return inserted.length > 0
   }
 
