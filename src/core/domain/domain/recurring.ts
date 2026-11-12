@@ -401,6 +401,33 @@ export function nextOccurrenceOf(rule: RecurringRule): Date | undefined {
   return isFinished(rule) ? undefined : new Date(rule.nextDate)
 }
 
+export interface PendingRuleDraft {
+  /** The draft the rule left waiting, dated today or before. */
+  transaction: Transaction
+  /** Calendar days from its date to today: 0 when it's today's. */
+  daysOverdue: number
+}
+
+/**
+ * The draft a rule left waiting to be confirmed (`recurringId` the rule's, still `planned`) whose
+ * calendar day is today or earlier: the oldest one, since that's the one most overdue. A draft for
+ * a later day isn't due yet. The Recurring row shows it in place of the next date.
+ */
+export function pendingDraftOf(rule: Pick<RecurringRule, "id">, transactions: readonly Transaction[], today: Date): PendingRuleDraft | undefined {
+  const todayKey = dayKey(today)
+  let oldest: Transaction | undefined
+  for (const transaction of transactions) {
+    if (transaction.recurringId !== rule.id || transaction.status !== "planned") continue
+    const date = new Date(transaction.date)
+    if (dayKey(date) > todayKey) continue
+    if (!oldest || date.getTime() < new Date(oldest.date).getTime() || (date.getTime() === new Date(oldest.date).getTime() && transaction.id < oldest.id)) oldest = transaction
+  }
+  if (!oldest) return undefined
+  // Rounded: a day across a daylight-saving change is 23 or 25 hours long.
+  const daysOverdue = Math.round((startOfDay(today).getTime() - startOfDay(new Date(oldest.date)).getTime()) / 86_400_000)
+  return { transaction: oldest, daysOverdue }
+}
+
 /** The first `count` occurrences on or after `from`, within the rule's end. */
 export function occurrencesFrom(rule: Schedule & Pick<RecurringRule, "endDate">, from: Date, count: number): Date[] {
   const dates: Date[] = []

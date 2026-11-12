@@ -2066,6 +2066,12 @@
   "Choose a different destination account.": {
    "es": "Elige otra cuenta de destino."
   },
+  "Confirm": {
+   "es": "Confirmar"
+  },
+  "Confirm %@": {
+   "es": "Confirmar %@"
+  },
   "Currency": {
    "es": "Moneda"
   },
@@ -2141,6 +2147,16 @@
   "Optional": {
    "es": "Opcional"
   },
+  "Overdue · %lld days": {
+   "en": {
+    "one": "Overdue · %lld day",
+    "other": "Overdue · %lld days"
+   },
+   "es": {
+    "one": "Atrasado · %lld día",
+    "other": "Atrasado · %lld días"
+   }
+  },
   "Pause": {
    "es": "Pausar"
   },
@@ -2192,11 +2208,17 @@
   "To": {
    "es": "Hacia"
   },
+  "To confirm · %@": {
+   "es": "Por confirmar · %@"
+  },
   "Transfer": {
    "es": "Transferencia"
   },
   "Transfers": {
    "es": "Transferencias"
+  },
+  "We couldn't confirm it. Try again.": {
+   "es": "No pudimos confirmarlo. Inténtalo de nuevo."
   },
   "We couldn't delete it. Try again.": {
    "es": "No pudimos eliminarlo. Inténtalo de nuevo."
