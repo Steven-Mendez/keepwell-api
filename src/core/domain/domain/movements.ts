@@ -298,6 +298,17 @@ export async function confirmPlannedTransaction(store: LedgerStore, id: string, 
   await store.saveTransaction({ ...planned, status: "confirmed", date })
 }
 
+/**
+ * Undoes `confirmPlannedTransaction`: the movement is a draft again, back on the date it was planned
+ * for (`plannedDate`, since confirming may have moved it to today), so it stops counting toward balances.
+ */
+export async function unconfirmTransaction(store: LedgerStore, id: string, plannedDate: string): Promise<void> {
+  const confirmed = (await store.fetchTransactions()).find((transaction) => transaction.id === id)
+  if (!confirmed) throw DomainError.notFound(id)
+  if (!isConfirmed(confirmed)) return
+  await store.saveTransaction({ ...confirmed, status: "planned", date: plannedDate })
+}
+
 export async function deleteTransaction(store: LedgerStore, id: string): Promise<void> {
   await store.deleteTransaction(id)
 }
