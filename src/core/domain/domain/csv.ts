@@ -38,6 +38,15 @@ export function escapeCsvField(field: string): string {
   return /[,"\r\n]/.test(field) ? `"${field.replaceAll('"', '""')}"` : field
 }
 
+/**
+ * Free text the person typed (descriptions, notes, tags, account and category names): a leading `'` keeps a
+ * spreadsheet from running a value that starts like a formula (`=`, `+`, `-`, `@`, tab or carriage return).
+ * Amounts, dates and rates never go through here, so a negative amount stays a number.
+ */
+export function neutralizeCsvFormula(field: string): string {
+  return /^[=+\-@\t\r]/.test(field) ? `'${field}` : field
+}
+
 export function exportCsv(
   transactions: readonly Transaction[],
   accounts: readonly Account[],
@@ -57,15 +66,19 @@ export function exportCsv(
       dayKey(new Date(t.date)),
       t.status,
       t.kind,
-      t.description,
-      t.categoryId ? (categoryNames.get(t.categoryId) ?? t.categoryId) : "",
+      neutralizeCsvFormula(t.description),
+      neutralizeCsvFormula(
+        t.categoryId ? (categoryNames.get(t.categoryId) ?? t.categoryId) : ""
+      ),
       decimalText(new Decimal(t.amount)),
       t.currency,
-      accountNames.get(t.accountId) ?? "",
+      neutralizeCsvFormula(accountNames.get(t.accountId) ?? ""),
       t.cardId ? (lastFour.get(t.cardId) ?? "") : "",
-      t.destinationAccountId
-        ? (accountNames.get(t.destinationAccountId) ?? "")
-        : "",
+      neutralizeCsvFormula(
+        t.destinationAccountId
+          ? (accountNames.get(t.destinationAccountId) ?? "")
+          : ""
+      ),
       t.actualDebitedPrincipal
         ? decimalText(new Decimal(t.actualDebitedPrincipal))
         : "",
@@ -73,8 +86,8 @@ export function exportCsv(
         ? decimalText(new Decimal(t.exchangeRate.rate))
         : "",
       t.isShared ? "yes" : "no",
-      t.note ?? "",
-      tagsCsvField(t.tags ?? []),
+      neutralizeCsvFormula(t.note ?? ""),
+      neutralizeCsvFormula(tagsCsvField(t.tags ?? [])),
     ])
   return (
     [[...CSV_HEADER], ...rows]
