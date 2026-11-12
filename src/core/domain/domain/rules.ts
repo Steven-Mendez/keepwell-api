@@ -64,6 +64,17 @@ export function bankRate(transaction: Transaction): Decimal | undefined {
 
 // Rules 1, 3, 4, 5: balances.
 
+/** Open until `closeAccount` stamps `closedAt`; `reopenAccount` clears it. */
+export const isOpen = (account: Pick<Account, "closedAt">) => account.closedAt === undefined
+
+/**
+ * The accounts lists and pickers offer. Totals (net worth, summaries) still read every account: a
+ * closed one keeps the history it had.
+ */
+export function openAccounts<A extends Pick<Account, "closedAt">>(accounts: readonly A[]): A[] {
+  return accounts.filter(isOpen)
+}
+
 export function accountCurrencies(account: Account): string[] {
   return account.openingBalances.map((balance) => balance.currency)
 }

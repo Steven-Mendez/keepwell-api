@@ -5,7 +5,7 @@ import { debtDueStatus, debtRemaining, orderedLoans } from "./debts"
 import { fromStored, type Money } from "./money"
 import { homeOverview, type Ledger } from "./overviews"
 import { upcoming } from "./recurring"
-import { monthlySummary, nextOccurrence } from "./rules"
+import { isOpen, monthlySummary, nextOccurrence } from "./rules"
 import type { DebtDirection } from "../schema"
 
 // The notifications (ADR 0012 in keepwell-api): what the ledger says needs attention on a given day.
@@ -91,7 +91,8 @@ export function ledgerNotifications(ledger: Ledger, now: Date): LedgerNotificati
   }
 
   for (const account of ledger.accounts) {
-    if (account.kind !== "credit") continue
+    // A closed card has no statement to pay or close.
+    if (account.kind !== "credit" || !isOpen(account)) continue
     const dueDay = account.creditTerms?.dueDay
     if (dueDay) {
       const due = nextOccurrence(dueDay, now, zone)
@@ -181,8 +182,9 @@ export function ledgerNotifications(ledger: Ledger, now: Date): LedgerNotificati
   }
 
   const thisMonth = yearMonthContaining(now, zone)
+  const closed = new Set(ledger.accounts.filter((account) => !isOpen(account)).map((account) => account.id))
   for (const card of ledger.cards) {
-    if (!card.expiry || compareMonths(card.expiry, thisMonth) !== 0) continue
+    if (!card.expiry || closed.has(card.accountId) || compareMonths(card.expiry, thisMonth) !== 0) continue
     found.push({
       id: `expiry:${card.id}:${monthKey(thisMonth)}`,
       kind: "expiry",

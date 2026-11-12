@@ -6,7 +6,7 @@ import { yearMonthContaining, type TimeZone } from "./calendar"
 import { applyingRule, categorizingRule, usableRules } from "./categorization"
 import { DomainError } from "./errors"
 import { INITIAL_CURRENCIES, settingsRate, type Money } from "./money"
-import { balanceOf, checkAmounts, isConfirmed, monthlySummary } from "./rules"
+import { balanceOf, checkAmounts, isConfirmed, isOpen, monthlySummary } from "./rules"
 import type { LedgerStore } from "./store"
 import { tagsField } from "./tags"
 
@@ -146,6 +146,17 @@ export async function getTransactionContext(store: LedgerStore): Promise<Transac
   return { currencies, categories, accounts, cards, balances, lastUsed, categoryUsage, transactions, zone, rules: usableRules(allRules, categories) }
 }
 
+/**
+ * The context editors pick from: open accounts and their methods, plus the closed ones in `keep` (the
+ * accounts of the movement or rule being edited, which still show, labelled closed).
+ */
+export function pickerContext(context: TransactionContext, keep: readonly (string | undefined)[] = []): TransactionContext {
+  const shown = context.accounts.filter((account) => isOpen(account) || keep.includes(account.id))
+  if (shown.length === context.accounts.length) return context
+  const ids = new Set(shown.map((account) => account.id))
+  return { ...context, accounts: shown, cards: context.cards.filter((card) => ids.has(card.accountId)) }
+}
+
 /** Checks a draft against the iOS rules and builds the movement to store. */
 export function validatedTransaction(draft: TransactionDraft, context: TransactionContext, existing?: Transaction): Transaction {
   return categorizedTransaction(draft, context, existing).transaction
@@ -211,7 +222,36 @@ export function categorizedTransaction(
     // Safety net only: the flow fills a localized description before saving.
     transaction.description = category?.name ?? "Transfer"
   }
+  checkClosedAccounts(transaction, context.accounts, existing)
   return rule ? { transaction, rule } : { transaction }
+}
+
+/** Whether two versions of a movement move the same money: same accounts, amounts, day and status. */
+function sameBalanceEffect(a: Transaction, b: Transaction): boolean {
+  return (
+    a.kind === b.kind &&
+    a.status === b.status &&
+    new Date(a.date).getTime() === new Date(b.date).getTime() &&
+    a.accountId === b.accountId &&
+    a.cardId === b.cardId &&
+    a.destinationAccountId === b.destinationAccountId &&
+    a.currency === b.currency &&
+    new Decimal(a.amount).eq(b.amount) &&
+    (a.actualDebitedPrincipal === undefined) === (b.actualDebitedPrincipal === undefined) &&
+    (a.actualDebitedPrincipal === undefined || new Decimal(a.actualDebitedPrincipal).eq(b.actualDebitedPrincipal as string))
+  )
+}
+
+/**
+ * A closed account keeps the balance it was closed with: no new movement touches it, and an edit of
+ * one that does (or would) may change its description, category, note and tags, never what it moves.
+ */
+export function checkClosedAccounts(transaction: Transaction, accounts: readonly Account[], existing?: Transaction): void {
+  const touched = [transaction.accountId, transaction.destinationAccountId, existing?.accountId, existing?.destinationAccountId]
+  const closed = touched.find((id) => id !== undefined && accounts.some((account) => account.id === id && !isOpen(account)))
+  if (closed === undefined) return
+  if (existing && sameBalanceEffect(existing, transaction)) return
+  throw DomainError.accountClosed(closed)
 }
 
 export interface SavedTransaction {
@@ -335,7 +375,9 @@ export async function confirmPlannedTransaction(store: LedgerStore, id: string, 
   if (!planned) throw DomainError.notFound(id)
   if (isConfirmed(planned)) return
   const date = new Date(planned.date) > now ? now.toISOString() : planned.date
-  await store.saveTransaction({ ...planned, status: "confirmed", date })
+  const confirmed: Transaction = { ...planned, status: "confirmed", date }
+  checkClosedAccounts(confirmed, await store.fetchAccounts(), planned)
+  await store.saveTransaction(confirmed)
 }
 
 /**
@@ -346,7 +388,9 @@ export async function unconfirmTransaction(store: LedgerStore, id: string, plann
   const confirmed = (await store.fetchTransactions()).find((transaction) => transaction.id === id)
   if (!confirmed) throw DomainError.notFound(id)
   if (!isConfirmed(confirmed)) return
-  await store.saveTransaction({ ...confirmed, status: "planned", date: plannedDate })
+  const planned: Transaction = { ...confirmed, status: "planned", date: plannedDate }
+  checkClosedAccounts(planned, await store.fetchAccounts(), confirmed)
+  await store.saveTransaction(planned)
 }
 
 export async function deleteTransaction(store: LedgerStore, id: string): Promise<void> {

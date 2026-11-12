@@ -2853,6 +2853,9 @@
   "As printed on the card. We remind you a month before it expires, with what's charged to it.": {
    "es": "Como viene impreso en la tarjeta. Te avisamos un mes antes de que venza, con lo que tiene cargado."
   },
+  "Balance isn't zero": {
+   "es": "El saldo no es cero"
+  },
   "Bank transfer": {
    "es": "Transferencia bancaria"
   },
@@ -2876,6 +2879,27 @@
   },
   "Close": {
    "es": "Cerrar"
+  },
+  "Close %@?": {
+   "es": "¿Cerrar %@?"
+  },
+  "Close account": {
+   "es": "Cerrar cuenta"
+  },
+  "Close instead": {
+   "es": "Cerrar en su lugar"
+  },
+  "Closed": {
+   "es": "Cerrada"
+  },
+  "Closed (%lld)": {
+   "es": "Cerradas (%lld)"
+  },
+  "Closed on %@": {
+   "es": "Cerrada el %@"
+  },
+  "Closing transfer": {
+   "es": "Transferencia de cierre"
   },
   "Color": {
    "es": "Color"
@@ -2918,6 +2942,9 @@
   },
   "Donations": {
    "es": "Donaciones"
+  },
+  "Drafts deleted: %lld": {
+   "es": "Borradores que se borran: %lld"
   },
   "Edit category": {
    "es": "Editar categoría"
@@ -3036,6 +3063,9 @@
   "Investments": {
    "es": "Inversiones"
   },
+  "It disappears from your lists and pickers. Its movements stay in your summaries and net worth. You can reopen it.": {
+   "es": "Desaparece de tus listas y selectores. Sus movimientos siguen en tus resúmenes y tu patrimonio. Puedes reabrirla."
+  },
   "Its movements move to “%@”.": {
    "es": "Sus movimientos pasan a “%@”."
   },
@@ -3059,6 +3089,15 @@
   },
   "Monthly budget": {
    "es": "Presupuesto mensual"
+  },
+  "Move and close": {
+   "es": "Mover y cerrar"
+  },
+  "Move or record the balance first": {
+   "es": "Primero mueve o registra el saldo"
+  },
+  "Move the balance to": {
+   "es": "Mover el saldo a"
   },
   "Movements from deleted categories land here, so this one can be renamed but not deleted.": {
    "es": "Aquí llegan los movimientos de las categorías eliminadas, así que puedes renombrarla pero no eliminarla."
@@ -3120,6 +3159,9 @@
   "Recurring": {
    "es": "Recurrentes"
   },
+  "Recurring rules paused: %lld": {
+   "es": "Reglas recurrentes que se pausan: %lld"
+  },
   "Recurring · %@": {
    "es": "Recurrente · %@"
   },
@@ -3131,6 +3173,9 @@
   },
   "Rental": {
    "es": "Alquiler"
+  },
+  "Reopen": {
+   "es": "Reabrir"
   },
   "Restaurants": {
    "es": "Restaurantes"
@@ -3174,6 +3219,12 @@
   "Taxes": {
    "es": "Impuestos"
   },
+  "This account is closed. Reopen it first.": {
+   "es": "Esta cuenta está cerrada. Reábrela primero."
+  },
+  "To keep its history, close it instead.": {
+   "es": "Para conservar su historia, ciérrala en su lugar."
+  },
   "Today": {
    "es": "Hoy"
   },
@@ -3200,6 +3251,9 @@
   },
   "Utilities": {
    "es": "Servicios"
+  },
+  "We couldn't close the account. Try again.": {
+   "es": "No pudimos cerrar la cuenta. Inténtalo de nuevo."
   },
   "We couldn't delete the category. Try again.": {
    "es": "No pudimos eliminar la categoría. Inténtalo de nuevo."

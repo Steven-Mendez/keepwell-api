@@ -58,6 +58,11 @@
         "nullable": true,
         "optional": false
       },
+      "closed_at": {
+        "type": "string",
+        "nullable": true,
+        "optional": true
+      },
       "created_at": {
         "type": "string",
         "nullable": false,

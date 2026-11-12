@@ -63,6 +63,8 @@ export function listAccounts(ledger: Ledger) {
     bank: account.bank ?? null,
     kind: account.kind,
     balances: balanceOf(account, ledger.transactions, ledger.timeZone).map(money),
+    /** When it was closed, null while open: a closed account keeps its history (close_account). */
+    closed_at: account.closedAt ?? null,
     credit: account.creditTerms
       ? { limit: account.creditTerms.limit ?? null, cutoff_day: account.creditTerms.cutoffDay ?? null, due_day: account.creditTerms.dueDay ?? null }
       : null,
@@ -269,7 +271,10 @@ export function getFinancialContext(ledger: Ledger, now: Date) {
     currencies: worth.rate ?? { principal: worth.currency },
     net_worth: worth.net_worth,
     net_worth_in_second_currency: worth.net_worth_in_second_currency,
-    accounts: listAccounts(ledger).map(({ id, name, kind, balances }) => ({ id, name, kind, balances })),
+    // Open accounts only; list_accounts also has the closed ones, for their history.
+    accounts: listAccounts(ledger)
+      .filter((account) => account.closed_at === null)
+      .map(({ id, name, kind, balances }) => ({ id, name, kind, balances })),
     this_month: { month: month.month, income: month.income, expense: month.expense, net: month.net, top_spending: month.spending_by_category.slice(0, 5), budgets: month.budgets },
     upcoming_14_days: getUpcomingPayments(ledger, 14, now).payments,
     pending_confirmation: ledger.transactions.filter((t) => t.status === "planned").length,

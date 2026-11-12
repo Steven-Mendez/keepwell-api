@@ -21,6 +21,8 @@ export type DomainErrorCode =
   | "invalidInterval"
   | "invalidEndDate"
   | "invalidDueDate"
+  | "accountNotEmpty"
+  | "accountClosed"
   | "notFound"
   | "corruptedData"
 
@@ -54,6 +56,10 @@ export class DomainError extends Error {
   static invalidEndDate = () => new DomainError("invalidEndDate")
   /** A personal debt can't be due before the day it was lent or borrowed. */
   static invalidDueDate = () => new DomainError("invalidDueDate")
+  /** An account with money left can't close without a transfer that empties it (`closeAccount`). */
+  static accountNotEmpty = (id: string) => new DomainError("accountNotEmpty", id)
+  /** A closed account's balance stays as it was closed: nothing new is recorded in it until it is reopened. */
+  static accountClosed = (id: string) => new DomainError("accountClosed", id)
   static notFound = (id: string) => new DomainError("notFound", id)
   static corruptedData = (detail: string) => new DomainError("corruptedData", detail)
 }

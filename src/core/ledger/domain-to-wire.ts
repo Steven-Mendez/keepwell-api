@@ -40,6 +40,8 @@ export function accountColumns(account: Account): Columns<"account"> {
     limit_currency: orNull(account.creditTerms?.limit?.currency),
     cutoff_day: orNull(account.creditTerms?.cutoffDay),
     due_day: orNull(account.creditTerms?.dueDay),
+    // Always written, null while open: reopening clears it on every device.
+    closed_at: orNull(account.closedAt),
   }
 }
 

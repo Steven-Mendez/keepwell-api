@@ -60,6 +60,11 @@ export const Account = z.object({
   /** Movements dated before this day are already part of `openingBalances`. */
   openingDate: IsoDateTime,
   creditTerms: CreditTerms.optional(),
+  /**
+   * When it was closed (`closeAccount`); absent while open. A closed account keeps its movements and
+   * still counts in totals, but leaves lists and pickers until it is reopened.
+   */
+  closedAt: IsoDateTime.optional(),
 })
 export type Account = z.infer<typeof Account>
 

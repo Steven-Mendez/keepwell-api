@@ -9,6 +9,7 @@ import {
   addCreditCard,
   addToSavingsGoal,
   applyRuleToPast,
+  closeAccount,
   confirmPlannedTransaction,
   currencySettings,
   dec,
@@ -25,6 +26,7 @@ import {
   draftFrom,
   payLoanInstallment,
   renameAccount,
+  reopenAccount,
   reopenPersonalDebt,
   reorderCategories,
   repayPersonalDebt,
@@ -80,6 +82,7 @@ const DELETE: ToolAnnotations = { readOnlyHint: false, destructiveHint: true, id
 function source(input: { account_id: string; card_id?: string | undefined }): PaymentSource {
   return input.card_id ? { type: "card", id: input.card_id } : { type: "account", id: input.account_id }
 }
+
 
 function find<T extends { id: string }>(list: readonly T[], id: string, what: string): T {
   const found = list.find((item) => item.id === id)
@@ -239,8 +242,41 @@ export function registerManageTools(server: McpServer, options: { manage: Manage
   )
 
   tool(
+    "close_account",
+    {
+      title: "Close an account",
+      description:
+        "Closes an account that is no longer used, keeping its history: its movements stay in summaries and net worth, it leaves the apps' lists and pickers, and reopen_account undoes it. Its balance must be zero, or transfer_to_account_id (an open account holding each of its currencies) receives it with one confirmed transfer per currency. Its recurring payments are paused and their drafts deleted.",
+      annotations: WRITE,
+    },
+    { account_id: ref("From list_accounts"), transfer_to_account_id: ref("From list_accounts: where a balance left goes").optional() },
+    (args) => JSON.stringify(args),
+    async (store, args, now) => {
+      find(store.accounts, args.account_id, "Account")
+      const { account, transfers } = await closeAccount(store, args.account_id, args.transfer_to_account_id ? { transferTo: args.transfer_to_account_id } : {}, now)
+      return {
+        account_id: account.id,
+        closed_at: account.closedAt ?? null,
+        transfers: transfers.map((transfer) => ({ id: transfer.id, amount: { amount: transfer.amount, currency: transfer.currency }, from_account_id: transfer.accountId, to_account_id: transfer.destinationAccountId ?? null })),
+      }
+    }
+  )
+
+  tool(
+    "reopen_account",
+    { title: "Reopen an account", description: "Reopens a closed account. Its paused recurring payments stay paused and closing transfers stay recorded.", annotations: WRITE },
+    { account_id: ref("From list_accounts") },
+    (args) => args.account_id,
+    async (store, args) => {
+      find(store.accounts, args.account_id, "Account")
+      const account = await reopenAccount(store, args.account_id)
+      return { account_id: account.id, closed_at: null }
+    }
+  )
+
+  tool(
     "delete_account",
-    { title: "Delete an account", description: "Deletes an account with its cards, every movement that touches it (transfers included) and its recurring payments, as the app does. Can be undone with restore_deleted for 30 days.", annotations: DELETE },
+    { title: "Delete an account", description: "Deletes an account with its cards, every movement that touches it (transfers included) and its recurring payments, as the app does. To keep its history instead, use close_account. Can be undone with restore_deleted for 30 days.", annotations: DELETE },
     { account_id: ref("From list_accounts") },
     (args) => args.account_id,
     async (store, args) => deleteAccount(store, args.account_id),
