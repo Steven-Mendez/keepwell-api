@@ -51,6 +51,7 @@ import {
 } from "../../core/domain/domain"
 import { swapCurrencies, updateSettings } from "../../core/domain/domain/onboarding"
 import { CardColor, CardNetwork, DebtDirection, DebtMode, LoanFrequency, RecurringFrequency } from "../../core/domain/schema"
+import { categoryOutcome } from "../../core/mcp/category-outcome"
 import { instantIn } from "../../core/mcp/dates"
 import { ManageError, type ManageLedger } from "../../core/use-cases/manage-ledger"
 import type { RecordingStore } from "../../core/ledger/recording-store"
@@ -352,7 +353,12 @@ export function registerManageTools(server: McpServer, options: { manage: Manage
     note: z.string().max(500).optional(),
     tags: tags.optional(),
   }
-  const movement = { ...movementBase, description: z.string().min(1).max(200), date: instant }
+  const movement = {
+    ...movementBase,
+    category_id: ref("From list_categories; left out for transfers. Leave it out to let the person's categorization rules choose; Other if none matches.").optional(),
+    description: z.string().min(1).max(200),
+    date: instant,
+  }
 
   tool(
     "create_transaction",
@@ -376,7 +382,14 @@ export function registerManageTools(server: McpServer, options: { manage: Manage
       }
       const saved = await saveTransaction(store, draft)
       const transaction = saved.transaction
-      return { id: transaction.id, status: transaction.status === "planned" ? "planned" : "saved", amount: { amount: transaction.amount, currency: transaction.currency }, date: transaction.date, description: transaction.description }
+      return {
+        id: transaction.id,
+        status: transaction.status === "planned" ? "planned" : "saved",
+        amount: { amount: transaction.amount, currency: transaction.currency },
+        date: transaction.date,
+        description: transaction.description,
+        ...categoryOutcome({ categories: await store.fetchCategories() }, transaction, saved.rule),
+      }
     }
   )
 

@@ -222,6 +222,8 @@ export function checkRecurringRule(rule: RecurringRule, context: TransactionCont
   checkAmounts(dec(rule.amount))
   checkInterval(rule.interval)
   if (rule.endDate !== undefined && isBeforeDay(new Date(rule.endDate), new Date(rule.startDate), context.zone)) throw DomainError.invalidEndDate()
+  // A rule always has its own category; only a movement saved without one falls back to "Other".
+  if (rule.kind !== "transfer" && rule.categoryId === undefined) throw DomainError.notFound("category")
   validatedTransaction(occurrenceDraft(rule, new Date(rule.startDate)), context)
 }
 

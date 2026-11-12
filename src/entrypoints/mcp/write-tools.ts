@@ -50,7 +50,15 @@ export function registerWriteTools(server: McpServer, options: { create: CreateP
       _meta: pendingView,
       description:
         "Record a movement. It is saved as pending: it doesn't count toward balances until the person confirms it in Keepwell, and it shows as recorded by you.",
-      inputSchema: { ...common, description: z.string().min(1).max(200), date: instant.describe("When it happened") },
+      inputSchema: {
+        ...common,
+        category_id: z
+          .string()
+          .optional()
+          .describe("From get_monthly_summary; left out for transfers. Leave it out to let the person's categorization rules choose; Other if none matches."),
+        description: z.string().min(1).max(200),
+        date: instant.describe("When it happened"),
+      },
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     },
     async (args) => run("create_transaction", () => options.create.transaction(options.userId, options.clientId, args))
