@@ -2132,6 +2132,16 @@
   "Note": {
    "es": "Nota"
   },
+  "Not including %lld subscriptions in %@": {
+   "en": {
+    "one": "Not including %lld subscription in %@",
+    "other": "Not including %lld subscriptions in %@"
+   },
+   "es": {
+    "one": "Sin incluir %lld suscripción en %@",
+    "other": "Sin incluir %lld suscripciones en %@"
+   }
+  },
   "Nothing recurring yet": {
    "es": "Aún no hay recurrentes"
   },
