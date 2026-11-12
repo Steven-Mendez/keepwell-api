@@ -341,22 +341,44 @@ export function monthlyEquivalent(rule: Pick<RecurringRule, "amount" | "frequenc
   }
 }
 
+/** Active expense subscriptions in one currency the settings can't convert, so no total counts them. */
+export interface UnconvertedSubscriptions {
+  currency: string
+  count: number
+}
+
+export interface SubscriptionsTotal {
+  perMonth: Money
+  /** By currency code; empty when every active subscription is counted. */
+  excluded: UnconvertedSubscriptions[]
+}
+
 /**
  * Active expense subscriptions per month, in the principal currency at today's settings rate. A rule
- * in a currency the settings no longer convert is left out rather than mixed in.
+ * in a currency the settings no longer convert is left out rather than mixed in, and reported in
+ * `excluded` so the screen can say the total is incomplete.
  */
-export function subscriptionsPerMonth(rules: readonly RecurringRule[], currencies: CurrencySettings): Money {
+export function subscriptionsTotal(rules: readonly RecurringRule[], currencies: CurrencySettings): SubscriptionsTotal {
   const rate = settingsRate(currencies)
   let total = ZERO
+  const excluded = new Map<string, number>()
   for (const rule of rules) {
     if (!rule.isSubscription || rule.kind !== "expense" || !isActive(rule)) continue
     try {
       total = total.plus(convert({ amount: monthlyEquivalent(rule), currency: rule.currency }, rate, currencies.principal).amount)
     } catch {
-      continue
+      excluded.set(rule.currency, (excluded.get(rule.currency) ?? 0) + 1)
     }
   }
-  return { amount: total, currency: currencies.principal }
+  return {
+    perMonth: { amount: total, currency: currencies.principal },
+    excluded: [...excluded].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)).map(([currency, count]) => ({ currency, count })),
+  }
+}
+
+/** `subscriptionsTotal` without the subscriptions it left out. */
+export function subscriptionsPerMonth(rules: readonly RecurringRule[], currencies: CurrencySettings): Money {
+  return subscriptionsTotal(rules, currencies).perMonth
 }
 
 export interface UpcomingOccurrence {
@@ -435,16 +457,19 @@ export interface RecurringOverview {
   /** Expense subscriptions per month, principal currency. */
   subscriptionsPerMonth: Money
   subscriptionsPerYear: Money
+  /** Active subscriptions neither total counts, because their currency can't be converted. */
+  excludedSubscriptions: UnconvertedSubscriptions[]
   /** Non-empty sections in screen order; active rules by next date, then paused and finished ones. */
   sections: { kind: RecurringSectionKind; rules: RecurringRule[] }[]
 }
 
 export function recurringOverview(rules: readonly RecurringRule[], currencies: CurrencySettings): RecurringOverview {
-  const perMonth = subscriptionsPerMonth(rules, currencies)
+  const { perMonth, excluded } = subscriptionsTotal(rules, currencies)
   const ordered = [...rules].sort((a, b) => Number(!isActive(a)) - Number(!isActive(b)) || (a.nextDate < b.nextDate ? -1 : a.nextDate > b.nextDate ? 1 : a.name.localeCompare(b.name)))
   return {
     subscriptionsPerMonth: perMonth,
     subscriptionsPerYear: { amount: perMonth.amount.times(12), currency: perMonth.currency },
+    excludedSubscriptions: excluded,
     sections: RECURRING_SECTIONS.map((kind) => ({ kind, rules: ordered.filter((rule) => recurringSectionOf(rule) === kind) })).filter((section) => section.rules.length > 0),
   }
 }
