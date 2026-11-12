@@ -1728,7 +1728,7 @@
    "es": "Pago de tarjeta"
   },
   "Installment %lld of %lld": {
-   "es": "Cuota %lld de %lld"
+   "es": "Cuota %1$lld de %2$lld"
   },
   "Overdue · %lld days": {
    "en": {
