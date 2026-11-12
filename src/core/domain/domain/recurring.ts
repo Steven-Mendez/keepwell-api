@@ -151,10 +151,55 @@ export function occurrenceTransaction(rule: RecurringRule, date: Date, context: 
 
 const occurrenceKey = (ruleId: string, date: Date, zone: TimeZone) => `${ruleId} ${dayKey(date, zone)}`
 
+/** How far a manual payment's amount may be from the rule's: 7.5 % either way. */
+const MANUAL_PAYMENT_TOLERANCE = dec("0.075")
+/** How many calendar days before the occurrence a manual payment still counts for it. */
+const MANUAL_PAYMENT_DAYS_BEFORE = 2
+
+/**
+ * The movement that already pays this occurrence, if any: typed by hand (or linked to this rule)
+ * with the rule's kind, account, currency, card (when the rule has one) and destination (transfers),
+ * an amount within 7.5 % of the rule's, dated from two calendar days before the occurrence through
+ * its day, and not in `taken` (a movement pays one occurrence only). A movement linked to another
+ * rule never counts. Among several, the closest amount wins, then the closest date, then the lowest
+ * id, so iOS, web and the server pick the same one.
+ */
+export function manualPaymentFor(rule: RecurringRule, occurrenceDate: Date, transactions: readonly Transaction[], taken: ReadonlySet<string>, zone: TimeZone): Transaction | undefined {
+  const ruleAmount = dec(rule.amount)
+  const tolerance = ruleAmount.abs().times(MANUAL_PAYMENT_TOLERANCE)
+  const lastDay = dayKey(occurrenceDate, zone)
+  const firstDay = dayKey(addDays(occurrenceDate, -MANUAL_PAYMENT_DAYS_BEFORE, zone), zone)
+  let best: { transaction: Transaction; amountGap: Decimal; dateGap: number } | undefined
+  for (const transaction of transactions) {
+    if (taken.has(transaction.id)) continue
+    if (transaction.recurringId !== undefined && transaction.recurringId !== rule.id) continue
+    if (transaction.kind !== rule.kind || transaction.accountId !== rule.accountId || transaction.currency !== rule.currency) continue
+    if (rule.cardId !== undefined && transaction.cardId !== rule.cardId) continue
+    if (rule.kind === "transfer" && transaction.destinationAccountId !== rule.destinationAccountId) continue
+    const date = new Date(transaction.date)
+    const day = dayKey(date, zone)
+    if (day < firstDay || day > lastDay) continue
+    const amountGap = dec(transaction.amount).minus(ruleAmount).abs()
+    if (amountGap.greaterThan(tolerance)) continue
+    const dateGap = Math.abs(occurrenceDate.getTime() - date.getTime())
+    if (
+      !best ||
+      amountGap.lessThan(best.amountGap) ||
+      (amountGap.equals(best.amountGap) && (dateGap < best.dateGap || (dateGap === best.dateGap && transaction.id < best.transaction.id)))
+    ) {
+      best = { transaction, amountGap, dateGap }
+    }
+  }
+  return best?.transaction
+}
+
+const byId = (a: { id: string }, b: { id: string }) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)
+
 /**
  * Saves the movements every active rule owes up to today (at most the latest 12 per rule), skipping
- * an occurrence that already has a movement from the rule that day, and moves each rule's `nextDate`
- * past what it produced. One atomic save; reads happen inside it so two runs (two tabs, load and
+ * an occurrence that already has a movement from the rule that day or that a manual payment already
+ * covers (`manualPaymentFor`; rules claim payments in id order), and moves each rule's `nextDate`
+ * past what it owed. One atomic save; reads happen inside it so two runs (two tabs, load and
  * focus) can't both create the same movement. A rule that no longer validates (its category or
  * currency is gone) is left as it was. Returns the movements created.
  */
@@ -166,20 +211,31 @@ export async function materializeRecurring(store: LedgerStore, today: Date = new
     const context = await getTransactionContext(store)
     const existing = new Set(context.transactions.flatMap((transaction) => (transaction.recurringId ? [occurrenceKey(transaction.recurringId, new Date(transaction.date), zone)] : [])))
     const knownIds = new Set(context.transactions.map((transaction) => transaction.id))
+    const paid = new Set<string>()
     const created: Transaction[] = []
     const advanced: RecurringRule[] = []
-    for (const rule of rules) {
+    for (const rule of [...rules].sort(byId)) {
       const owed = dueOccurrences(rule, today, zone)
       const last = owed.at(-1)
       if (!last) continue
+      const claimed: string[] = []
       try {
         const movements = owed
           .slice(-MAX_MATERIALIZED_PER_RULE)
           .filter((entry) => !existing.has(occurrenceKey(rule.id, entry.date, zone)) && !knownIds.has(occurrenceId(rule, entry.index)))
+          .filter((entry) => {
+            const payment = manualPaymentFor(rule, entry.date, context.transactions, paid, zone)
+            if (!payment) return true
+            paid.add(payment.id)
+            claimed.push(payment.id)
+            return false
+          })
           .map((entry) => occurrenceTransaction(rule, entry.date, context, entry.index))
         for (const movement of movements) existing.add(occurrenceKey(rule.id, new Date(movement.date), zone))
         created.push(...movements)
       } catch {
+        // The rule stays as it was, so the payments it matched are free for the next rule.
+        for (const id of claimed) paid.delete(id)
         continue
       }
       advanced.push({ ...rule, nextDate: occurrence(rule, last.index + 1, zone).toISOString() })
