@@ -3,7 +3,7 @@ import { z } from "zod"
 
 import type { Auth } from "../../../adapters/auth/auth"
 import { Id } from "../../../core/domain/schema"
-import { isTimeZone } from "../../../core/notifications/time-zone"
+import { isTimeZone } from "../../../core/domain/domain"
 import type { PushDeviceStore } from "../../../core/ports/push"
 import type { ResolveCapabilities } from "../../../core/use-cases/resolve-capabilities"
 import { ApiError } from "../errors"

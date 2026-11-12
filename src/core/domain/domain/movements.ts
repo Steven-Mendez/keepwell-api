@@ -1,7 +1,7 @@
 import type { Account, Card, CurrencySettings, ExchangeRate, Transaction, TransactionCategory, TransactionKind } from "../schema"
 
 import { Decimal, ZERO, decimalText } from "./decimal"
-import { yearMonthContaining } from "./calendar"
+import { yearMonthContaining, type TimeZone } from "./calendar"
 import { DomainError } from "./errors"
 import { INITIAL_CURRENCIES, settingsRate, type Money } from "./money"
 import { balanceOf, checkAmounts, isConfirmed, monthlySummary } from "./rules"
@@ -103,6 +103,8 @@ export interface TransactionContext {
   lastUsed: Map<string, Date>
   categoryUsage: Map<string, number>
   transactions: Transaction[]
+  /** The store's zone, for the days and months its rules read. */
+  zone: TimeZone
 }
 
 export function accountIdFor(context: Pick<TransactionContext, "cards">, source: PaymentSource): string | undefined {
@@ -120,7 +122,8 @@ export function lastUsedSource(context: TransactionContext): PaymentSource | und
 export async function getTransactionContext(store: LedgerStore): Promise<TransactionContext> {
   const currencies = (await store.loadSettings())?.currencies ?? INITIAL_CURRENCIES
   const [accounts, cards, transactions, categories] = await Promise.all([store.fetchAccounts(), store.fetchCards(), store.fetchTransactions(), store.fetchCategories()])
-  const balances = new Map(accounts.map((account) => [account.id, balanceOf(account, transactions)]))
+  const zone = store.timeZone
+  const balances = new Map(accounts.map((account) => [account.id, balanceOf(account, transactions, zone)]))
   const lastUsed = new Map<string, Date>()
   const categoryUsage = new Map<string, number>()
   for (const movement of transactions) {
@@ -130,7 +133,7 @@ export async function getTransactionContext(store: LedgerStore): Promise<Transac
     if (!previous || date > previous) lastUsed.set(key, date)
     if (movement.categoryId) categoryUsage.set(movement.categoryId, (categoryUsage.get(movement.categoryId) ?? 0) + 1)
   }
-  return { currencies, categories, accounts, cards, balances, lastUsed, categoryUsage, transactions }
+  return { currencies, categories, accounts, cards, balances, lastUsed, categoryUsage, transactions, zone }
 }
 
 /** Checks a draft against the iOS rules and builds the movement to store. */
@@ -193,7 +196,7 @@ export async function saveTransaction(store: LedgerStore, draft: TransactionDraf
   const existing = context.transactions.find((transaction) => transaction.id === draft.id)
   const transaction = validatedTransaction(draft, context, existing)
   await store.saveTransaction(transaction)
-  return savedTransactionOf(transaction, context.accounts, await store.fetchTransactions(), context.currencies.principal)
+  return savedTransactionOf(transaction, context.accounts, await store.fetchTransactions(), context.currencies.principal, context.zone)
 }
 
 /**
@@ -205,13 +208,14 @@ export function savedTransactionOf(
   accounts: readonly Account[],
   movements: readonly Transaction[],
   principal: string,
+  zone: TimeZone,
 ): SavedTransaction {
   const account = accounts.find((candidate) => candidate.id === transaction.accountId)
   if (!account) throw DomainError.notFound(transaction.accountId)
-  const newBalances = balanceOf(account, movements)
+  const newBalances = balanceOf(account, movements, zone)
   let categoryMonthTotal: Money | undefined
   if (transaction.kind === "expense") {
-    const summary = monthlySummary(yearMonthContaining(new Date(transaction.date)), movements, principal)
+    const summary = monthlySummary(yearMonthContaining(new Date(transaction.date), zone), movements, principal, zone)
     const total = summary.categories.find((entry) => entry.categoryId === transaction.categoryId)?.amount ?? ZERO
     categoryMonthTotal = { amount: total, currency: principal }
   }
@@ -268,12 +272,12 @@ export function previewMovement(context: TransactionContext, draft: TransactionD
     isShared: false,
   }
   const balancesOf = (account: Account) =>
-    excluding ? balanceOf(account, context.transactions.filter((transaction) => transaction.id !== excluding.id)) : (context.balances.get(account.id) ?? balanceOf(account, []))
+    excluding ? balanceOf(account, context.transactions.filter((transaction) => transaction.id !== excluding.id), context.zone) : (context.balances.get(account.id) ?? balanceOf(account, [], context.zone))
   const side = (account: Account) => {
     const before = balancesOf(account)
     // Today's balance with an opening date in the far past applies just this one movement on top.
     const current: Account = { ...account, openingBalances: before.map((m) => ({ amount: decimalText(m.amount), currency: m.currency })), openingDate: new Date(0).toISOString() }
-    return { before, after: balanceOf(current, [movement]) }
+    return { before, after: balanceOf(current, [movement], context.zone) }
   }
   const source = side(sourceAccount)
   const destination = destinationAccount ? side(destinationAccount) : undefined

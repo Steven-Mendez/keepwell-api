@@ -10,7 +10,7 @@ import {
   type PersonalDebt,
 } from "../schema"
 
-import { startOfDay } from "./calendar"
+import { startOfDay, type TimeZone } from "./calendar"
 import { Decimal, ZERO, dec, decimalText } from "./decimal"
 import { DomainError } from "./errors"
 import type { Money } from "./money"
@@ -49,11 +49,13 @@ export interface LoanProgress {
 /** Always counted from the first due date, so the 31st stays the 31st in months that have one. */
 export function loanDueDate(
   loan: Pick<Loan, "firstDueDate" | "frequency">,
-  number: number
+  number: number,
+  zone: TimeZone
 ): Date {
   return occurrence(
     { startDate: loan.firstDueDate, frequency: loan.frequency, interval: 1 },
-    number - 1
+    number - 1,
+    zone
   )
 }
 
@@ -65,7 +67,7 @@ export function loanNextNumber(loan: Loan): number | undefined {
   return undefined
 }
 
-export function loanProgress(loan: Loan, today: Date): LoanProgress {
+export function loanProgress(loan: Loan, today: Date, zone: TimeZone): LoanProgress {
   const paid = new Map(
     loan.payments.map((payment) => [payment.number, payment])
   )
@@ -75,7 +77,7 @@ export function loanProgress(loan: Loan, today: Date): LoanProgress {
       const payment = paid.get(index + 1)
       return {
         number: index + 1,
-        dueDate: loanDueDate(loan, index + 1),
+        dueDate: loanDueDate(loan, index + 1, zone),
         ...(payment ? { payment } : {}),
       }
     }
@@ -89,7 +91,7 @@ export function loanProgress(loan: Loan, today: Date): LoanProgress {
     remaining: installment.times(unpaid),
     totalToPay: installment.times(loan.installmentCount),
     ...(next ? { next } : {}),
-    isNextOverdue: next ? startOfDay(next.dueDate) < startOfDay(today) : false,
+    isNextOverdue: next ? startOfDay(next.dueDate, zone) < startOfDay(today, zone) : false,
     isPaidOff: next === undefined,
     fraction:
       loan.installmentCount > 0
@@ -114,10 +116,11 @@ function byName(
 /** Open loans first, the soonest next installment first; paid-off ones last. */
 export function orderedLoans(
   loans: readonly Loan[],
-  today: Date
+  today: Date,
+  zone: TimeZone
 ): LoanProgress[] {
   return loans
-    .map((loan) => loanProgress(loan, today))
+    .map((loan) => loanProgress(loan, today, zone))
     .sort((a, b) => {
       if (
         a.next &&

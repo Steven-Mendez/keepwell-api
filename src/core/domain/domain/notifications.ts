@@ -1,5 +1,5 @@
 import { budgetStatuses, type BudgetLevel } from "./budgets"
-import { addDays, compareMonths, dayKey, monthKey, startOfDay, yearMonthContaining } from "./calendar"
+import { addDays, compareMonths, dayKey, monthKey, startOfDay, yearMonthContaining, zonedDate, type TimeZone } from "./calendar"
 import type { Decimal } from "./decimal"
 import { orderedLoans } from "./debts"
 import { fromStored, type Money } from "./money"
@@ -48,7 +48,7 @@ export type LedgerNotification =
   | Base<"proposal", { ruleId: string; name: string; amount: Money }>
 
 const DAY_MS = 86_400_000
-const daysBetween = (from: Date, to: Date) => Math.round((startOfDay(to).getTime() - startOfDay(from).getTime()) / DAY_MS)
+const daysBetween = (from: Date, to: Date, zone: TimeZone) => Math.round((startOfDay(to, zone).getTime() - startOfDay(from, zone).getTime()) / DAY_MS)
 
 /**
  * Everything that applies on the day of `now`, newest first:
@@ -63,13 +63,14 @@ const daysBetween = (from: Date, to: Date) => Math.round((startOfDay(to).getTime
  * - recurring payments an assistant proposed, paused until confirmed (ADR 0007).
  */
 export function ledgerNotifications(ledger: Ledger, now: Date): LedgerNotification[] {
+  const zone = ledger.timeZone
   const overview = homeOverview(ledger, now)
-  const today = startOfDay(now)
+  const today = startOfDay(now, zone)
   const window = overview.paymentReminderDaysBefore
   const found: LedgerNotification[] = []
 
   for (const transaction of overview.planned) {
-    const date = startOfDay(new Date(transaction.date))
+    const date = startOfDay(new Date(transaction.date), zone)
     if (date.getTime() > today.getTime()) continue
     found.push({
       id: `planned:${transaction.id}`,
@@ -90,22 +91,22 @@ export function ledgerNotifications(ledger: Ledger, now: Date): LedgerNotificati
     if (account.kind !== "credit") continue
     const dueDay = account.creditTerms?.dueDay
     if (dueDay) {
-      const due = nextOccurrence(dueDay, now)
-      const daysLeft = daysBetween(today, due)
+      const due = nextOccurrence(dueDay, now, zone)
+      const daysLeft = daysBetween(today, due, zone)
       if (daysLeft <= window) {
         found.push({
-          id: `payment:${account.id}:${dayKey(due)}`,
+          id: `payment:${account.id}:${dayKey(due, zone)}`,
           kind: "payment",
-          date: addDays(due, -window),
+          date: addDays(due, -window, zone),
           params: { accountId: account.id, dueDay, dueDate: due, daysLeft },
           target: { screen: "creditCard", accountId: account.id },
         })
       }
     }
     const cutoffDay = account.creditTerms?.cutoffDay
-    if (cutoffDay && nextOccurrence(cutoffDay, now).getTime() === today.getTime()) {
+    if (cutoffDay && nextOccurrence(cutoffDay, now, zone).getTime() === today.getTime()) {
       found.push({
-        id: `cutoff:${account.id}:${dayKey(today)}`,
+        id: `cutoff:${account.id}:${dayKey(today, zone)}`,
         kind: "cutoff",
         date: today,
         params: { accountId: account.id },
@@ -114,17 +115,17 @@ export function ledgerNotifications(ledger: Ledger, now: Date): LedgerNotificati
     }
   }
 
-  for (const progress of orderedLoans(ledger.loans, now)) {
+  for (const progress of orderedLoans(ledger.loans, now, zone)) {
     const next = progress.next
     if (!next) continue
-    const daysLeft = daysBetween(today, next.dueDate)
+    const daysLeft = daysBetween(today, next.dueDate, zone)
     // An overdue installment is Debts' to show, not a reminder's.
     if (daysLeft < 0 || daysLeft > window) continue
     const { loan } = progress
     found.push({
       id: `installment:${loan.id}:${next.number}`,
       kind: "installment",
-      date: addDays(startOfDay(next.dueDate), -window),
+      date: addDays(startOfDay(next.dueDate, zone), -window, zone),
       params: {
         loanId: loan.id,
         name: loan.name,
@@ -137,27 +138,27 @@ export function ledgerNotifications(ledger: Ledger, now: Date): LedgerNotificati
     })
   }
 
-  const tomorrow = addDays(today, 1).getTime()
-  for (const { rule, date } of upcoming(ledger.recurringRules, now, 1)) {
-    if (startOfDay(date).getTime() !== tomorrow) continue
+  const tomorrow = addDays(today, 1, zone).getTime()
+  for (const { rule, date } of upcoming(ledger.recurringRules, now, 1, zone)) {
+    if (startOfDay(date, zone).getTime() !== tomorrow) continue
     const params = { ruleId: rule.id, name: rule.name, amount: fromStored({ amount: rule.amount, currency: rule.currency }), accountId: rule.accountId, cardId: rule.cardId }
     if (rule.isSubscription) {
-      found.push({ id: `renewal:${rule.id}:${dayKey(date)}`, kind: "renewal", date: today, params, target: { screen: "recurring" } })
+      found.push({ id: `renewal:${rule.id}:${dayKey(date, zone)}`, kind: "renewal", date: today, params, target: { screen: "recurring" } })
     } else if (rule.kind === "expense" && !rule.autoConfirm) {
       // A bill (rent, school, a loan from family) is recorded as a draft the person has to pay and
       // confirm, so the day before is when a reminder helps. Its target is one every app already
       // knows: an installed app that predates this kind still opens a pushed one (ADR 0012).
-      found.push({ id: `bill:${rule.id}:${dayKey(date)}`, kind: "bill", date: today, params, target: { screen: "recurring" } })
+      found.push({ id: `bill:${rule.id}:${dayKey(date, zone)}`, kind: "bill", date: today, params, target: { screen: "recurring" } })
     }
   }
 
-  const thisMonth = yearMonthContaining(now)
+  const thisMonth = yearMonthContaining(now, zone)
   for (const card of ledger.cards) {
     if (!card.expiry || compareMonths(card.expiry, thisMonth) !== 0) continue
     found.push({
       id: `expiry:${card.id}:${monthKey(thisMonth)}`,
       kind: "expiry",
-      date: new Date(thisMonth.year, thisMonth.month - 1, 1),
+      date: zonedDate(zone, thisMonth.year, thisMonth.month, 1),
       params: { cardId: card.id, services: overview.cardSubscriptions.get(card.id) ?? [] },
       target: { screen: "account", accountId: card.accountId },
     })
@@ -169,7 +170,7 @@ export function ledgerNotifications(ledger: Ledger, now: Date): LedgerNotificati
     found.push({
       id: `price:${increase.transactionId}`,
       kind: "price",
-      date: startOfDay(increase.date),
+      date: startOfDay(increase.date, zone),
       params: { transactionId: increase.transactionId, name: increase.name.trim(), previous: increase.previous, current: increase.current },
       target: { screen: "recurring" },
     })
@@ -180,7 +181,7 @@ export function ledgerNotifications(ledger: Ledger, now: Date): LedgerNotificati
     found.push({
       id: `proposal:${rule.id}`,
       kind: "proposal",
-      date: startOfDay(new Date(rule.startDate)),
+      date: startOfDay(new Date(rule.startDate), zone),
       params: { ruleId: rule.id, name: rule.name, amount: fromStored({ amount: rule.amount, currency: rule.currency }) },
       target: { screen: "recurring" },
     })
@@ -195,9 +196,10 @@ export function ledgerNotifications(ledger: Ledger, now: Date): LedgerNotificati
  * latest spending in the category, the closest the ledger knows to when the line was crossed.
  */
 function budgetNotifications(ledger: Ledger, now: Date): LedgerNotification[] {
-  const month = yearMonthContaining(now)
+  const zone = ledger.timeZone
+  const month = yearMonthContaining(now, zone)
   const currency = ledger.settings.currencies.principal
-  const summary = monthlySummary(month, ledger.transactions, currency)
+  const summary = monthlySummary(month, ledger.transactions, currency, zone)
   return budgetStatuses(summary, ledger.categories).flatMap((status): LedgerNotification[] => {
     if (status.level === "onTrack") return []
     const level = status.level
@@ -205,14 +207,14 @@ function budgetNotifications(ledger: Ledger, now: Date): LedgerNotification[] {
       (transaction) =>
         transaction.categoryId === status.categoryId &&
         transaction.kind === "expense" &&
-        compareMonths(yearMonthContaining(new Date(transaction.date)), month) === 0 &&
+        compareMonths(yearMonthContaining(new Date(transaction.date), zone), month) === 0 &&
         new Date(transaction.date).getTime() <= now.getTime(),
     )
     return [
       {
         id: `budget:${status.categoryId}:${monthKey(month)}:${level === "exceeded" ? "over" : "near"}`,
         kind: "budget",
-        date: startOfDay(latest ? new Date(latest.date) : now),
+        date: startOfDay(latest ? new Date(latest.date) : now, zone),
         params: { categoryId: status.categoryId, level, spent: status.spent, budget: status.budget, currency },
         target: { screen: "summary" },
       },
@@ -225,10 +227,10 @@ function budgetNotifications(ledger: Ledger, now: Date): LedgerNotification[] {
  * carry no day (installments, price increases, drafts, proposals): those are pruned once the thing
  * they point at is gone, by whoever owns that rule.
  */
-export function notificationDay(id: string): Date | undefined {
+export function notificationDay(id: string, zone: TimeZone): Date | undefined {
   const match = /:(\d{4})-(\d{2})(?:-(\d{2}))?(?::|$)/.exec(id)
   if (!match) return undefined
-  return new Date(Number(match[1]), Number(match[2]) - 1, match[3] ? Number(match[3]) : 1)
+  return zonedDate(zone, Number(match[1]), Number(match[2]), match[3] ? Number(match[3]) : 1)
 }
 
 /** Days after its day that a notification's state is kept before a client tombstones it. */

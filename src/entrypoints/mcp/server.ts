@@ -76,7 +76,7 @@ export function createMcpServer(context: McpContext): McpServer {
     "get_monthly_summary",
     { title: "Monthly summary", description: "Income, spending and net for one month, by category, with budgets. Confirmed movements only, in the principal currency.", view: true },
     { month: z.string().regex(/^\d{4}-\d{2}$/).optional().describe("YYYY-MM; this month when left out") },
-    (args, ledger) => getMonthlySummary(ledger, parseMonth(args.month, context.now()))
+    (args, ledger) => getMonthlySummary(ledger, parseMonth(args.month, context.now(), ledger.timeZone))
   )
   tool(
     "get_trends",

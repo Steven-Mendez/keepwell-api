@@ -41,7 +41,7 @@ const rule = (overrides: Partial<RecurringRule> = {}): RecurringRule => ({
 
 const BILL = "bill:cccccccc-cccc-4ccc-8ccc-cccccccccccc:2026-11-14"
 const due = (rules: RecurringRule[]) =>
-  dueNotifications({ ledger: ledger({ recurringRules: rules }), states: { read: new Set(), dismissed: new Set() }, delivered: new Set(), now: new Date("2026-11-13T16:00:00Z"), zone: "America/Managua" })
+  dueNotifications({ ledger: ledger({ recurringRules: rules }), states: { read: new Set(), dismissed: new Set() }, delivered: new Set(), now: new Date("2026-11-13T16:00:00Z") })
 
 describe("bill reminders", () => {
   it("are sent the day before a recurring expense recorded as a draft, from 09:00 local", () => {
@@ -56,7 +56,7 @@ describe("bill reminders", () => {
     const bill = due([rule()]).find((n) => n.kind === "bill")
     expect(bill).toBeDefined()
     if (!bill) return
-    const wording = new NotificationWording(value, "America/Managua")
+    const wording = new NotificationWording(value)
     expect(wording.copy(bill, "es").title).toBe("Rent vence mañana")
     const message = notificationMessage(bill, wording.copy(bill, "en"), 1)
     expect(message).toMatchObject({ title: "Rent is due tomorrow", target: { screen: "recurring" } })

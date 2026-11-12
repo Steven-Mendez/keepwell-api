@@ -1352,6 +1352,18 @@
           "has_completed_onboarding": {
             "type": "boolean"
           },
+          "time_zone": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 64,
+                "pattern": "^[A-Za-z][A-Za-z0-9_+\\-]*(\\/[A-Za-z0-9_+\\-]+)*$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "created_at": {
             "type": "string",
             "format": "date-time",

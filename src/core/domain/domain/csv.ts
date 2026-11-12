@@ -5,7 +5,7 @@ import type {
   TransactionCategory,
 } from "../schema"
 
-import { dayKey } from "./calendar"
+import { dayKey, type TimeZone } from "./calendar"
 import { Decimal, decimalText } from "./decimal"
 import { rateHasSecondCurrency } from "./money"
 import { accountDisplayName } from "./rules"
@@ -51,7 +51,8 @@ export function exportCsv(
   transactions: readonly Transaction[],
   accounts: readonly Account[],
   cards: readonly Card[],
-  categories: readonly TransactionCategory[]
+  categories: readonly TransactionCategory[],
+  zone: TimeZone
 ): string {
   const accountNames = new Map(
     accounts.map((account) => [account.id, accountDisplayName(account)])
@@ -63,7 +64,7 @@ export function exportCsv(
   const rows = [...transactions]
     .sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0))
     .map((t) => [
-      dayKey(new Date(t.date)),
+      dayKey(new Date(t.date), zone),
       t.status,
       t.kind,
       neutralizeCsvFormula(t.description),
@@ -139,5 +140,5 @@ export async function exportCsvFrom(store: LedgerStore): Promise<string> {
     store.fetchTransactions(),
     store.fetchCategories(),
   ])
-  return exportCsv(transactions, accounts, cards, categories)
+  return exportCsv(transactions, accounts, cards, categories, store.timeZone)
 }

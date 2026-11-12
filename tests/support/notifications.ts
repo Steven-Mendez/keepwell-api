@@ -40,6 +40,7 @@ export function ledger(extra: Partial<Ledger> = {}): Ledger {
     loans: [],
     personalDebts: [],
     categorizationRules: [],
+    timeZone: "America/Managua",
     ...extra,
   }
 }

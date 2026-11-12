@@ -183,6 +183,50 @@
       }
     },
     {
+      "name": "synced settings with a home time zone",
+      "event": {
+        "event_id": "99999999-9999-4999-8999-999999999999",
+        "entity": "settings",
+        "entity_id": "settings",
+        "operation": "update",
+        "payload": {
+          "id": "settings",
+          "principal": "USD",
+          "second": "NIO",
+          "rate": "36.6243",
+          "payment_reminder_days_before": 3,
+          "has_completed_onboarding": true,
+          "time_zone": "Europe/Madrid",
+          "created_at": "2026-11-01T18:00:00.000Z",
+          "updated_at": "2026-11-01T18:00:00.000Z",
+          "deleted_at": null
+        },
+        "created_at": "2026-11-01T18:00:00.000Z"
+      }
+    },
+    {
+      "name": "synced settings with no time zone yet",
+      "event": {
+        "event_id": "99999999-9999-4999-8999-999999999999",
+        "entity": "settings",
+        "entity_id": "settings",
+        "operation": "update",
+        "payload": {
+          "id": "settings",
+          "principal": "USD",
+          "second": "NIO",
+          "rate": "36.6243",
+          "payment_reminder_days_before": 3,
+          "has_completed_onboarding": true,
+          "time_zone": null,
+          "created_at": "2026-11-01T18:00:00.000Z",
+          "updated_at": "2026-11-01T18:00:00.000Z",
+          "deleted_at": null
+        },
+        "created_at": "2026-11-01T18:00:00.000Z"
+      }
+    },
+    {
       "name": "server columns are dropped, not trusted",
       "event": {
         "event_id": "99999999-9999-4999-8999-999999999999",
@@ -451,6 +495,29 @@
           "number": 0,
           "paid_at": "2026-11-01T18:00:00.000Z",
           "transaction_id": null,
+          "created_at": "2026-11-01T18:00:00.000Z",
+          "updated_at": "2026-11-01T18:00:00.000Z",
+          "deleted_at": null
+        },
+        "created_at": "2026-11-01T18:00:00.000Z"
+      }
+    },
+    {
+      "name": "settings with a time zone that isn't a name",
+      "reason": "a time zone is an IANA name",
+      "event": {
+        "event_id": "99999999-9999-4999-8999-999999999999",
+        "entity": "settings",
+        "entity_id": "settings",
+        "operation": "update",
+        "payload": {
+          "id": "settings",
+          "principal": "USD",
+          "second": "NIO",
+          "rate": "36.6243",
+          "payment_reminder_days_before": 3,
+          "has_completed_onboarding": true,
+          "time_zone": "../etc/passwd",
           "created_at": "2026-11-01T18:00:00.000Z",
           "updated_at": "2026-11-01T18:00:00.000Z",
           "deleted_at": null

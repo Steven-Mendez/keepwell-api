@@ -127,6 +127,13 @@
       "when": 1794444047779,
       "tag": "0017_notification_grants",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1794514965759,
+      "tag": "0018_add_settings_time_zone",
+      "breakpoints": true
     }
   ]
 }

@@ -1,7 +1,7 @@
 import { z } from "zod"
 
 import { CardColor, CardKind, CardNetwork, DebtDirection, DebtMode, LoanFrequency, RecurringFrequency, AccountKind } from "./entities"
-import { CurrencyCode, DecimalString, Id, IsoDateTime, PositiveDecimalString, RecordSource, TransactionKind, TransactionStatus } from "./primitives"
+import { CurrencyCode, DecimalString, Id, IsoDateTime, PositiveDecimalString, RecordSource, TimeZoneId, TransactionKind, TransactionStatus } from "./primitives"
 
 // The sync wire format (ADR 0005): each event carries one row as stored, in snake_case, the same
 // shape on the web (Dexie), on iOS (SwiftData records) and on the server (DSQL). keepwell-api copies
@@ -211,6 +211,11 @@ export const SettingsWire = z.object({
   rate: PositiveDecimalString,
   payment_reminder_days_before: z.number().int().min(0).max(60),
   has_completed_onboarding: z.boolean(),
+  /**
+   * Optional, not only nullable: a row from an app older than the column lacks the key, and the
+   * server then keeps the stored zone instead of clearing it (`decide` in keepwell-api).
+   */
+  time_zone: TimeZoneId.nullable().optional(),
   ...Audit,
 })
 

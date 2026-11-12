@@ -12,6 +12,7 @@ import {
   confirmPlannedTransaction,
   currencySettings,
   dec,
+  isTimeZone,
   deleteAccount,
   deleteCategorizationRule,
   deleteCategory,
@@ -50,6 +51,7 @@ import {
 } from "../../core/domain/domain"
 import { swapCurrencies, updateSettings } from "../../core/domain/domain/onboarding"
 import { CardColor, CardNetwork, DebtDirection, DebtMode, LoanFrequency, RecurringFrequency } from "../../core/domain/schema"
+import { instantIn } from "../../core/mcp/dates"
 import { ManageError, type ManageLedger } from "../../core/use-cases/manage-ledger"
 import type { RecordingStore } from "../../core/ledger/recording-store"
 import { VIEWS_URI } from "./ui/resources"
@@ -60,7 +62,7 @@ import { VIEWS_URI } from "./ui/resources"
 // list_categories…), never guessed.
 
 const decimal = z.string().regex(/^[0-9]+(\.[0-9]+)?$/, "a positive exact decimal such as 12.50")
-const instant = z.string().refine((text) => !Number.isNaN(Date.parse(text)), "an ISO 8601 date or date-time")
+const instant = z.string().refine((text) => !Number.isNaN(Date.parse(text)), "an ISO 8601 date or date-time").describe("YYYY-MM-DD is that day in the person's time zone (get_financial_context); a date-time is that instant")
 const currency = z.string().length(3).describe("ISO 4217, one of the currencies in get_financial_context")
 const newId = z.string().uuid().describe("A new UUID you generate once and reuse if you retry, so the call never creates twice")
 const ref = (what: string) => z.string().min(1).max(64).describe(what)
@@ -367,7 +369,7 @@ export function registerManageTools(server: McpServer, options: { manage: Manage
         source: source(args),
         ...(args.destination_account_id ? { destinationAccountId: args.destination_account_id } : {}),
         description: args.description,
-        date: new Date(args.date),
+        date: instantIn(args.date, store.timeZone),
         note: args.note ?? "",
         isDraft: args.status === "planned",
         ...(args.tags ? { tags: args.tags } : {}),
@@ -412,7 +414,7 @@ export function registerManageTools(server: McpServer, options: { manage: Manage
         ...(categoryId ? { categoryId } : {}),
         ...(destination ? { destinationAccountId: destination } : {}),
         ...(args.description ? { description: args.description } : {}),
-        ...(args.date ? { date: new Date(args.date) } : {}),
+        ...(args.date ? { date: instantIn(args.date, store.timeZone) } : {}),
         ...(args.note !== undefined ? { note: args.note } : {}),
         ...(args.tags ? { tags: args.tags } : {}),
       })
@@ -453,7 +455,7 @@ export function registerManageTools(server: McpServer, options: { manage: Manage
     auto_confirm: z.boolean().default(true).describe("Record each occurrence as confirmed; false leaves them planned to confirm"),
   }
 
-  const ruleDraft = (args: Record<string, unknown> & { kind: "expense" | "income" | "transfer"; amount: string; currency: string; account_id: string; card_id?: string | undefined; destination_account_id?: string | undefined; category_id?: string | undefined; name: string; frequency: RecurringRuleDraft["frequency"]; interval: number; start_date: string; end_date?: string | undefined; is_subscription: boolean; auto_confirm: boolean; note?: string | undefined; tags?: string[] | undefined }, id?: string): RecurringRuleDraft => ({
+  const ruleDraft = (args: Record<string, unknown> & { kind: "expense" | "income" | "transfer"; amount: string; currency: string; account_id: string; card_id?: string | undefined; destination_account_id?: string | undefined; category_id?: string | undefined; name: string; frequency: RecurringRuleDraft["frequency"]; interval: number; start_date: string; end_date?: string | undefined; is_subscription: boolean; auto_confirm: boolean; note?: string | undefined; tags?: string[] | undefined }, zone: string, id?: string): RecurringRuleDraft => ({
     ...(id ? { id } : {}),
     name: args.name,
     kind: args.kind,
@@ -464,8 +466,8 @@ export function registerManageTools(server: McpServer, options: { manage: Manage
     ...(args.destination_account_id ? { destinationAccountId: args.destination_account_id } : {}),
     frequency: args.frequency,
     interval: args.interval,
-    startDate: new Date(args.start_date),
-    ...(args.end_date ? { endDate: new Date(args.end_date) } : {}),
+    startDate: instantIn(args.start_date, zone),
+    ...(args.end_date ? { endDate: instantIn(args.end_date, zone) } : {}),
     isSubscription: args.is_subscription,
     autoConfirm: args.auto_confirm,
     note: args.note ?? "",
@@ -479,7 +481,7 @@ export function registerManageTools(server: McpServer, options: { manage: Manage
     (args) => args.id,
     async (store, args, now) => {
       if (existing(store.recurringRules, args.id)) return { id: args.id, status: "saved", already_existed: true }
-      const rule = await saveRecurringRule(store, ruleDraft(args), now)
+      const rule = await saveRecurringRule(store, ruleDraft(args, store.timeZone), now)
       store.renameId(rule.id, args.id)
       return { id: args.id, status: "saved", next_date: rule.nextDate.slice(0, 10), name: rule.name }
     }
@@ -492,7 +494,7 @@ export function registerManageTools(server: McpServer, options: { manage: Manage
     (args) => JSON.stringify(args),
     async (store, args, now) => {
       find(store.recurringRules, args.rule_id, "Recurring payment")
-      const rule = await saveRecurringRule(store, ruleDraft(args, args.rule_id), now)
+      const rule = await saveRecurringRule(store, ruleDraft(args, store.timeZone, args.rule_id), now)
       return { id: rule.id, next_date: rule.nextDate.slice(0, 10) }
     }
   )
@@ -579,7 +581,7 @@ export function registerManageTools(server: McpServer, options: { manage: Manage
   // Loans and personal debts -------------------------------------------------------------------
 
   const loan = { name: z.string().min(1).max(60), lender: z.string().max(60).default(""), borrowed_amount: decimal, currency, installment_amount: decimal, installment_count: z.number().int().min(1).max(600), frequency: LoanFrequency, first_due_date: instant }
-  const loanDraft = (args: { name: string; lender: string; borrowed_amount: string; currency: string; installment_amount: string; installment_count: number; frequency: z.infer<typeof LoanFrequency>; first_due_date: string }, id?: string) => ({
+  const loanDraft = (args: { name: string; lender: string; borrowed_amount: string; currency: string; installment_amount: string; installment_count: number; frequency: z.infer<typeof LoanFrequency>; first_due_date: string }, zone: string, id?: string) => ({
     ...(id ? { id } : {}),
     name: args.name,
     lender: args.lender,
@@ -588,7 +590,7 @@ export function registerManageTools(server: McpServer, options: { manage: Manage
     installmentAmount: args.installment_amount,
     installmentCount: args.installment_count,
     frequency: args.frequency,
-    firstDueDate: new Date(args.first_due_date),
+    firstDueDate: instantIn(args.first_due_date, zone),
   })
 
   tool(
@@ -598,7 +600,7 @@ export function registerManageTools(server: McpServer, options: { manage: Manage
     (args) => args.id,
     async (store, args) => {
       if (existing(store.loans, args.id)) return { loan_id: args.id, already_existed: true }
-      const saved = await saveLoan(store, loanDraft(args))
+      const saved = await saveLoan(store, loanDraft(args, store.timeZone))
       store.renameId(saved.id, args.id)
       return { loan_id: args.id, name: saved.name }
     }
@@ -611,7 +613,7 @@ export function registerManageTools(server: McpServer, options: { manage: Manage
     (args) => JSON.stringify(args),
     async (store, args) => {
       find(store.loans, args.loan_id, "Loan")
-      const saved = await saveLoan(store, loanDraft(args, args.loan_id))
+      const saved = await saveLoan(store, loanDraft(args, store.timeZone, args.loan_id))
       return { loan_id: saved.id }
     }
   )
@@ -622,7 +624,7 @@ export function registerManageTools(server: McpServer, options: { manage: Manage
     { loan_id: ref("From list_loans"), account_id: ref("From list_accounts"), card_id: ref("A card of that account").optional(), category_id: ref("From list_categories (an expense category)"), date: instant },
     (args) => JSON.stringify(args),
     async (store, args) => {
-      const saved = await payLoanInstallment(store, { loanId: args.loan_id, source: source(args), categoryId: args.category_id, date: new Date(args.date) })
+      const saved = await payLoanInstallment(store, { loanId: args.loan_id, source: source(args), categoryId: args.category_id, date: instantIn(args.date, store.timeZone) })
       return { loan_id: saved.id, paid: saved.payments.length, of: saved.installmentCount }
     }
   )
@@ -649,13 +651,13 @@ export function registerManageTools(server: McpServer, options: { manage: Manage
   )
 
   const debt = { person: z.string().min(1).max(60), direction: DebtDirection, amount: decimal, currency, date: instant, note: z.string().max(500).default("") }
-  const debtDraft = (args: { person: string; direction: z.infer<typeof DebtDirection>; amount: string; currency: string; date: string; note: string }, id?: string) => ({
+  const debtDraft = (args: { person: string; direction: z.infer<typeof DebtDirection>; amount: string; currency: string; date: string; note: string }, zone: string, id?: string) => ({
     ...(id ? { id } : {}),
     person: args.person,
     direction: args.direction,
     amount: args.amount,
     currency: args.currency.toUpperCase(),
-    date: new Date(args.date),
+    date: instantIn(args.date, zone),
     note: args.note,
   })
 
@@ -666,7 +668,7 @@ export function registerManageTools(server: McpServer, options: { manage: Manage
     (args) => args.id,
     async (store, args) => {
       if (existing(store.personalDebts, args.id)) return { debt_id: args.id, already_existed: true }
-      const saved = await savePersonalDebt(store, debtDraft(args))
+      const saved = await savePersonalDebt(store, debtDraft(args, store.timeZone))
       store.renameId(saved.id, args.id)
       return { debt_id: args.id, person: saved.person }
     }
@@ -679,7 +681,7 @@ export function registerManageTools(server: McpServer, options: { manage: Manage
     (args) => JSON.stringify(args),
     async (store, args) => {
       find(store.personalDebts, args.debt_id, "Debt")
-      const saved = await savePersonalDebt(store, debtDraft(args, args.debt_id))
+      const saved = await savePersonalDebt(store, debtDraft(args, store.timeZone, args.debt_id))
       return { debt_id: saved.id }
     }
   )
@@ -690,7 +692,7 @@ export function registerManageTools(server: McpServer, options: { manage: Manage
     { debt_id: ref("From list_personal_debts"), action: z.enum(["repay", "settle", "reopen"]), amount: decimal.optional().describe("repay only"), date: instant.optional() },
     (args) => JSON.stringify(args),
     async (store, args, now) => {
-      const day = args.date ? new Date(args.date) : now
+      const day = args.date ? instantIn(args.date, store.timeZone) : now
       if (args.action === "repay") {
         if (!args.amount) throw new ManageError("invalid", "repay needs an amount")
         await repayPersonalDebt(store, args.debt_id, args.amount, day)
@@ -751,9 +753,9 @@ export function registerManageTools(server: McpServer, options: { manage: Manage
   tool(
     "update_settings",
     {
-      title: "Change currencies and reminders",
+      title: "Change currencies, reminders and time zone",
       description:
-        "Set the rate (affects movements recorded from now on), swap the two currencies, set or remove the second currency (only while no balance or movement uses it), change the principal currency (only with no accounts or movements yet), or the days before a payment to remind.",
+        "Set the rate (affects movements recorded from now on), swap the two currencies, set or remove the second currency (only while no balance or movement uses it), change the principal currency (only with no accounts or movements yet), or the days before a payment to remind, or the person's home time zone (what \"today\" and month ends mean).",
       annotations: WRITE,
     },
     {
@@ -762,6 +764,7 @@ export function registerManageTools(server: McpServer, options: { manage: Manage
       second_currency: currency.nullable().optional(),
       principal_currency: currency.optional(),
       payment_reminder_days_before: z.number().int().min(0).max(60).optional(),
+      time_zone: z.string().max(64).refine(isTimeZone, "an IANA time zone such as America/Managua").optional().describe("IANA name; only when the person asks to change it"),
     },
     (args) => JSON.stringify(args),
     async (store, args) => {
@@ -784,9 +787,10 @@ export function registerManageTools(server: McpServer, options: { manage: Manage
         if (args.swap) next = swapCurrencies(next)
         if (args.rate) next = { ...next, currencies: withRate(next.currencies, args.rate) }
         if (args.payment_reminder_days_before !== undefined) next = { ...next, paymentReminderDaysBefore: args.payment_reminder_days_before }
+        if (args.time_zone) next = { ...next, timeZone: args.time_zone }
         return next
       })
-      return { currencies: saved.currencies, payment_reminder_days_before: saved.paymentReminderDaysBefore }
+      return { currencies: saved.currencies, payment_reminder_days_before: saved.paymentReminderDaysBefore, time_zone: saved.timeZone ?? store.timeZone }
     }
   )
 

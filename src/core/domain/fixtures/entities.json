@@ -524,6 +524,23 @@
             "paymentReminderDaysBefore": 3,
             "hasCompletedOnboarding": true
           }
+        },
+        {
+          "name": "home time zone",
+          "value": {
+            "currencies": {
+              "principal": "USD",
+              "second": "NIO",
+              "rate": "36.6243"
+            },
+            "unlockMethod": "biometrics",
+            "relockAfterSeconds": 60,
+            "hidesAmountsInAppSwitcher": true,
+            "isICloudBackupEnabled": true,
+            "paymentReminderDaysBefore": 3,
+            "hasCompletedOnboarding": true,
+            "timeZone": "Asia/Kolkata"
+          }
         }
       ],
       "invalid": [
@@ -541,6 +558,24 @@
             "isICloudBackupEnabled": true,
             "paymentReminderDaysBefore": -1,
             "hasCompletedOnboarding": true
+          }
+        },
+        {
+          "name": "time zone that isn't a name",
+          "reason": "a time zone is an IANA name",
+          "value": {
+            "currencies": {
+              "principal": "USD",
+              "second": "NIO",
+              "rate": "36.6243"
+            },
+            "unlockMethod": "biometrics",
+            "relockAfterSeconds": 60,
+            "hidesAmountsInAppSwitcher": true,
+            "isICloudBackupEnabled": true,
+            "paymentReminderDaysBefore": 3,
+            "hasCompletedOnboarding": true,
+            "timeZone": "not a zone!"
           }
         }
       ]

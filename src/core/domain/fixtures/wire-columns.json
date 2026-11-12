@@ -775,6 +775,11 @@
         "nullable": false,
         "optional": false
       },
+      "time_zone": {
+        "type": "string",
+        "nullable": true,
+        "optional": true
+      },
       "created_at": {
         "type": "string",
         "nullable": false,
