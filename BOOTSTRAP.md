@@ -88,8 +88,8 @@ In the Apple developer portal:
    attempt is recorded in `audit_log` with your Apple `sub`:
    `select details from audit_log where action = 'signin.rejected' order by at desc limit 1`.
 5. Put that `sub` in `allowed_apple_subs` and sign in again. Configuration is read at cold start:
-   `aws lambda update-function-configuration --function-name keepwell-<env>-api --description "reload $(date +%s)"`
-   recycles the instances.
+   `scripts/recycle.sh keepwell-<env>-api` recycles the instances (a description change alone does
+   not: the `live` alias points at a published version).
 
 `GET /health` answers `config: error` until the real values are in place.
 
@@ -129,8 +129,9 @@ put vapid_subject String mailto:you@example.com   # or an https: URL push servic
 ```
 
 Configuration is read at cold start, so recycle the functions afterwards (the API and the job):
-`aws lambda update-function-configuration --function-name keepwell-prod-api --description "reload $(date +%s)"`,
-and the same for `keepwell-prod-notifications`. Check the job in CloudWatch Logs
+`scripts/recycle.sh keepwell-prod-api keepwell-prod-notifications`. It publishes the code they already
+run as a new version and moves `live` to it; changing only the description would not, since the alias
+points at a published version. Check the job in CloudWatch Logs
 (`notifications job done`); `keepwell-prod-notifications-not-running` alarms if EventBridge Scheduler
 stops invoking it. The first deploy also maps the job's IAM role to the `keepwell_app` database role
 (`NOTIFICATIONS_IAM_ROLE_ARN` in the migrate step).

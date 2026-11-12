@@ -33,10 +33,8 @@ put apple_private_key SecureString "$(cat "$p8")"
 put apple_services_id String "$services"
 put apple_bundle_id String "$bundle"
 
-# Configuration is read at cold start; a description change recycles every instance.
-aws lambda update-function-configuration --region "$region" --function-name keepwell-prod-api \
-  --description "config reload $(date +%s)" > /dev/null
-aws lambda wait function-updated --region "$region" --function-name keepwell-prod-api
+# Configuration is read at cold start; `live` points at a published version, so publish a new one.
+AWS_REGION="$region" "$(dirname "$0")/recycle.sh" keepwell-prod-api
 echo "✔ API reloaded"
 
 for attempt in 1 2 3 4 5 6; do
