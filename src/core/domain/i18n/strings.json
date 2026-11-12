@@ -2343,6 +2343,9 @@
     "other": "%lld movimientos actualizados."
    }
   },
+  "A backup can only be restored when there's no data yet. Delete all your data first.": {
+   "es": "Una copia solo se puede restaurar cuando aún no hay datos. Primero elimina todos tus datos."
+  },
   "A copy of every movement": {
    "es": "Una copia de todos tus movimientos"
   },
@@ -2363,6 +2366,9 @@
   },
   "Ask again after": {
    "es": "Pedirlo al volver después de"
+  },
+  "Backup restored": {
+   "es": "Copia restaurada"
   },
   "Bank transfer": {
    "es": "Transferencia bancaria"
@@ -2445,6 +2451,9 @@
   "Edit rule": {
    "es": "Editar regla"
   },
+  "Everything, in a file you can restore": {
+   "es": "Todo, en un archivo que puedes restaurar"
+  },
   "Expense categories": {
    "es": "Categorías de gasto"
   },
@@ -2453,6 +2462,9 @@
   },
   "Export CSV": {
    "es": "Exportar CSV"
+  },
+  "Export backup": {
+   "es": "Exportar copia de seguridad"
   },
   "Face ID /\nTouch ID": {
    "es": "Face ID /\nTouch ID"
@@ -2560,6 +2572,9 @@
   "Only movements without a category or in “Other” that match change.": {
    "es": "Solo cambian los movimientos que coinciden y no tienen categoría o están en “Otros”."
   },
+  "Only when there's no data yet": {
+   "es": "Solo si aún no hay datos"
+  },
   "Organization": {
    "es": "Organización"
   },
@@ -2589,6 +2604,9 @@
   },
   "Restore": {
    "es": "Restaurar"
+  },
+  "Restore backup": {
+   "es": "Restaurar copia de seguridad"
   },
   "Restore default categories": {
    "es": "Restaurar categorías predeterminadas"
@@ -2647,6 +2665,12 @@
   "The rate has to be a number greater than zero.": {
    "es": "La tasa tiene que ser un número mayor que cero."
   },
+  "This backup is from a newer version of Keepwell. Update the app and try again.": {
+   "es": "Esta copia es de una versión más nueva de Keepwell. Actualiza la app e inténtalo de nuevo."
+  },
+  "This file isn't a Keepwell backup, or it's damaged. Nothing was restored.": {
+   "es": "Este archivo no es una copia de Keepwell o está dañado. No se restauró nada."
+  },
   "Turn off passcode": {
    "es": "Desactivar código"
   },
@@ -2685,6 +2709,9 @@
   },
   "We couldn't look at your movements. Try again.": {
    "es": "No pudimos revisar tus movimientos. Inténtalo de nuevo."
+  },
+  "We couldn't restore the backup. Try again.": {
+   "es": "No pudimos restaurar la copia. Inténtalo de nuevo."
   },
   "We couldn't restore the default categories. Try again.": {
    "es": "No pudimos restaurar las categorías predeterminadas. Inténtalo de nuevo."
