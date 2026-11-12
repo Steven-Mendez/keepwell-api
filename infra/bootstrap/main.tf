@@ -214,6 +214,16 @@ resource "aws_iam_role_policy" "deploy" {
         ]
       },
       {
+        # The notifications job's schedule (ADR 0012), in the default group. Its target role is
+        # passed through ProjectRoles' iam:PassRole on the project's roles.
+        Sid    = "ProjectSchedules"
+        Effect = "Allow"
+        Action = [
+          "scheduler:CreateSchedule", "scheduler:GetSchedule", "scheduler:UpdateSchedule", "scheduler:DeleteSchedule",
+        ]
+        Resource = "arn:aws:scheduler:${var.region}:${local.account}:schedule/default/${local.prefix}-*"
+      },
+      {
         # The jobs queue's trigger. Creating or changing one names the function it calls, so it is
         # held to the project's functions; mappings themselves are named by a UUID, never by the
         # project prefix, so reading, deleting and tagging them can only be held to mappings.
