@@ -1,11 +1,12 @@
 import { budgetStatuses, type BudgetLevel } from "./budgets"
 import { addDays, compareMonths, dayKey, monthKey, startOfDay, yearMonthContaining, zonedDate, type TimeZone } from "./calendar"
 import type { Decimal } from "./decimal"
-import { orderedLoans } from "./debts"
+import { debtDueStatus, debtRemaining, orderedLoans } from "./debts"
 import { fromStored, type Money } from "./money"
 import { homeOverview, type Ledger } from "./overviews"
 import { upcoming } from "./recurring"
 import { monthlySummary, nextOccurrence } from "./rules"
+import type { DebtDirection } from "../schema"
 
 // The notifications (ADR 0012 in keepwell-api): what the ledger says needs attention on a given day.
 // They are derived, never stored; what is stored is the person's state for each one
@@ -15,7 +16,7 @@ import { monthlySummary, nextOccurrence } from "./rules"
 //
 // Days in ids are the device's (or, on the server, the person's) calendar days, `yyyy-mm-dd`.
 
-export type NotificationKind = "planned" | "payment" | "cutoff" | "installment" | "renewal" | "bill" | "expiry" | "budget" | "price" | "proposal"
+export type NotificationKind = "planned" | "payment" | "cutoff" | "installment" | "debt" | "renewal" | "bill" | "expiry" | "budget" | "price" | "proposal"
 
 /** Where tapping a notification leads; each app maps it to its own screen. */
 export type NotificationTarget =
@@ -40,6 +41,7 @@ export type LedgerNotification =
   | Base<"payment", { accountId: string; dueDay: number; dueDate: Date; daysLeft: number }>
   | Base<"cutoff", { accountId: string }>
   | Base<"installment", { loanId: string; name: string; number: number; count: number; amount: Money; daysLeft: number }>
+  | Base<"debt", { debtId: string; person: string; direction: DebtDirection; remaining: Money; dueDate: Date; daysLeft: number }>
   | Base<"renewal", { ruleId: string; name: string; amount: Money; accountId: string; cardId?: string | undefined }>
   | Base<"bill", { ruleId: string; name: string; amount: Money; accountId: string; cardId?: string | undefined }>
   | Base<"expiry", { cardId: string; services: string[] }>
@@ -56,6 +58,7 @@ const daysBetween = (from: Date, to: Date, zone: TimeZone) => Math.round((startO
  * - drafts dated today or before (`planned`),
  * - card payments from `paymentReminderDaysBefore` days ahead until the due day,
  * - statements closing today, loan installments inside the same window as card payments,
+ * - personal debts with a due date, open and with something left, inside that same window,
  * - subscriptions renewing tomorrow, and other recurring expenses due tomorrow that are recorded as
  *   drafts (`bill`; one recorded on its own needs nothing from the person), plastics expiring this month,
  * - budgets from 80% of the month's limit (a second notification once spent),
@@ -134,6 +137,31 @@ export function ledgerNotifications(ledger: Ledger, now: Date): LedgerNotificati
         amount: fromStored({ amount: loan.installmentAmount, currency: loan.borrowed.currency }),
         daysLeft,
       },
+      target: { screen: "debts" },
+    })
+  }
+
+  for (const debt of ledger.personalDebts) {
+    const due = debtDueStatus(debt, now, zone)
+    // Like installments, an overdue debt is Debts' to show, not a reminder's: its id's day would get
+    // its state pruned and the reminder back.
+    if (!due || due.state === "overdue") continue
+    const daysLeft = due.state === "today" ? 0 : due.daysLeft
+    if (daysLeft > window) continue
+    const dueDate = startOfDay(new Date(debt.dueDate!), zone)
+    found.push({
+      id: `debt:${debt.id}:${dayKey(dueDate, zone)}`,
+      kind: "debt",
+      date: addDays(dueDate, -window, zone),
+      params: {
+        debtId: debt.id,
+        person: debt.person,
+        direction: debt.direction,
+        remaining: { amount: debtRemaining(debt), currency: debt.amount.currency },
+        dueDate,
+        daysLeft,
+      },
+      // A target every installed app already decodes, so an older app still opens a pushed one.
       target: { screen: "debts" },
     })
   }

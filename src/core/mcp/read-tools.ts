@@ -4,6 +4,7 @@ import {
   budgetStatuses,
   dayKey,
   daysInMonth,
+  debtDueStatus,
   inSecondCurrency,
   lastMonths,
   monthlySummary,
@@ -295,18 +296,26 @@ export function listLoans(ledger: Ledger) {
   }
 }
 
-export function listPersonalDebts(ledger: Ledger) {
+/** Where each debt's due date stands today in the person's zone: `null` without one, or once settled or paid. */
+export function listPersonalDebts(ledger: Ledger, now: Date) {
   return {
-    debts: ledger.personalDebts.map((debt) => ({
-      id: debt.id,
-      person: debt.person,
-      direction: debt.direction,
-      amount: debt.amount,
-      date: debt.date,
-      note: debt.note ?? null,
-      repayments: debt.repayments.map((repayment) => ({ amount: repayment.amount, date: repayment.date })),
-      settled_at: debt.settledAt ?? null,
-    })),
+    debts: ledger.personalDebts.map((debt) => {
+      const due = debtDueStatus(debt, now, ledger.timeZone)
+      return {
+        id: debt.id,
+        person: debt.person,
+        direction: debt.direction,
+        amount: debt.amount,
+        date: debt.date,
+        note: debt.note ?? null,
+        repayments: debt.repayments.map((repayment) => ({ amount: repayment.amount, date: repayment.date })),
+        settled_at: debt.settledAt ?? null,
+        due_date: debt.dueDate ? dayKey(new Date(debt.dueDate), ledger.timeZone) : null,
+        due_status: due?.state ?? null,
+        ...(due?.state === "upcoming" ? { days_left: due.daysLeft } : {}),
+        ...(due?.state === "overdue" ? { days_late: due.daysLate } : {}),
+      }
+    }),
   }
 }
 

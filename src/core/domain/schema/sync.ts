@@ -179,6 +179,12 @@ export const PersonalDebtWire = z.object({
   note: z.string().nullable(),
   settled_at: IsoDateTime.nullable(),
   transaction_id: Id.nullable(),
+  /**
+   * Optional, not only nullable: a row from an app older than the column lacks the key, and the
+   * server then keeps the stored date instead of clearing it (`decide` in keepwell-api). Newer apps
+   * always send it, null for no date.
+   */
+  due_date: IsoDateTime.nullable().optional(),
   ...Audit,
 })
 

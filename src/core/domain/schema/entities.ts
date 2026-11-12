@@ -325,6 +325,11 @@ export const PersonalDebtShape = z.object({
   settledAt: IsoDateTime.optional(),
   /** The expense it was split from. */
   transactionId: Id.optional(),
+  /**
+   * When it should be paid back, the start of that day; absent for a debt without one. Never
+   * before `date` (`savePersonalDebt`).
+   */
+  dueDate: IsoDateTime.optional(),
 })
 
 /** Repayments never add up past the amount (iOS `PersonalDebt.checkAmounts`). */

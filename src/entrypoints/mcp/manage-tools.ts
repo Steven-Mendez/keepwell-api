@@ -650,16 +650,38 @@ export function registerManageTools(server: McpServer, options: { manage: Manage
     (store, args) => `Loan ${find(store.loans, args.loan_id, "Loan").name}`
   )
 
-  const debt = { person: z.string().min(1).max(60), direction: DebtDirection, amount: decimal, currency, date: instant, note: z.string().max(500).default("") }
-  const debtDraft = (args: { person: string; direction: z.infer<typeof DebtDirection>; amount: string; currency: string; date: string; note: string }, zone: string, id?: string) => ({
-    ...(id ? { id } : {}),
-    person: args.person,
-    direction: args.direction,
-    amount: args.amount,
-    currency: args.currency.toUpperCase(),
-    date: instantIn(args.date, zone),
-    note: args.note,
-  })
+  const debt = {
+    person: z.string().min(1).max(60),
+    direction: DebtDirection,
+    amount: decimal,
+    currency,
+    date: instant,
+    note: z.string().max(500).default(""),
+    due_date: instant
+      .nullable()
+      .optional()
+      .describe("When it should be paid back (YYYY-MM-DD, that day in the person's time zone; not before date). The apps remind before it. On update, null removes it and leaving it out keeps it."),
+  }
+  /** `kept` is the stored due date, used when an update leaves `due_date` out (`null` removes it). */
+  const debtDraft = (
+    args: { person: string; direction: z.infer<typeof DebtDirection>; amount: string; currency: string; date: string; note: string; due_date?: string | null | undefined },
+    zone: string,
+    id?: string,
+    kept?: string
+  ) => {
+    const dueDate =
+      args.due_date === undefined ? (kept === undefined ? undefined : new Date(kept)) : args.due_date === null ? undefined : instantIn(args.due_date, zone)
+    return {
+      ...(id ? { id } : {}),
+      person: args.person,
+      direction: args.direction,
+      amount: args.amount,
+      currency: args.currency.toUpperCase(),
+      date: instantIn(args.date, zone),
+      note: args.note,
+      ...(dueDate === undefined ? {} : { dueDate }),
+    }
+  }
 
   tool(
     "create_personal_debt",
@@ -676,12 +698,12 @@ export function registerManageTools(server: McpServer, options: { manage: Manage
 
   tool(
     "update_personal_debt",
-    { title: "Edit a personal debt", description: "Changes a debt; its repayments stay. Send every field (read it first with list_personal_debts).", annotations: WRITE },
+    { title: "Edit a personal debt", description: "Changes a debt; its repayments stay. Send every field (read it first with list_personal_debts), except due_date, which is kept when left out.", annotations: WRITE },
     { debt_id: ref("From list_personal_debts"), ...debt },
     (args) => JSON.stringify(args),
     async (store, args) => {
-      find(store.personalDebts, args.debt_id, "Debt")
-      const saved = await savePersonalDebt(store, debtDraft(args, store.timeZone, args.debt_id))
+      const current = find(store.personalDebts, args.debt_id, "Debt")
+      const saved = await savePersonalDebt(store, debtDraft(args, store.timeZone, args.debt_id, current.dueDate))
       return { debt_id: saved.id }
     }
   )

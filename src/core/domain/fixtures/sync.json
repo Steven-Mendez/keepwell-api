@@ -227,6 +227,55 @@
       }
     },
     {
+      "name": "personal debt with a due date",
+      "event": {
+        "event_id": "99999999-9999-4999-8999-999999999999",
+        "entity": "personalDebt",
+        "entity_id": "55555555-5555-4555-8555-555555555555",
+        "operation": "update",
+        "payload": {
+          "id": "55555555-5555-4555-8555-555555555555",
+          "person": "Ana",
+          "direction": "theyOweMe",
+          "amount": "12",
+          "currency": "USD",
+          "date": "2026-09-01T12:00:00.000Z",
+          "note": null,
+          "settled_at": null,
+          "transaction_id": null,
+          "due_date": "2026-11-15T06:00:00.000Z",
+          "created_at": "2026-11-01T18:00:00.000Z",
+          "updated_at": "2026-11-01T18:00:00.000Z",
+          "deleted_at": null
+        },
+        "created_at": "2026-11-01T18:00:00.000Z"
+      }
+    },
+    {
+      "name": "personal debt from an app older than its due date",
+      "event": {
+        "event_id": "99999999-9999-4999-8999-999999999999",
+        "entity": "personalDebt",
+        "entity_id": "55555555-5555-4555-8555-555555555555",
+        "operation": "update",
+        "payload": {
+          "id": "55555555-5555-4555-8555-555555555555",
+          "person": "Ana",
+          "direction": "theyOweMe",
+          "amount": "12",
+          "currency": "USD",
+          "date": "2026-09-01T12:00:00.000Z",
+          "note": null,
+          "settled_at": null,
+          "transaction_id": null,
+          "created_at": "2026-11-01T18:00:00.000Z",
+          "updated_at": "2026-11-01T18:00:00.000Z",
+          "deleted_at": null
+        },
+        "created_at": "2026-11-01T18:00:00.000Z"
+      }
+    },
+    {
       "name": "server columns are dropped, not trusted",
       "event": {
         "event_id": "99999999-9999-4999-8999-999999999999",
@@ -518,6 +567,32 @@
           "payment_reminder_days_before": 3,
           "has_completed_onboarding": true,
           "time_zone": "../etc/passwd",
+          "created_at": "2026-11-01T18:00:00.000Z",
+          "updated_at": "2026-11-01T18:00:00.000Z",
+          "deleted_at": null
+        },
+        "created_at": "2026-11-01T18:00:00.000Z"
+      }
+    },
+    {
+      "name": "personal debt with a due date that isn't a date",
+      "reason": "a due date is an ISO date-time",
+      "event": {
+        "event_id": "99999999-9999-4999-8999-999999999999",
+        "entity": "personalDebt",
+        "entity_id": "55555555-5555-4555-8555-555555555555",
+        "operation": "update",
+        "payload": {
+          "id": "55555555-5555-4555-8555-555555555555",
+          "person": "Ana",
+          "direction": "theyOweMe",
+          "amount": "12",
+          "currency": "USD",
+          "date": "2026-09-01T12:00:00.000Z",
+          "note": null,
+          "settled_at": null,
+          "transaction_id": null,
+          "due_date": "next month",
           "created_at": "2026-11-01T18:00:00.000Z",
           "updated_at": "2026-11-01T18:00:00.000Z",
           "deleted_at": null
