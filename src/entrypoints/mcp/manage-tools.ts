@@ -488,10 +488,11 @@ export function registerManageTools(server: McpServer, options: { manage: Manage
       const draft = draftFrom(existing)
       const accountId = args.account_id ?? (draft.source?.type === "account" ? draft.source.id : store.cards.find((card) => card.id === draft.source?.id)?.accountId ?? "")
       const cardId = args.card_id === null ? undefined : (args.card_id ?? (args.account_id === undefined && draft.source?.type === "card" ? draft.source.id : undefined))
-      const { categoryId: _c, destinationAccountId: _d, source: _s, actualDebitedPrincipal: _a, ...rest } = draft
+      const { categoryId: _c, destinationAccountId: _d, source: _s, actualDebitedPrincipal: _a, debitedFor: _f, ...rest } = draft
       const currency = args.currency ? args.currency.toUpperCase() : draft.currency
-      // The bank's charge was for the old amount and currency: a change drops it unless given again.
-      const moved = (args.amount !== undefined && !dec(args.amount).eq(draft.amount)) || currency !== draft.currency
+      // The bank's charge was for the old amount, currency and account: a change drops it unless given
+      // again, as the domain's applicableDebit does for an edit in the apps.
+      const moved = (args.amount !== undefined && !dec(args.amount).eq(draft.amount)) || currency !== draft.currency || accountId !== existing.accountId
       // An edit keeps the rate it was recorded with, so its principal is the one that counts (as in the domain).
       const debited =
         args.actual_debited === null

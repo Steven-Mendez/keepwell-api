@@ -329,6 +329,12 @@ describe("MCP manage tools", () => {
     expect((await tool("update_transaction", { transaction_id: call.id, actual_debited: null })).isError).toBeFalsy()
     expect((await stored(call.id)).actual_debited_principal).toBeNull()
     expect((await tool("update_transaction", { transaction_id: call.id, actual_debited: "101" })).isError).toBeFalsy()
+    // Moving it to another account drops it too, unless given again.
+    const otherId = data<{ result: { account_id: string } }>(await tool("create_account", { id: randomUUID(), kind: "cash", name: "Billetera", balance: "0", currency: "USD" })).result.account_id
+    expect((await tool("update_transaction", { transaction_id: call.id, account_id: otherId })).isError).toBeFalsy()
+    expect((await stored(call.id)).actual_debited_principal).toBeNull()
+    expect((await tool("update_transaction", { transaction_id: call.id, account_id: accountId, actual_debited: "101" })).isError).toBeFalsy()
+    expect((await stored(call.id)).actual_debited_principal).toBe("101")
     // A change to the principal currency drops it; asking to keep one there is refused.
     const toUsd = await tool("update_transaction", { transaction_id: call.id, currency: "USD", amount: "101", actual_debited: "101" })
     expect(toUsd.isError).toBe(true)
