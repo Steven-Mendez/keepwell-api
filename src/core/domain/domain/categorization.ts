@@ -1,5 +1,5 @@
 import { newID } from "../schema/id"
-import type { CategorizationRule, Transaction, TransactionCategory, TransactionKind } from "../schema"
+import type { CategorizationRule, Merchant, Transaction, TransactionCategory, TransactionKind } from "../schema"
 import { MAX_RULE_MATCH_LENGTH, OTHER_EXPENSE_ID, OTHER_INCOME_ID } from "../schema"
 
 import { DomainError } from "./errors"
@@ -38,11 +38,17 @@ export function pastMatches(rule: CategorizationRule, transactions: readonly Tra
 
 /**
  * The movement in the rule's category, with the rule's tags after its own and the rule's merchant
- * when it names none yet (one the person picked stays).
+ * when it names none yet (one the person picked stays). The rule's merchant is set only when it is
+ * one of `merchants` (the alive ones: a rule may still name one deleted elsewhere until the repair
+ * after a pull) and `mayLinkMerchant` (`false` when the person cleared the business on purpose: a
+ * draft's `merchantId: null` is never overridden by a rule).
  */
-export function applyingRule(rule: CategorizationRule, transaction: Transaction): Transaction {
+export function applyingRule(rule: CategorizationRule, transaction: Transaction, merchants: readonly Pick<Merchant, "id">[], mayLinkMerchant = true): Transaction {
   const { tags: _previous, ...rest } = transaction
-  const merchant = rule.merchantId !== undefined && transaction.merchantId === undefined ? { merchantId: rule.merchantId } : {}
+  const ruleMerchant = rule.merchantId
+  const links =
+    mayLinkMerchant && ruleMerchant !== undefined && transaction.merchantId === undefined && merchants.some((merchant) => merchant.id === ruleMerchant)
+  const merchant = links ? { merchantId: ruleMerchant } : {}
   const applied: Transaction = { ...rest, categoryId: rule.categoryId, ...merchant, ...tagsField(mergeTags(transaction.tags ?? [], rule.tags ?? [])) }
   // The platform is never the business itself.
   if (applied.viaMerchantId !== undefined && applied.viaMerchantId === applied.merchantId) delete applied.viaMerchantId
@@ -59,9 +65,9 @@ export function categorizingRule(
 }
 
 /** A new uncategorized movement takes the first rule that matches; otherwise it stays as it is. */
-export function autoCategorized(transaction: Transaction, rules: readonly CategorizationRule[]): Transaction {
+export function autoCategorized(transaction: Transaction, rules: readonly CategorizationRule[], merchants: readonly Pick<Merchant, "id">[]): Transaction {
   const rule = categorizingRule(transaction, rules)
-  return rule ? applyingRule(rule, transaction) : transaction
+  return rule ? applyingRule(rule, transaction, merchants) : transaction
 }
 
 /** The rules saving may apply: those whose category still exists with the rule's kind, in the same order. */
@@ -120,7 +126,8 @@ export async function pastMatchCount(store: LedgerStore, rule: CategorizationRul
 export async function applyRuleToPast(store: LedgerStore, rule: CategorizationRule): Promise<number> {
   return store.atomically(async () => {
     const matches = pastMatches(rule, await store.fetchTransactions())
-    for (const transaction of matches) await store.saveTransaction(applyingRule(rule, transaction))
+    const merchants = await store.fetchMerchants()
+    for (const transaction of matches) await store.saveTransaction(applyingRule(rule, transaction, merchants))
     return matches.length
   })
 }

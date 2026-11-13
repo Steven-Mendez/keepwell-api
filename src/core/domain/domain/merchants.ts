@@ -101,18 +101,29 @@ async function existingMerchant(store: LedgerStore, id: string): Promise<Merchan
   return merchant
 }
 
-/** The merchant as saving stores it; throws for a blank name, a domain that isn't one or an unknown category. */
+/** Whether a merchant's default category is one that exists, and isn't for transfers. */
+export function isLiveDefaultCategory(id: string | undefined, categories: readonly TransactionCategory[]): id is string {
+  return id !== undefined && categories.some((category) => category.id === id && category.kind !== "transfer")
+}
+
+/**
+ * The merchant as saving stores it; throws for a blank name, a domain that isn't one or a newly chosen
+ * category that doesn't exist. A default category that no longer exists (deleted, or not pulled yet)
+ * but is the one `current` already had is dropped instead, so the merchant can still be saved.
+ */
 export function validatedMerchant(draft: MerchantDraft & { id: string }, categories: readonly TransactionCategory[], current?: Merchant): Merchant {
   const name = merchantName(draft.name)
   if (name === "") throw DomainError.missingName()
   const domain = normalizedDomain(draft.domain)
   if (domain === undefined && (draft.domain ?? "").trim() !== "") throw DomainError.corruptedData("domain")
   const brandId = draft.brandId?.trim() || undefined
-  const defaultCategoryId = draft.defaultCategoryId
+  let defaultCategoryId = draft.defaultCategoryId
   if (defaultCategoryId !== undefined) {
     const category = categories.find((candidate) => candidate.id === defaultCategoryId)
-    if (!category) throw DomainError.notFound(defaultCategoryId)
-    if (category.kind === "transfer") throw DomainError.unsupportedTransactionKind("transfer")
+    if (!category) {
+      if (defaultCategoryId !== current?.defaultCategoryId) throw DomainError.notFound(defaultCategoryId)
+      defaultCategoryId = undefined
+    } else if (category.kind === "transfer") throw DomainError.unsupportedTransactionKind("transfer")
   }
   return {
     id: draft.id,
@@ -215,17 +226,22 @@ export async function deleteMerchant(store: LedgerStore, id: string): Promise<vo
 /**
  * Merges `fromId` into `intoId`, all or nothing: whatever named the first (as business or as
  * platform) names the second, which takes the first's domain, brand and default category where it
- * has none, and is a platform if either was. The first is deleted. Returns the merged merchant.
+ * has none (a default category only when it still exists, and also over one of the second's that no
+ * longer does), and is a platform if either was. The first is deleted. Returns the merged merchant.
  */
 export async function mergeMerchants(store: LedgerStore, fromId: string, intoId: string): Promise<Merchant> {
   const from = await existingMerchant(store, fromId)
   const into = await existingMerchant(store, intoId)
   if (from.id === into.id) return into
+  const categories = await store.fetchCategories()
+  // Only a default category that still exists is carried over, and it fills one the target lacks or
+  // whose own no longer exists.
+  const takesCategory = !isLiveDefaultCategory(into.defaultCategoryId, categories) && isLiveDefaultCategory(from.defaultCategoryId, categories)
   const merged: Merchant = {
     ...into,
     ...(into.domain === undefined && from.domain !== undefined ? { domain: from.domain } : {}),
     ...(into.brandId === undefined && from.brandId !== undefined ? { brandId: from.brandId } : {}),
-    ...(into.defaultCategoryId === undefined && from.defaultCategoryId !== undefined ? { defaultCategoryId: from.defaultCategoryId } : {}),
+    ...(takesCategory ? { defaultCategoryId: from.defaultCategoryId } : {}),
     isPlatform: into.isPlatform || from.isPlatform,
   }
   await store.atomically(async () => {
@@ -241,6 +257,10 @@ export async function mergeMerchants(store: LedgerStore, fromId: string, intoId:
  * to a merchant before it heard of the merchant's deletion brings the deleted id back. Whatever still
  * names one of `deletedMerchantIds` (the tombstones) names no merchant now, as `deleteMerchant` did;
  * with nothing to repair nothing is written. Returns how many records changed.
+ *
+ * Known limitation: a tombstone doesn't say whether the merchant was deleted or merged into another,
+ * so a link made offline to a merchant that was merged elsewhere is removed here, not moved to the
+ * merge target. Carrying the target would need a wire field (a redirect on the tombstone).
  */
 export async function unlinkDeletedMerchants(store: LedgerStore, deletedMerchantIds: ReadonlySet<string>): Promise<number> {
   if (deletedMerchantIds.size === 0) return 0

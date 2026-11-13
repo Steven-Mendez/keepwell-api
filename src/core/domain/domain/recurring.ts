@@ -269,7 +269,7 @@ export interface RecurringRuleDraft {
   note: string
   /** Left out keeps an edited rule's tags as they were. */
   tags?: string[]
-  /** Left out keeps an edited rule's business; `null` removes it (as on a movement's draft). */
+  /** Left out keeps an edited rule's business; `null` removes it (as on a movement's draft). A transfer drops both. */
   merchantId?: string | null
   viaMerchantId?: string | null
 }
@@ -327,7 +327,8 @@ export async function saveRecurringRule(store: LedgerStore, draft: RecurringRule
     ...(note === "" ? {} : { note }),
     ...tagsField(draft.tags ?? existing?.tags),
     ...(existing?.source ? { source: existing.source } : {}),
-    ...merchantLinks(draft, context.merchants, existing),
+    // A transfer names no business or platform, as on a movement (`categorizedTransaction`).
+    ...(draft.kind === "transfer" ? {} : merchantLinks(draft, context.merchants, existing)),
   }
   checkRecurringRule(rule, context)
   await store.saveRecurringRule(rule)

@@ -104,8 +104,9 @@ export interface TransactionDraft {
   importedId?: string
   /**
    * The business it was with. Absent keeps the edited movement's (an editor or a client that doesn't
-   * know merchants never unlinks one); `null` removes it. A new movement without one, and no category,
-   * takes the merchant's default category.
+   * know merchants never unlinks one); `null` removes it, and no categorization rule sets one then. A
+   * new movement without a category that no rule matches takes the merchant's default category. A
+   * transfer never names one: its links are dropped whatever the draft says.
    */
   merchantId?: string | null
   /** The platform it went through, like `merchantId`. Never the business itself. */
@@ -185,7 +186,8 @@ export function validatedTransaction(draft: TransactionDraft, context: Transacti
 /**
  * `validatedTransaction`, plus the categorization rule that chose its category. Only a new movement
  * goes through the rules: one without a category, or in "Other" of its kind, takes the first rule
- * that matches; a new one without a category and no matching rule goes to "Other". An edit never.
+ * that matches; a new one without a category and no matching rule takes its merchant's default
+ * category, else goes to "Other". An edit never.
  */
 export function categorizedTransaction(
   draft: TransactionDraft,
@@ -199,10 +201,13 @@ export function categorizedTransaction(
   const accountId = draft.source ? accountIdFor(context, draft.source) : undefined
   if (!draft.source || !accountId) throw DomainError.notFound("source")
   const isNew = existing === undefined
-  const links = merchantLinks(draft, context.merchants, existing)
-  const suggested = isNew && draft.categoryId === undefined ? merchantCategory(context.merchants.find((merchant) => merchant.id === links.merchantId), draft.kind, context.categories) : undefined
+  // A transfer is between the person's own accounts: it names no business or platform, and turning
+  // an expense or income into one drops the links it had.
+  const links = draft.kind === "transfer" ? {} : merchantLinks(draft, context.merchants, existing)
+  // A new one without a category starts in "Other": a matching rule decides first, and only when
+  // none matches does the merchant's default category (below) take its place.
   const categoryId =
-    draft.kind === "transfer" || draft.categoryId !== undefined || !isNew ? draft.categoryId : (suggested ?? (draft.kind === "income" ? OTHER_INCOME_ID : OTHER_EXPENSE_ID))
+    draft.kind === "transfer" || draft.categoryId !== undefined || !isNew ? draft.categoryId : draft.kind === "income" ? OTHER_INCOME_ID : OTHER_EXPENSE_ID
   if (draft.kind === "transfer") {
     const destination = draft.destinationAccountId
     if (!destination || destination === accountId || !context.accounts.some((account) => account.id === destination)) {
@@ -242,7 +247,8 @@ export function categorizedTransaction(
   }
   // The rule reads the text as typed, before the safety net below fills in a category's name.
   const rule = isNew ? categorizingRule(built, context.rules) : undefined
-  const transaction = rule ? applyingRule(rule, built) : built
+  // A business the draft cleared (`null`) stays cleared, whatever the rule names.
+  const transaction = rule ? applyingRule(rule, built, context.merchants, draft.merchantId !== null) : withMerchantCategory(built, draft, context, isNew)
   if (description === "") {
     const category = context.categories.find((candidate) => candidate.id === transaction.categoryId)
     // Safety net only: the flow fills a localized description before saving.
@@ -253,13 +259,34 @@ export function categorizedTransaction(
 }
 
 /**
+ * A new movement the draft left without a category, that no rule categorized: its merchant's default
+ * category (of its kind), if it has one. Rules come first (`categorizedTransaction`).
+ */
+function withMerchantCategory(built: Transaction, draft: TransactionDraft, context: TransactionContext, isNew: boolean): Transaction {
+  if (!isNew || draft.categoryId !== undefined || built.merchantId === undefined) return built
+  const suggested = merchantCategory(
+    context.merchants.find((merchant) => merchant.id === built.merchantId),
+    built.kind,
+    context.categories,
+  )
+  return suggested === undefined ? built : { ...built, categoryId: suggested }
+}
+
+/**
  * The merchant links a draft saves: the edited movement's where the draft leaves them out, none where
- * it says `null`, only merchants that exist, and no platform that is the business itself.
+ * it says `null`, and no platform that is the business itself. A newly chosen id is kept only when it
+ * is one of `merchants` (the alive ones; an unknown one is dropped); the id the edited movement
+ * already had stays even when it isn't (a merchant this device hasn't pulled yet), since the person
+ * didn't change it. A link to a deleted merchant is removed by the repair after a pull instead.
  */
 export function merchantLinks(draft: Pick<TransactionDraft, "merchantId" | "viaMerchantId">, merchants: readonly Pick<Merchant, "id">[], existing?: Pick<Transaction, "merchantId" | "viaMerchantId">): Pick<Transaction, "merchantId" | "viaMerchantId"> {
-  const known = (id: string | null | undefined) => (id != null && merchants.some((merchant) => merchant.id === id) ? id : undefined)
-  const merchantId = known(draft.merchantId === undefined ? existing?.merchantId : draft.merchantId)
-  const viaMerchantId = known(draft.viaMerchantId === undefined ? existing?.viaMerchantId : draft.viaMerchantId)
+  const link = (chosen: string | null | undefined, stored: string | undefined) => {
+    const id = chosen === undefined ? stored : chosen
+    if (id == null) return undefined
+    return id === stored || merchants.some((merchant) => merchant.id === id) ? id : undefined
+  }
+  const merchantId = link(draft.merchantId, existing?.merchantId)
+  const viaMerchantId = link(draft.viaMerchantId, existing?.viaMerchantId)
   return {
     ...(merchantId === undefined ? {} : { merchantId }),
     ...(viaMerchantId === undefined || viaMerchantId === merchantId ? {} : { viaMerchantId }),
