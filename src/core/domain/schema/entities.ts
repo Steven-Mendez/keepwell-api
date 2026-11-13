@@ -154,6 +154,10 @@ export const Transaction = z.object({
    * edit keeps it.
    */
   importedId: ImportedId.optional(),
+  /** The business it was with (`Merchant`); absent when nobody said. */
+  merchantId: Id.optional(),
+  /** The platform it went through (Uber Eats delivering from a restaurant, Apple billing an app). */
+  viaMerchantId: Id.optional(),
 })
 export type Transaction = z.infer<typeof Transaction>
 
@@ -198,6 +202,9 @@ export const RecurringRule = z.object({
   /** Copied to each movement it records; left out when there are none. */
   tags: z.array(z.string()).optional(),
   source: RecordSource.optional(),
+  /** Copied to each movement it records, like the category. */
+  merchantId: Id.optional(),
+  viaMerchantId: Id.optional(),
 })
 export type RecurringRule = z.infer<typeof RecurringRule>
 
@@ -216,8 +223,41 @@ export const CategorizationRule = z.object({
   kind: z.enum(["expense", "income"]),
   /** Added to the movement; left out when there are none. */
   tags: z.array(z.string()).optional(),
+  /** The business the movement was with, set when it names none yet. */
+  merchantId: Id.optional(),
 })
 export type CategorizationRule = z.infer<typeof CategorizationRule>
+
+export const MAX_MERCHANT_NAME_LENGTH = 60
+
+/**
+ * A web domain as Brandfetch knows a brand ("subway.com"): lowercase labels of letters, digits and
+ * hyphens, at least one dot, no scheme, path or port.
+ */
+export const MerchantDomain = z
+  .string()
+  .max(253)
+  .regex(/^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z][a-z0-9-]{0,61}[a-z0-9]$/, "Not a domain")
+export type MerchantDomain = z.infer<typeof MerchantDomain>
+
+/**
+ * A business a movement was with ("Subway"), or a platform it went through ("Uber Eats", "Apple").
+ * The person's own list: created by hand, from a brand of the app's table (`brandId`) or from a
+ * brand search (`domain`). Its logo comes from `domain`, else from the brand's.
+ */
+export const Merchant = z.object({
+  id: Id,
+  name: z.string().refine((text) => text.trim() !== "", "Can't be empty"),
+  /** Where its logo comes from. */
+  domain: MerchantDomain.optional(),
+  /** The id of a brand in the app's brand table (`brands.json`) it was created from. */
+  brandId: z.string().min(1).max(64).optional(),
+  /** The category a new movement with this business suggests when it has none yet. */
+  defaultCategoryId: z.string().min(1).max(64).optional(),
+  /** A platform (delivery app, app store) offered first in "via". */
+  isPlatform: z.boolean(),
+})
+export type Merchant = z.infer<typeof Merchant>
 
 /** A goal's deadline: a month, not a day, so it reads the same in every time zone. */
 export const TargetMonth = z.object({

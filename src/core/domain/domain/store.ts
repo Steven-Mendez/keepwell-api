@@ -1,4 +1,4 @@
-import type { Account, Card, CategorizationRule, Loan, PersonalDebt, RecurringRule, SavingsGoal, Settings, Transaction, TransactionCategory } from "../schema"
+import type { Account, Card, CategorizationRule, Loan, Merchant, PersonalDebt, RecurringRule, SavingsGoal, Settings, Transaction, TransactionCategory } from "../schema"
 import { DEFAULT_CATEGORIES, isFallbackCategory, orderedCategories, shippedCategory } from "../schema"
 
 import type { TimeZone } from "./calendar"
@@ -79,6 +79,13 @@ export interface LedgerStore {
   /** Every default back as shipped, deleted ones included; the person's own follow. */
   restoreDefaultCategories(): Promise<void>
 
+  /** Alive merchants (businesses and platforms), in no particular order. */
+  fetchMerchants(): Promise<Merchant[]>
+  /** Inserts or replaces the merchant with the same id. */
+  saveMerchant(merchant: Merchant): Promise<void>
+  /** Soft-deletes; throws `notFound` for a missing or deleted merchant. */
+  deleteMerchant(id: string): Promise<void>
+
   /** `undefined` before onboarding saves the first settings. */
   loadSettings(): Promise<Settings | undefined>
   saveSettings(settings: Settings): Promise<void>
@@ -105,6 +112,7 @@ export class InMemoryStore implements LedgerStore, ProfileStore {
   loans: Loan[]
   personalDebts: PersonalDebt[]
   categorizationRules: CategorizationRule[]
+  merchants: Merchant[]
   /** In stored order; ids in `deletedCategoryIds` are tombstones. */
   categories: TransactionCategory[]
   deletedCategoryIds = new Set<string>()
@@ -113,7 +121,7 @@ export class InMemoryStore implements LedgerStore, ProfileStore {
 
   constructor(
     readonly timeZone: TimeZone,
-    seed: Partial<{ accounts: Account[]; cards: Card[]; transactions: Transaction[]; recurringRules: RecurringRule[]; savingsGoals: SavingsGoal[]; loans: Loan[]; personalDebts: PersonalDebt[]; categorizationRules: CategorizationRule[]; categories: TransactionCategory[]; settings: Settings }> = {},
+    seed: Partial<{ accounts: Account[]; cards: Card[]; transactions: Transaction[]; recurringRules: RecurringRule[]; savingsGoals: SavingsGoal[]; loans: Loan[]; personalDebts: PersonalDebt[]; categorizationRules: CategorizationRule[]; categories: TransactionCategory[]; merchants: Merchant[]; settings: Settings }> = {},
   ) {
     this.accounts = [...(seed.accounts ?? [])]
     this.cards = [...(seed.cards ?? [])]
@@ -124,6 +132,7 @@ export class InMemoryStore implements LedgerStore, ProfileStore {
     this.personalDebts = [...(seed.personalDebts ?? [])]
     this.categorizationRules = [...(seed.categorizationRules ?? [])]
     this.categories = [...(seed.categories ?? DEFAULT_CATEGORIES)]
+    this.merchants = [...(seed.merchants ?? [])]
     this.settings = seed.settings
   }
 
@@ -251,6 +260,17 @@ export class InMemoryStore implements LedgerStore, ProfileStore {
     this.categories = [...DEFAULT_CATEGORIES, ...this.categories.filter((category) => !shippedCategory(category.id))]
   }
 
+  async fetchMerchants() {
+    return [...this.merchants]
+  }
+  async saveMerchant(merchant: Merchant) {
+    this.merchants = upsert(this.merchants, merchant)
+  }
+  async deleteMerchant(id: string) {
+    if (!this.merchants.some((merchant) => merchant.id === id)) throw DomainError.notFound(id)
+    this.merchants = this.merchants.filter((merchant) => merchant.id !== id)
+  }
+
   async loadSettings() {
     return this.settings
   }
@@ -259,7 +279,7 @@ export class InMemoryStore implements LedgerStore, ProfileStore {
   }
 
   async atomically<T>(work: () => Promise<T>): Promise<T> {
-    const snapshot = { accounts: this.accounts, cards: this.cards, transactions: this.transactions, recurringRules: this.recurringRules, savingsGoals: this.savingsGoals, loans: this.loans, personalDebts: this.personalDebts, categorizationRules: this.categorizationRules, categories: this.categories, settings: this.settings }
+    const snapshot = { accounts: this.accounts, cards: this.cards, transactions: this.transactions, recurringRules: this.recurringRules, savingsGoals: this.savingsGoals, loans: this.loans, personalDebts: this.personalDebts, categorizationRules: this.categorizationRules, categories: this.categories, merchants: this.merchants, settings: this.settings }
     try {
       return await work()
     } catch (error) {

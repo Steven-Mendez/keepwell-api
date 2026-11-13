@@ -1,10 +1,11 @@
-import type { Account, Card, CategorizationRule, CurrencySettings, ExchangeRate, Transaction, TransactionCategory, TransactionKind } from "../schema"
+import type { Account, Card, CategorizationRule, CurrencySettings, ExchangeRate, Merchant, Transaction, TransactionCategory, TransactionKind } from "../schema"
 import { OTHER_EXPENSE_ID, OTHER_INCOME_ID } from "../schema"
 
 import { Decimal, ZERO, decimalText } from "./decimal"
 import { yearMonthContaining, type TimeZone } from "./calendar"
 import { applyingRule, categorizingRule, usableRules } from "./categorization"
 import { DomainError } from "./errors"
+import { merchantCategory } from "./merchants"
 import { INITIAL_CURRENCIES, settingsRate, type Money } from "./money"
 import { balanceOf, checkAmounts, isConfirmed, isOpen, monthlySummary } from "./rules"
 import type { LedgerStore } from "./store"
@@ -101,6 +102,14 @@ export interface TransactionDraft {
   tags?: string[]
   /** The statement line a new movement is imported from (`importTransactions`); an edit keeps the one it had. */
   importedId?: string
+  /**
+   * The business it was with. Absent keeps the edited movement's (an editor or a client that doesn't
+   * know merchants never unlinks one); `null` removes it. A new movement without one, and no category,
+   * takes the merchant's default category.
+   */
+  merchantId?: string | null
+  /** The platform it went through, like `merchantId`. Never the business itself. */
+  viaMerchantId?: string | null
 }
 
 export interface TransactionContext {
@@ -117,6 +126,8 @@ export interface TransactionContext {
   zone: TimeZone
   /** Categorization rules in the person's order, only those whose category exists with their kind. */
   rules: CategorizationRule[]
+  /** Alive merchants; a movement may only name one of these. */
+  merchants: Merchant[]
 }
 
 export function accountIdFor(context: Pick<TransactionContext, "cards">, source: PaymentSource): string | undefined {
@@ -133,12 +144,13 @@ export function lastUsedSource(context: TransactionContext): PaymentSource | und
 
 export async function getTransactionContext(store: LedgerStore): Promise<TransactionContext> {
   const currencies = (await store.loadSettings())?.currencies ?? INITIAL_CURRENCIES
-  const [accounts, cards, transactions, categories, allRules] = await Promise.all([
+  const [accounts, cards, transactions, categories, allRules, merchants] = await Promise.all([
     store.fetchAccounts(),
     store.fetchCards(),
     store.fetchTransactions(),
     store.fetchCategories(),
     store.fetchCategorizationRules(),
+    store.fetchMerchants(),
   ])
   const zone = store.timeZone
   const balances = new Map(accounts.map((account) => [account.id, balanceOf(account, transactions, zone)]))
@@ -151,7 +163,7 @@ export async function getTransactionContext(store: LedgerStore): Promise<Transac
     if (!previous || date > previous) lastUsed.set(key, date)
     if (movement.categoryId) categoryUsage.set(movement.categoryId, (categoryUsage.get(movement.categoryId) ?? 0) + 1)
   }
-  return { currencies, categories, accounts, cards, balances, lastUsed, categoryUsage, transactions, zone, rules: usableRules(allRules, categories) }
+  return { currencies, categories, accounts, cards, balances, lastUsed, categoryUsage, transactions, zone, rules: usableRules(allRules, categories), merchants }
 }
 
 /**
@@ -187,8 +199,10 @@ export function categorizedTransaction(
   const accountId = draft.source ? accountIdFor(context, draft.source) : undefined
   if (!draft.source || !accountId) throw DomainError.notFound("source")
   const isNew = existing === undefined
+  const links = merchantLinks(draft, context.merchants, existing)
+  const suggested = isNew && draft.categoryId === undefined ? merchantCategory(context.merchants.find((merchant) => merchant.id === links.merchantId), draft.kind, context.categories) : undefined
   const categoryId =
-    draft.kind === "transfer" || draft.categoryId !== undefined || !isNew ? draft.categoryId : draft.kind === "income" ? OTHER_INCOME_ID : OTHER_EXPENSE_ID
+    draft.kind === "transfer" || draft.categoryId !== undefined || !isNew ? draft.categoryId : (suggested ?? (draft.kind === "income" ? OTHER_INCOME_ID : OTHER_EXPENSE_ID))
   if (draft.kind === "transfer") {
     const destination = draft.destinationAccountId
     if (!destination || destination === accountId || !context.accounts.some((account) => account.id === destination)) {
@@ -224,6 +238,7 @@ export function categorizedTransaction(
     ...(recurringId === undefined ? {} : { recurringId }),
     ...tagsField(draft.tags),
     ...(importedId === undefined ? {} : { importedId }),
+    ...links,
   }
   // The rule reads the text as typed, before the safety net below fills in a category's name.
   const rule = isNew ? categorizingRule(built, context.rules) : undefined
@@ -235,6 +250,20 @@ export function categorizedTransaction(
   }
   checkClosedAccounts(transaction, context.accounts, existing)
   return rule ? { transaction, rule } : { transaction }
+}
+
+/**
+ * The merchant links a draft saves: the edited movement's where the draft leaves them out, none where
+ * it says `null`, only merchants that exist, and no platform that is the business itself.
+ */
+export function merchantLinks(draft: Pick<TransactionDraft, "merchantId" | "viaMerchantId">, merchants: readonly Pick<Merchant, "id">[], existing?: Pick<Transaction, "merchantId" | "viaMerchantId">): Pick<Transaction, "merchantId" | "viaMerchantId"> {
+  const known = (id: string | null | undefined) => (id != null && merchants.some((merchant) => merchant.id === id) ? id : undefined)
+  const merchantId = known(draft.merchantId === undefined ? existing?.merchantId : draft.merchantId)
+  const viaMerchantId = known(draft.viaMerchantId === undefined ? existing?.viaMerchantId : draft.viaMerchantId)
+  return {
+    ...(merchantId === undefined ? {} : { merchantId }),
+    ...(viaMerchantId === undefined || viaMerchantId === merchantId ? {} : { viaMerchantId }),
+  }
 }
 
 /**
@@ -451,5 +480,7 @@ export function draftFrom(transaction: Transaction): TransactionDraft {
     note: transaction.note ?? "",
     isDraft: transaction.status === "planned",
     ...(transaction.tags ? { tags: [...transaction.tags] } : {}),
+    ...(transaction.merchantId ? { merchantId: transaction.merchantId } : {}),
+    ...(transaction.viaMerchantId ? { viaMerchantId: transaction.viaMerchantId } : {}),
   }
 }

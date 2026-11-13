@@ -1,6 +1,6 @@
 import { z } from "zod"
 
-import { CardColor, CardKind, CardNetwork, DebtDirection, DebtMode, ImportedId, LoanFrequency, RecurringFrequency, AccountKind } from "./entities"
+import { CardColor, CardKind, CardNetwork, DebtDirection, DebtMode, ImportedId, LoanFrequency, MerchantDomain, RecurringFrequency, AccountKind } from "./entities"
 import { CurrencyCode, DecimalString, Id, IsoDateTime, PositiveDecimalString, RecordSource, TimeZoneId, TransactionKind, TransactionStatus } from "./primitives"
 
 // The sync wire format (ADR 0005): each event carries one row as stored, in snake_case, the same
@@ -25,6 +25,7 @@ export const SYNC_ENTITIES = [
   "categorizationRule",
   "settings",
   "notificationState",
+  "merchant",
 ] as const
 export const SyncEntity = z.enum(SYNC_ENTITIES)
 export type SyncEntity = z.infer<typeof SyncEntity>
@@ -41,6 +42,17 @@ const Audit = {
 const MoneyColumn = z.object({ amount: DecimalString, currency: CurrencyCode })
 const Day = z.number().int().min(1).max(31)
 const nullable = <T extends z.ZodType>(schema: T) => schema.nullable()
+
+/**
+ * The business a movement or recurring rule was with and the platform it went through. Optional, not
+ * only nullable: a row from an app older than merchants lacks the keys, and the server then keeps
+ * what it has (`decide` in keepwell-api), so such an app can edit the movement without unlinking
+ * it. Newer apps always send both, null for none, so removing one reaches the other devices.
+ */
+const MerchantColumns = {
+  merchant_id: Id.nullable().optional(),
+  via_merchant_id: Id.nullable().optional(),
+}
 
 export const AccountWire = z.object({
   id: Id,
@@ -117,6 +129,7 @@ export const TransactionWire = z.object({
    * keepwell-api), so an app that doesn't know the field can edit an imported movement.
    */
   imported_id: ImportedId.nullable().optional(),
+  ...MerchantColumns,
   ...Audit,
 })
 
@@ -141,6 +154,7 @@ export const RecurringRuleWire = z.object({
   note: z.string().nullable(),
   tags: z.array(z.string()),
   source: RecordSource.optional(),
+  ...MerchantColumns,
   ...Audit,
 })
 
@@ -215,6 +229,19 @@ export const CategorizationRuleWire = z.object({
   kind: z.enum(["expense", "income"]),
   tags: z.array(z.string()),
   sort_index: z.number().int(),
+  /** Optional, not only nullable, for apps older than merchants, as on a movement. */
+  merchant_id: Id.nullable().optional(),
+  ...Audit,
+})
+
+/** A business or platform (`Merchant`). */
+export const MerchantWire = z.object({
+  id: Id,
+  name: z.string().refine((text) => text.trim() !== "", "Can't be empty"),
+  domain: MerchantDomain.nullable(),
+  brand_id: z.string().min(1).max(64).nullable(),
+  default_category_id: z.string().min(1).max(64).nullable(),
+  is_platform: z.boolean(),
   ...Audit,
 })
 
@@ -264,6 +291,7 @@ export const SYNC_WIRE = {
   categorizationRule: CategorizationRuleWire,
   settings: SettingsWire,
   notificationState: NotificationStateWire,
+  merchant: MerchantWire,
 } as const satisfies Record<SyncEntity, z.ZodType>
 
 export type SyncRow<E extends SyncEntity = SyncEntity> = z.infer<(typeof SYNC_WIRE)[E]>

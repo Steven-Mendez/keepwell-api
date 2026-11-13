@@ -36,10 +36,17 @@ export function pastMatches(rule: CategorizationRule, transactions: readonly Tra
   )
 }
 
-/** The movement in the rule's category, with the rule's tags after its own. */
+/**
+ * The movement in the rule's category, with the rule's tags after its own and the rule's merchant
+ * when it names none yet (one the person picked stays).
+ */
 export function applyingRule(rule: CategorizationRule, transaction: Transaction): Transaction {
   const { tags: _previous, ...rest } = transaction
-  return { ...rest, categoryId: rule.categoryId, ...tagsField(mergeTags(transaction.tags ?? [], rule.tags ?? [])) }
+  const merchant = rule.merchantId !== undefined && transaction.merchantId === undefined ? { merchantId: rule.merchantId } : {}
+  const applied: Transaction = { ...rest, categoryId: rule.categoryId, ...merchant, ...tagsField(mergeTags(transaction.tags ?? [], rule.tags ?? [])) }
+  // The platform is never the business itself.
+  if (applied.viaMerchantId !== undefined && applied.viaMerchantId === applied.merchantId) delete applied.viaMerchantId
+  return applied
 }
 
 /** The rule that would categorize this movement: none unless it is uncategorized, otherwise the first that matches. */
@@ -69,6 +76,8 @@ export interface CategorizationRuleDraft {
   categoryId: string
   kind: TransactionKind
   tags?: string[]
+  /** The business the rule sets on the movements it matches; absent for none. */
+  merchantId?: string
 }
 
 /** The rule as saving stores it: text trimmed and cut, expense or income only, a category of that kind that exists. */
@@ -79,7 +88,7 @@ export function validatedRule(draft: CategorizationRuleDraft & { id: string }, c
   const category = categories.find((candidate) => candidate.id === draft.categoryId)
   if (!category) throw DomainError.notFound(draft.categoryId)
   if (category.kind !== draft.kind) throw DomainError.categoryKindMismatch(draft.kind, category.kind)
-  return { id: draft.id, match, categoryId: draft.categoryId, kind: draft.kind, ...tagsField(draft.tags) }
+  return { id: draft.id, match, categoryId: draft.categoryId, kind: draft.kind, ...tagsField(draft.tags), ...(draft.merchantId === undefined ? {} : { merchantId: draft.merchantId }) }
 }
 
 export async function fetchCategorizationRules(store: LedgerStore): Promise<CategorizationRule[]> {
@@ -89,6 +98,7 @@ export async function fetchCategorizationRules(store: LedgerStore): Promise<Cate
 export async function saveCategorizationRule(store: LedgerStore, draft: CategorizationRuleDraft): Promise<CategorizationRule> {
   if (draft.id !== undefined && !(await store.fetchCategorizationRules()).some((rule) => rule.id === draft.id)) throw DomainError.notFound(draft.id)
   const rule = validatedRule({ ...draft, id: draft.id ?? newID() }, await store.fetchCategories())
+  if (rule.merchantId !== undefined && !(await store.fetchMerchants()).some((merchant) => merchant.id === rule.merchantId)) throw DomainError.notFound(rule.merchantId)
   await store.saveCategorizationRule(rule)
   return rule
 }
