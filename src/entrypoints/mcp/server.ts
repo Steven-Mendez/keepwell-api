@@ -93,7 +93,7 @@ export function createMcpServer(context: McpContext): McpServer {
   )
   tool(
     "search_transactions",
-    { title: "Search movements", description: "Movements, newest first, filtered by date (YYYY-MM-DD), account, category, kind, currency, status, amount range (min_amount/max_amount, inclusive, in the principal currency at each movement's own recorded rate), tags (movements carrying all of them), recurring rule (recurring_rule_id, subscriptions_only) or text in the description, note or tags. Paged with cursor." },
+    { title: "Search movements", description: "Movements, newest first, filtered by date (YYYY-MM-DD), account, category, kind, currency, status, amount range (min_amount/max_amount, inclusive, in the principal currency at each movement's own recorded rate), tags (movements carrying all of them), recurring rule (recurring_rule_id, subscriptions_only) or text in the description, note or tags. Paged with cursor. actual_debited, when not null, is what the bank charged in the principal currency for a movement in the second currency, and is what balances count." },
     {
       from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
       to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),

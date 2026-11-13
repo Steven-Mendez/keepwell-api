@@ -1,6 +1,7 @@
 import { categorizedTransaction, checkRecurringRule, dec, DomainError, firstNextDate, getTransactionContext, InMemoryStore, type Ledger } from "../domain/domain"
 import { uuidV5, type CategorizationRule, type RecurringFrequency, type RecurringRule, type Transaction } from "../domain/schema"
 import { recurringRuleToWire, transactionToWire } from "../ledger/wire-to-domain"
+import { actualDebitedOf, checkedActualDebited } from "../mcp/actual-debited"
 import { categoryOutcome } from "../mcp/category-outcome"
 import { instantIn } from "../mcp/dates"
 import type { McpWriteCounter } from "../ports/mcp-writes"
@@ -39,6 +40,8 @@ export interface PendingTransactionInput {
   description: string
   date: string
   note?: string
+  /** What the bank charged in the principal currency, for a movement in the second one. */
+  actual_debited?: string
 }
 
 export interface PendingRuleInput {
@@ -110,6 +113,7 @@ export class CreatePending {
       throw new McpWriteError("not_editable", "That id belongs to a movement that is already confirmed or was made in the app.")
     }
     checkReferences(ledger, input)
+    const debited = checkedActualDebited(input.actual_debited, input.currency, ledger.settings.currencies.principal, (message) => new McpWriteError("invalid", message))
     const context = await getTransactionContext(new InMemoryStore(ledger.timeZone, ledgerSeed(ledger)))
     let transaction: Transaction
     let rule: CategorizationRule | undefined
@@ -127,6 +131,7 @@ export class CreatePending {
           date: instantIn(input.date, ledger.timeZone),
           note: input.note ?? "",
           isDraft: true,
+          ...(debited ? { actualDebitedPrincipal: debited } : {}),
         },
         context
       ))
@@ -140,6 +145,7 @@ export class CreatePending {
       id: input.id,
       status: "pending_confirmation",
       amount: { amount: transaction.amount, currency: transaction.currency },
+      ...(transaction.actualDebitedPrincipal === undefined ? {} : { actual_debited: actualDebitedOf(transaction) }),
       date: transaction.date,
       description: transaction.description,
       ...categoryOutcome(ledger, transaction, rule),

@@ -25,6 +25,7 @@ import {
   type YearMonth,
 } from "../domain/domain"
 import type { Transaction } from "../domain/schema"
+import { actualDebitedOf } from "./actual-debited"
 
 // The MCP read tools as pure functions over the domain's Ledger (ADR 0007 covers the transport).
 // Everything is typed JSON: amounts are decimal text rounded to cents with their ISO 4217 code, never prose that
@@ -252,6 +253,8 @@ export function searchTransactions(ledger: Ledger, query: TransactionSearch) {
       description: transaction.description,
       note: transaction.note ?? null,
       amount: { amount: transaction.amount, currency: transaction.currency },
+      // What the bank charged in the principal currency, when it differs from converting the amount.
+      actual_debited: actualDebitedOf(transaction),
       category_id: transaction.categoryId ?? null,
       category: transaction.categoryId ? categoryName(ledger, transaction.categoryId) : null,
       account_id: transaction.accountId,

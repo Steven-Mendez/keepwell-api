@@ -5,7 +5,7 @@ import { z } from "zod"
 
 import type { Logger } from "../../adapters/observability/logger"
 import { CreatePending, McpWriteError } from "../../core/use-cases/create-pending"
-import { decimal } from "./inputs"
+import { actualDebited, decimal } from "./inputs"
 import { VIEWS_URI } from "./ui/resources"
 
 const instant = z.string().refine((text) => !Number.isNaN(Date.parse(text)), "an ISO 8601 date or date-time").describe("YYYY-MM-DD is that day in the person's time zone (get_financial_context); a date-time is that instant")
@@ -49,7 +49,7 @@ export function registerWriteTools(server: McpServer, options: { create: CreateP
       title: "Record a movement",
       _meta: pendingView,
       description:
-        "Record a movement. It is saved as pending: it doesn't count toward balances until the person confirms it in Keepwell, and it shows as recorded by you.",
+        "Record a movement. It is saved as pending: it doesn't count toward balances until the person confirms it in Keepwell, and it shows as recorded by you. When a movement in the second currency was charged a known different amount in the principal currency, pass it as actual_debited instead of writing it in the note.",
       inputSchema: {
         ...common,
         category_id: z
@@ -58,6 +58,7 @@ export function registerWriteTools(server: McpServer, options: { create: CreateP
           .describe("From get_monthly_summary; left out for transfers. Leave it out to let the person's categorization rules choose; Other if none matches."),
         description: z.string().min(1).max(200),
         date: instant.describe("When it happened"),
+        actual_debited: actualDebited.optional(),
       },
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     },

@@ -22,6 +22,7 @@ import {
   deleteRecurringRule,
   deleteSavingsGoal,
   dayKey,
+  INITIAL_CURRENCIES,
   deleteTransaction,
   DomainError,
   draftFrom,
@@ -59,11 +60,12 @@ import {
 } from "../../core/domain/domain"
 import { swapCurrencies, updateSettings } from "../../core/domain/domain/onboarding"
 import { CardColor, CardNetwork, DebtDirection, DebtMode, LoanFrequency, RecurringFrequency } from "../../core/domain/schema"
+import { actualDebitedOf, checkedActualDebited } from "../../core/mcp/actual-debited"
 import { categoryOutcome } from "../../core/mcp/category-outcome"
 import { instantIn } from "../../core/mcp/dates"
 import { ManageError, type ManageLedger } from "../../core/use-cases/manage-ledger"
 import type { RecordingStore } from "../../core/ledger/recording-store"
-import { decimal } from "./inputs"
+import { actualDebited, decimal } from "./inputs"
 import { VIEWS_URI } from "./ui/resources"
 
 // The `manage` tools (ADR 0011): everything the apps' screens do, through the apps' own domain use
@@ -416,10 +418,18 @@ export function registerManageTools(server: McpServer, options: { manage: Manage
 
   tool(
     "create_transaction",
-    { title: "Record a movement", description: "Records one expense, income or transfer, saved like one typed in the app. status planned keeps it out of balances until confirmed. For more than one, use apply_changes.", annotations: CREATE, view: true },
-    { id: newId, ...movement, status: z.enum(["confirmed", "planned"]).default("confirmed") },
+    {
+      title: "Record a movement",
+      description:
+        "Records one expense, income or transfer, saved like one typed in the app. status planned keeps it out of balances until confirmed. When a movement in the second currency was charged a known different amount in the principal currency, pass it as actual_debited instead of writing it in the note. For more than one, use apply_changes.",
+      annotations: CREATE,
+      view: true,
+    },
+    { id: newId, ...movement, actual_debited: actualDebited.optional(), status: z.enum(["confirmed", "planned"]).default("confirmed") },
     (args) => args.id,
     async (store, args) => {
+      const principal = ((await store.loadSettings())?.currencies ?? INITIAL_CURRENCIES).principal
+      const debited = checkedActualDebited(args.actual_debited, args.currency, principal, (message) => new ManageError("invalid", message))
       const draft: TransactionDraft = {
         id: args.id,
         kind: args.kind,
@@ -433,6 +443,7 @@ export function registerManageTools(server: McpServer, options: { manage: Manage
         note: args.note ?? "",
         isDraft: args.status === "planned",
         ...(args.tags ? { tags: args.tags } : {}),
+        ...(debited ? { actualDebitedPrincipal: debited } : {}),
       }
       const saved = await saveTransaction(store, draft)
       const transaction = saved.transaction
@@ -440,6 +451,7 @@ export function registerManageTools(server: McpServer, options: { manage: Manage
         id: transaction.id,
         status: transaction.status === "planned" ? "planned" : "saved",
         amount: { amount: transaction.amount, currency: transaction.currency },
+        ...(transaction.actualDebitedPrincipal === undefined ? {} : { actual_debited: actualDebitedOf(transaction) }),
         date: transaction.date,
         description: transaction.description,
         ...categoryOutcome({ categories: await store.fetchCategories() }, transaction, saved.rule),
@@ -449,7 +461,12 @@ export function registerManageTools(server: McpServer, options: { manage: Manage
 
   tool(
     "update_transaction",
-    { title: "Edit a movement", description: "Changes any field of a movement; fields left out stay as they are.", annotations: WRITE },
+    {
+      title: "Edit a movement",
+      description:
+        "Changes any field of a movement; fields left out stay as they are, except actual_debited, which a new amount or currency clears unless given again (null clears it). Use actual_debited for what the bank charged in the principal currency on a movement in the second currency.",
+      annotations: WRITE,
+    },
     {
       transaction_id: ref("From search_transactions"),
       kind: kind.optional(),
@@ -463,13 +480,27 @@ export function registerManageTools(server: McpServer, options: { manage: Manage
       date: instant.optional(),
       note: z.string().max(500).optional(),
       tags: tags.optional(),
+      actual_debited: actualDebited.nullable().optional().describe("null clears it; left out it stays, unless amount or currency change"),
     },
     (args) => JSON.stringify(args),
     async (store, args) => {
-      const draft = draftFrom(find(store.transactions, args.transaction_id, "Movement"))
+      const existing = find(store.transactions, args.transaction_id, "Movement")
+      const draft = draftFrom(existing)
       const accountId = args.account_id ?? (draft.source?.type === "account" ? draft.source.id : store.cards.find((card) => card.id === draft.source?.id)?.accountId ?? "")
       const cardId = args.card_id === null ? undefined : (args.card_id ?? (args.account_id === undefined && draft.source?.type === "card" ? draft.source.id : undefined))
-      const { categoryId: _c, destinationAccountId: _d, source: _s, ...rest } = draft
+      const { categoryId: _c, destinationAccountId: _d, source: _s, actualDebitedPrincipal: _a, ...rest } = draft
+      const currency = args.currency ? args.currency.toUpperCase() : draft.currency
+      // The bank's charge was for the old amount and currency: a change drops it unless given again.
+      const moved = (args.amount !== undefined && !dec(args.amount).eq(draft.amount)) || currency !== draft.currency
+      // An edit keeps the rate it was recorded with, so its principal is the one that counts (as in the domain).
+      const debited =
+        args.actual_debited === null
+          ? undefined
+          : args.actual_debited !== undefined
+            ? checkedActualDebited(args.actual_debited, currency, existing.exchangeRate.principal, (message) => new ManageError("invalid", message))
+            : moved
+              ? undefined
+              : draft.actualDebitedPrincipal
       const categoryId = args.category_id === null ? undefined : (args.category_id ?? draft.categoryId)
       const destination = args.destination_account_id === null ? undefined : (args.destination_account_id ?? draft.destinationAccountId)
       const saved = await saveTransaction(store, {
@@ -484,6 +515,7 @@ export function registerManageTools(server: McpServer, options: { manage: Manage
         ...(args.date ? { date: instantIn(args.date, store.timeZone) } : {}),
         ...(args.note !== undefined ? { note: args.note } : {}),
         ...(args.tags ? { tags: args.tags } : {}),
+        ...(debited ? { actualDebitedPrincipal: debited } : {}),
       })
       return { id: saved.transaction.id }
     }
