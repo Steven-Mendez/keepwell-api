@@ -109,6 +109,22 @@ describe("MCP read tools", () => {
     }
   })
 
+  it("after the main currency changes, converts with each stored rate and counts what it can't", async () => {
+    const { http, cookie, mcp } = await connected()
+    const at = "2026-11-10T15:00:00.000Z"
+    // Swapped to NIO: every movement stored a rate with NIO, so all of it converts. 120.50 USD × 36.6243
+    // and, since the rent is recorded on this read with today's rate, 450 USD ÷ 0.027304.
+    await syncClient(http, cookie).push([event("settings", { ...settingsRow(at), principal: "NIO", second: "USD", rate: "0.027304" })])
+    const swapped = await mcp.tool("get_monthly_summary", { month: "2026-11" })
+    expect(swapped.data).toMatchObject({ currency: "NIO", income: "73248.6", expense: "20894.33", excluded_movements: [] })
+    // Changed to EUR elsewhere: no stored rate reaches EUR, so nothing is relabelled as euros.
+    await syncClient(http, cookie).push([event("settings", { ...settingsRow(at), principal: "EUR", second: null, rate: "1" })])
+    const euros = await mcp.tool("get_monthly_summary", { month: "2026-11" })
+    expect(euros.data).toMatchObject({ currency: "EUR", income: "0", expense: "0", excluded_movements: [{ currency: "USD", count: 3 }] })
+    const context = await mcp.tool("get_financial_context")
+    expect(context.data.this_month).toMatchObject({ expense: "0", excluded_movements: [{ currency: "USD", count: 3 }] })
+  })
+
   it("searches movements by text and pages them", async () => {
     const { mcp } = await connected()
     const { data } = await mcp.tool("search_transactions", { text: "colonia", limit: 5 })

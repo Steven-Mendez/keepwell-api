@@ -22,7 +22,7 @@ import {
   openAccounts,
   plannedSummary,
   priceIncreases,
-  principalAmount,
+  storedAmountIn,
   scopeIncludes,
   subscriptionsCharged,
   type CategoryTotal,
@@ -481,12 +481,14 @@ export interface SpendingPace {
   previous: { day: number; cumulative: Decimal }[]
 }
 
-function pacePoints(month: YearMonth, lastDay: number, transactions: readonly Transaction[], zone: TimeZone) {
+function pacePoints(month: YearMonth, lastDay: number, transactions: readonly Transaction[], currency: string, zone: TimeZone) {
   const perDay = new Map<number, Decimal>()
   for (const transaction of transactions) {
     const date = zonedParts(new Date(transaction.date), zone)
     if (!isConfirmed(transaction) || transaction.kind !== "expense" || !sameMonth(date, month)) continue
-    perDay.set(date.day, (perDay.get(date.day) ?? ZERO).plus(principalAmount(transaction)))
+    const amount = storedAmountIn(transaction, currency)
+    if (amount === undefined) continue
+    perDay.set(date.day, (perDay.get(date.day) ?? ZERO).plus(amount))
   }
   let running = ZERO
   return Array.from({ length: Math.max(lastDay, 1) }, (_, index) => {
@@ -495,12 +497,12 @@ function pacePoints(month: YearMonth, lastDay: number, transactions: readonly Tr
   })
 }
 
-export function spendingPace(month: YearMonth, transactions: readonly Transaction[], now: Date, zone: TimeZone): SpendingPace {
+export function spendingPace(month: YearMonth, transactions: readonly Transaction[], currency: string, now: Date, zone: TimeZone): SpendingPace {
   const previousMonth = addMonths(month, -1)
   const days = daysInMonth(month)
   const today = zonedParts(now, zone)
   const lastDay = sameMonth(today, month) ? Math.min(today.day, days) : days
-  return { month, previousMonth, current: pacePoints(month, lastDay, transactions, zone), previous: pacePoints(previousMonth, daysInMonth(previousMonth), transactions, zone) }
+  return { month, previousMonth, current: pacePoints(month, lastDay, transactions, currency, zone), previous: pacePoints(previousMonth, daysInMonth(previousMonth), transactions, currency, zone) }
 }
 
 export const paceComparisonDay = (pace: SpendingPace) => pace.current.at(-1)?.day ?? 1
@@ -527,8 +529,8 @@ export interface SummaryReport {
 export function summaryReport(transactions: readonly Transaction[], currency: string, zone: TimeZone, now: Date = new Date(), count = SUMMARY_MONTH_COUNT): SummaryReport {
   const current = yearMonthContaining(now, zone)
   const months = Array.from({ length: count }, (_, index) => monthlySummary(addMonths(current, index - (count - 1)), transactions, currency, zone))
-  const averageExpense = averageMonthlyTotal("expense", transactions, zone)
-  const averageIncome = averageMonthlyTotal("income", transactions, zone)
+  const averageExpense = averageMonthlyTotal("expense", transactions, currency, zone)
+  const averageIncome = averageMonthlyTotal("income", transactions, currency, zone)
   return {
     currency,
     months,
@@ -537,7 +539,7 @@ export function summaryReport(transactions: readonly Transaction[], currency: st
     cashFlow: cashFlowTrend(months),
     expenseBreakdowns: months.map((month) => categoryBreakdown(month.categories)),
     incomeBreakdowns: months.map((month) => categoryBreakdown(month.incomeCategories)),
-    paces: months.map((month) => spendingPace(month.month, transactions, now, zone)),
+    paces: months.map((month) => spendingPace(month.month, transactions, currency, now, zone)),
   }
 }
 
