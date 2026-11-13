@@ -106,11 +106,19 @@ export type SpendingDebts = readonly PersonalDebt[] | DebtLinks
 
 export const NO_DEBT_LINKS: DebtLinks = { shares: new Map(), reimbursements: new Set() }
 
-export function debtLinks(debts: SpendingDebts): DebtLinks {
-  if (!Array.isArray(debts)) return debts as DebtLinks
-  if (debts.length === 0) return NO_DEBT_LINKS
+/**
+ * `deposits` adds movements known to have deposited a repayment that `debts` no longer list: those of
+ * deleted debts and repayments (`LedgerStore.fetchRepaymentDepositIds`, `ledgerDebtLinks`).
+ */
+export function debtLinks(debts: SpendingDebts, deposits: Iterable<string> = []): DebtLinks {
+  const extra = [...deposits]
+  if (!Array.isArray(debts)) {
+    const links = debts as DebtLinks
+    return extra.length === 0 ? links : { shares: links.shares, reimbursements: new Set([...links.reimbursements, ...extra]) }
+  }
+  if (debts.length === 0 && extra.length === 0) return NO_DEBT_LINKS
   const shares = new Map<string, PersonalDebt[]>()
-  const reimbursements = new Set<string>()
+  const reimbursements = new Set<string>(extra)
   for (const debt of debts as readonly PersonalDebt[]) {
     if (debt.direction === "theyOweMe" && debt.transactionId !== undefined) {
       shares.set(debt.transactionId, [...(shares.get(debt.transactionId) ?? []), debt])

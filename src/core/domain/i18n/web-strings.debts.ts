@@ -21,4 +21,5 @@ export const WEB_STRINGS_DEBTS: WebStrings = {
   },
   "Your share: %@ of %@": { es: "Tu parte: %@ de %@" },
   "Split with %@": { es: "Dividido con %@" },
+  "Already split: %@ left to share": { es: "Ya dividido: quedan %@ por repartir" },
 }

@@ -3,7 +3,7 @@ import { addDays, compareMonths, dayKey, monthKey, startOfDay, yearMonthContaini
 import type { Decimal } from "./decimal"
 import { debtDueStatus, debtRemaining, orderedLoans } from "./debts"
 import { fromStored, type Money } from "./money"
-import { homeOverview, type Ledger } from "./overviews"
+import { homeOverview, ledgerDebtLinks, type Ledger } from "./overviews"
 import { upcoming } from "./recurring"
 import { isOpen, monthlySummary, nextOccurrence } from "./rules"
 import type { DebtDirection } from "../schema"
@@ -229,7 +229,7 @@ function budgetNotifications(ledger: Ledger, now: Date): LedgerNotification[] {
   const zone = ledger.timeZone
   const month = yearMonthContaining(now, zone)
   const currency = ledger.settings.currencies.principal
-  const summary = monthlySummary(month, ledger.transactions, currency, zone, ledger.personalDebts)
+  const summary = monthlySummary(month, ledger.transactions, currency, zone, ledgerDebtLinks(ledger))
   return budgetStatuses(summary, ledger.categories).flatMap((status): LedgerNotification[] => {
     if (status.level === "onTrack") return []
     const level = status.level

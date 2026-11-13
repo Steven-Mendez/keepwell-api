@@ -27,6 +27,7 @@ import {
   scopeIncludes,
   subscriptionsCharged,
   type CategoryTotal,
+  type DebtLinks,
   type MonthlySummary,
   type PlannedSummary,
   type PriceIncrease,
@@ -50,6 +51,11 @@ export interface Ledger {
   savingsGoals: SavingsGoal[]
   loans: Loan[]
   personalDebts: PersonalDebt[]
+  /**
+   * Movements a repayment deposited, deleted debts' and repayments' included
+   * (`LedgerStore.fetchRepaymentDepositIds`). Absent, only the alive debts' deposits are known.
+   */
+  repaymentDepositIds?: string[]
   /** In the person's order: the first that matches wins. */
   categorizationRules: CategorizationRule[]
   /** The zone its days and months are read in: the store's (`LedgerStore.timeZone`). */
@@ -57,7 +63,7 @@ export interface Ledger {
 }
 
 export async function loadLedger(store: LedgerStore): Promise<Ledger> {
-  const [settings, accounts, cards, transactions, categories, recurringRules, savingsGoals, loans, personalDebts, categorizationRules] = await Promise.all([
+  const [settings, accounts, cards, transactions, categories, recurringRules, savingsGoals, loans, personalDebts, categorizationRules, repaymentDepositIds] = await Promise.all([
     store.loadSettings(),
     store.fetchAccounts(),
     store.fetchCards(),
@@ -68,6 +74,7 @@ export async function loadLedger(store: LedgerStore): Promise<Ledger> {
     store.fetchLoans(),
     store.fetchPersonalDebts(),
     store.fetchCategorizationRules(),
+    store.fetchRepaymentDepositIds(),
   ])
   return {
     settings: settings ?? DEFAULT_SETTINGS,
@@ -79,9 +86,18 @@ export async function loadLedger(store: LedgerStore): Promise<Ledger> {
     savingsGoals,
     loans,
     personalDebts,
+    repaymentDepositIds,
     categorizationRules,
     timeZone: store.timeZone,
   }
+}
+
+/**
+ * The ledger's `debtLinks`: its debts' shares and deposits, plus the deposits of deleted debts and
+ * repayments, so a deposit left behind by "Delete" still isn't income. Totals over a ledger use this.
+ */
+export function ledgerDebtLinks(ledger: Pick<Ledger, "personalDebts" | "repaymentDepositIds">): DebtLinks {
+  return debtLinks(ledger.personalDebts, ledger.repaymentDepositIds)
 }
 
 const newestFirst = (a: Transaction, b: Transaction) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0)
@@ -125,7 +141,7 @@ export interface HomeOverview {
 export function homeOverview(ledger: Ledger, now: Date = new Date(), recentCount = HOME_RECENT_COUNT): HomeOverview {
   const currencies = ledger.settings.currencies
   const { accounts, cards, transactions, timeZone: zone } = ledger
-  const links = debtLinks(ledger.personalDebts)
+  const links = ledgerDebtLinks(ledger)
   const allBalances: Money[] = []
   let balances: HomeOverview["balances"] = []
   let cardDebt = ZERO
