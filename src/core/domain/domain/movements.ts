@@ -86,6 +86,12 @@ export interface TransactionDraft {
   date: Date
   /** "USD charged by the bank". */
   actualDebitedPrincipal?: Decimal
+  /**
+   * What a charged amount carried over from a saved movement (`draftFrom`) was charged for: the
+   * amount, currency and account it was recorded with. Once any of them changes that charge no longer
+   * applies, so the movement saves without it (`applicableDebit`). A charge typed for the draft leaves this out.
+   */
+  debitedFor?: { amount: Decimal; currency: string; accountId: string }
   note: string
   /** Saved without counting toward balances until confirmed. */
   isDraft: boolean
@@ -195,7 +201,7 @@ export function categorizedTransaction(
   }
   const description = draft.description.trim()
   const note = draft.note.trim()
-  const debited = draft.currency === rate.principal ? undefined : draft.actualDebitedPrincipal
+  const debited = applicableDebit(draft, rate, accountId)
   const recurringId = draft.recurringId ?? existing?.recurringId
   // Nobody types it: an edit from any editor keeps the statement line the movement came from.
   const importedId = existing?.importedId ?? draft.importedId
@@ -211,7 +217,7 @@ export function categorizedTransaction(
     accountId,
     ...(draft.source.type === "card" ? { cardId: draft.source.id } : {}),
     ...(draft.kind === "transfer" && draft.destinationAccountId ? { destinationAccountId: draft.destinationAccountId } : {}),
-    ...(debited === undefined ? {} : { actualDebitedPrincipal: decimalText(debited) }),
+    ...debitedField(debited),
     exchangeRate: rate,
     isShared: existing?.isShared ?? false,
     ...(note === "" ? {} : { note }),
@@ -229,6 +235,23 @@ export function categorizedTransaction(
   }
   checkClosedAccounts(transaction, context.accounts, existing)
   return rule ? { transaction, rule } : { transaction }
+}
+
+/**
+ * The charge in the principal currency a draft saves: none when it is in the principal currency, and
+ * none when it was carried over from a saved movement (`debitedFor`) whose amount, currency or account
+ * changed since, since the bank charged it for something else and balances would follow it.
+ */
+export function applicableDebit(draft: TransactionDraft, rate: Pick<ExchangeRate, "principal">, accountId: string | undefined): Decimal | undefined {
+  const debited = draft.actualDebitedPrincipal
+  if (debited === undefined || draft.currency === rate.principal) return undefined
+  const charged = draft.debitedFor
+  if (charged && (!charged.amount.eq(draft.amount) || charged.currency !== draft.currency || charged.accountId !== accountId)) return undefined
+  return debited
+}
+
+function debitedField(debited: Decimal | undefined): Pick<Transaction, "actualDebitedPrincipal"> {
+  return debited === undefined ? {} : { actualDebitedPrincipal: decimalText(debited) }
 }
 
 /** Whether two versions of a movement move the same money: same accounts, amounts, day and status. */
@@ -348,7 +371,7 @@ export function previewMovement(context: TransactionContext, draft: TransactionD
     currency: draft.currency,
     accountId: sourceId,
     ...(destinationAccount ? { destinationAccountId: destinationAccount.id } : {}),
-    ...(draft.currency !== rate.principal && draft.actualDebitedPrincipal ? { actualDebitedPrincipal: decimalText(draft.actualDebitedPrincipal) } : {}),
+    ...debitedField(applicableDebit(draft, rate, sourceId)),
     exchangeRate: rate,
     isShared: false,
   }
@@ -402,8 +425,13 @@ export async function deleteTransaction(store: LedgerStore, id: string): Promise
   await store.deleteTransaction(id)
 }
 
-/** A draft that edits `transaction`, with every field as it was saved. */
+/**
+ * A draft that edits `transaction`, with every field as it was saved. Its charge in the principal
+ * currency (only a movement in another currency has one) keeps what it was charged for, so changing the
+ * amount, currency or account drops it instead of leaving a stale charge driving balances.
+ */
 export function draftFrom(transaction: Transaction): TransactionDraft {
+  const charged = transaction.currency === transaction.exchangeRate.principal ? undefined : transaction.actualDebitedPrincipal
   return {
     id: transaction.id,
     kind: transaction.kind,
@@ -414,7 +442,12 @@ export function draftFrom(transaction: Transaction): TransactionDraft {
     ...(transaction.destinationAccountId ? { destinationAccountId: transaction.destinationAccountId } : {}),
     description: transaction.description,
     date: new Date(transaction.date),
-    ...(transaction.actualDebitedPrincipal ? { actualDebitedPrincipal: new Decimal(transaction.actualDebitedPrincipal) } : {}),
+    ...(charged
+      ? {
+          actualDebitedPrincipal: new Decimal(charged),
+          debitedFor: { amount: new Decimal(transaction.amount), currency: transaction.currency, accountId: transaction.accountId },
+        }
+      : {}),
     note: transaction.note ?? "",
     isDraft: transaction.status === "planned",
     ...(transaction.tags ? { tags: [...transaction.tags] } : {}),
