@@ -357,12 +357,20 @@ export const DebtRepayment = z.object({
   /** In the debt's currency. */
   amount: PositiveDecimalString,
   date: IsoDateTime,
+  /**
+   * The income movement that deposited it into an account ("Deposit into account"), created with it
+   * and deleted with it; absent when it was only recorded. That movement changes the balance but is
+   * not income: the money only came back (`isReimbursement`).
+   */
+  transactionId: Id.optional(),
 })
 export type DebtRepayment = z.infer<typeof DebtRepayment>
 
 /**
- * Money lent to or borrowed from a person, shared contract with iOS `PersonalDebt`. Only tracked:
- * it never records a movement or changes a balance.
+ * Money lent to or borrowed from a person, shared contract with iOS `PersonalDebt`. Tracked on its
+ * own: it never records a movement or changes a balance, except a repayment the person deposits
+ * into an account (`DebtRepayment.transactionId`). A "they owe me" debt split from an expense
+ * (`transactionId`) takes its share out of the person's spending (`spendingAmountIn`).
  */
 export const PersonalDebtShape = z.object({
   id: Id,

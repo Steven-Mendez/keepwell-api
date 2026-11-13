@@ -564,6 +564,30 @@
             "repayments": [],
             "dueDate": "2026-11-15T06:00:00.000Z"
           }
+        },
+        {
+          "name": "split from an expense, a repayment deposited into an account",
+          "value": {
+            "id": "55555555-5555-4555-8555-555555555555",
+            "person": "Ana",
+            "direction": "theyOweMe",
+            "amount": {
+              "amount": "300",
+              "currency": "NIO"
+            },
+            "date": "2026-11-01T12:00:00.000Z",
+            "note": "Cena",
+            "repayments": [
+              {
+                "id": "77777777-7777-4777-8777-777777777777",
+                "amount": "300",
+                "date": "2026-11-05T18:00:00.000Z",
+                "transactionId": "88888888-8888-4888-8888-888888888888"
+              }
+            ],
+            "settledAt": "2026-11-05T18:00:00.000Z",
+            "transactionId": "44444444-4444-4444-8444-444444444444"
+          }
         }
       ],
       "invalid": [
@@ -605,6 +629,28 @@
             "date": "2026-09-01T12:00:00.000Z",
             "repayments": [],
             "dueDate": "next month"
+          }
+        },
+        {
+          "name": "repayment linked to something that isn't an id",
+          "reason": "A repayment's transactionId must be an id",
+          "value": {
+            "id": "55555555-5555-4555-8555-555555555555",
+            "person": "Ana",
+            "direction": "theyOweMe",
+            "amount": {
+              "amount": "300",
+              "currency": "NIO"
+            },
+            "date": "2026-11-01T12:00:00.000Z",
+            "repayments": [
+              {
+                "id": "77777777-7777-4777-8777-777777777777",
+                "amount": "100",
+                "date": "2026-11-05T18:00:00.000Z",
+                "transactionId": "deposit"
+              }
+            ]
           }
         }
       ]

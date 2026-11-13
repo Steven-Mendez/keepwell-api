@@ -716,6 +716,11 @@
         "nullable": false,
         "optional": false
       },
+      "transaction_id": {
+        "type": "string",
+        "nullable": true,
+        "optional": true
+      },
       "created_at": {
         "type": "string",
         "nullable": false,

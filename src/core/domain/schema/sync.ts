@@ -219,6 +219,12 @@ export const PersonalDebtRepaymentWire = z.object({
   debt_id: Id,
   amount: PositiveDecimalString,
   date: IsoDateTime,
+  /**
+   * The income movement that deposited it (`DebtRepayment.transactionId`). Optional, not only
+   * nullable: a row from an app older than the column lacks the key, and the server then keeps what
+   * it has (`decide` in keepwell-api), as with merchant links. Newer apps always send it, null for none.
+   */
+  transaction_id: Id.nullable().optional(),
   ...Audit,
 })
 

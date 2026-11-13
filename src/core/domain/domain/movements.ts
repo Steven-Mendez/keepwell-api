@@ -1,4 +1,4 @@
-import type { Account, Card, CategorizationRule, CurrencySettings, ExchangeRate, Merchant, Transaction, TransactionCategory, TransactionKind } from "../schema"
+import type { Account, Card, CategorizationRule, CurrencySettings, ExchangeRate, Merchant, PersonalDebt, Transaction, TransactionCategory, TransactionKind } from "../schema"
 import { OTHER_EXPENSE_ID, OTHER_INCOME_ID } from "../schema"
 
 import { Decimal, ZERO, decimalText } from "./decimal"
@@ -355,13 +355,15 @@ export async function saveTransaction(store: LedgerStore, draft: TransactionDraf
   const existing = context.transactions.find((transaction) => transaction.id === draft.id)
   const { transaction, rule } = categorizedTransaction(draft, context, existing)
   await store.saveTransaction(transaction)
-  const saved = savedTransactionOf(transaction, context.accounts, await store.fetchTransactions(), context.currencies.principal, context.zone)
+  const [movements, debts] = await Promise.all([store.fetchTransactions(), store.fetchPersonalDebts()])
+  const saved = savedTransactionOf(transaction, context.accounts, movements, context.currencies.principal, context.zone, debts)
   return rule ? { ...saved, rule } : saved
 }
 
 /**
  * What the receipt states about a stored movement: its account's balances with every movement,
- * and, for an expense, its category's spending that month. Also rebuilds a receipt from history.
+ * and, for an expense, its category's spending that month (the person's part of split expenses, as
+ * the summary counts it with `debts`). Also rebuilds a receipt from history.
  */
 export function savedTransactionOf(
   transaction: Transaction,
@@ -369,13 +371,14 @@ export function savedTransactionOf(
   movements: readonly Transaction[],
   principal: string,
   zone: TimeZone,
+  debts: readonly PersonalDebt[] = [],
 ): SavedTransaction {
   const account = accounts.find((candidate) => candidate.id === transaction.accountId)
   if (!account) throw DomainError.notFound(transaction.accountId)
   const newBalances = balanceOf(account, movements, zone)
   let categoryMonthTotal: Money | undefined
   if (transaction.kind === "expense") {
-    const summary = monthlySummary(yearMonthContaining(new Date(transaction.date), zone), movements, principal, zone)
+    const summary = monthlySummary(yearMonthContaining(new Date(transaction.date), zone), movements, principal, zone, debts)
     const total = summary.categories.find((entry) => entry.categoryId === transaction.categoryId)?.amount ?? ZERO
     categoryMonthTotal = { amount: total, currency: principal }
   }

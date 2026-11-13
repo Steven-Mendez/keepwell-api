@@ -229,7 +229,7 @@ function budgetNotifications(ledger: Ledger, now: Date): LedgerNotification[] {
   const zone = ledger.timeZone
   const month = yearMonthContaining(now, zone)
   const currency = ledger.settings.currencies.principal
-  const summary = monthlySummary(month, ledger.transactions, currency, zone)
+  const summary = monthlySummary(month, ledger.transactions, currency, zone, ledger.personalDebts)
   return budgetStatuses(summary, ledger.categories).flatMap((status): LedgerNotification[] => {
     if (status.level === "onTrack") return []
     const level = status.level

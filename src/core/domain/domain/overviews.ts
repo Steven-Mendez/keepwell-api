@@ -22,13 +22,15 @@ import {
   openAccounts,
   plannedSummary,
   priceIncreases,
-  storedAmountIn,
+  debtLinks,
+  spendingAmountIn,
   scopeIncludes,
   subscriptionsCharged,
   type CategoryTotal,
   type MonthlySummary,
   type PlannedSummary,
   type PriceIncrease,
+  type SpendingDebts,
   type TransactionScope,
 } from "./rules"
 import { orderedCategories, type LedgerStore } from "./store"
@@ -123,6 +125,7 @@ export interface HomeOverview {
 export function homeOverview(ledger: Ledger, now: Date = new Date(), recentCount = HOME_RECENT_COUNT): HomeOverview {
   const currencies = ledger.settings.currencies
   const { accounts, cards, transactions, timeZone: zone } = ledger
+  const links = debtLinks(ledger.personalDebts)
   const allBalances: Money[] = []
   let balances: HomeOverview["balances"] = []
   let cardDebt = ZERO
@@ -155,7 +158,7 @@ export function homeOverview(ledger: Ledger, now: Date = new Date(), recentCount
     netWorthExcluded: excludedCurrencies(allBalances, currencies),
     accountCount: accounts.filter((account) => account.kind !== "credit" && isOpen(account)).length,
     cardCount: cards.filter((card) => card.kind !== "transfer" && !closedIds.has(card.accountId)).length,
-    month: monthlySummary(yearMonthContaining(now, zone), transactions, currencies.principal, zone),
+    month: monthlySummary(yearMonthContaining(now, zone), transactions, currencies.principal, zone, links),
     hasTransactions: transactions.length > 0,
     recent,
     planned,
@@ -166,7 +169,7 @@ export function homeOverview(ledger: Ledger, now: Date = new Date(), recentCount
     paymentReminderDaysBefore: ledger.settings.paymentReminderDaysBefore,
     cardSubscriptions: new Map(cards.filter((card) => card.expiry).map((card) => [card.id, subscriptionsCharged(card.id, transactions, zone, ledger.recurringRules)])),
     ...(accounts.some((account) => account.kind !== "credit")
-      ? { forecast: balanceForecast(accounts, transactions, ledger.recurringRules, currencies, zone, now) }
+      ? { forecast: balanceForecast(accounts, transactions, ledger.recurringRules, currencies, zone, now, links) }
       : {}),
     priceIncreases: priceIncreases(transactions, zone, now),
   }
@@ -481,12 +484,12 @@ export interface SpendingPace {
   previous: { day: number; cumulative: Decimal }[]
 }
 
-function pacePoints(month: YearMonth, lastDay: number, transactions: readonly Transaction[], currency: string, zone: TimeZone) {
+function pacePoints(month: YearMonth, lastDay: number, transactions: readonly Transaction[], currency: string, zone: TimeZone, debts: SpendingDebts) {
   const perDay = new Map<number, Decimal>()
   for (const transaction of transactions) {
     const date = zonedParts(new Date(transaction.date), zone)
     if (!isConfirmed(transaction) || transaction.kind !== "expense" || !sameMonth(date, month)) continue
-    const amount = storedAmountIn(transaction, currency)
+    const amount = spendingAmountIn(transaction, debts, currency)
     if (amount === undefined) continue
     perDay.set(date.day, (perDay.get(date.day) ?? ZERO).plus(amount))
   }
@@ -497,12 +500,14 @@ function pacePoints(month: YearMonth, lastDay: number, transactions: readonly Tr
   })
 }
 
-export function spendingPace(month: YearMonth, transactions: readonly Transaction[], currency: string, now: Date, zone: TimeZone): SpendingPace {
+/** Cumulative spending per day; with `debts`, an expense counts only the person's part (`spendingAmountIn`). */
+export function spendingPace(month: YearMonth, transactions: readonly Transaction[], currency: string, now: Date, zone: TimeZone, debts: SpendingDebts = []): SpendingPace {
+  const links = debtLinks(debts)
   const previousMonth = addMonths(month, -1)
   const days = daysInMonth(month)
   const today = zonedParts(now, zone)
   const lastDay = sameMonth(today, month) ? Math.min(today.day, days) : days
-  return { month, previousMonth, current: pacePoints(month, lastDay, transactions, currency, zone), previous: pacePoints(previousMonth, daysInMonth(previousMonth), transactions, currency, zone) }
+  return { month, previousMonth, current: pacePoints(month, lastDay, transactions, currency, zone, links), previous: pacePoints(previousMonth, daysInMonth(previousMonth), transactions, currency, zone, links) }
 }
 
 export const paceComparisonDay = (pace: SpendingPace) => pace.current.at(-1)?.day ?? 1
@@ -526,11 +531,13 @@ export interface SummaryReport {
   paces: SpendingPace[]
 }
 
-export function summaryReport(transactions: readonly Transaction[], currency: string, zone: TimeZone, now: Date = new Date(), count = SUMMARY_MONTH_COUNT): SummaryReport {
+/** With `debts` (the ledger's personal debts), spending is the person's part and repayment deposits aren't income. */
+export function summaryReport(transactions: readonly Transaction[], currency: string, zone: TimeZone, now: Date = new Date(), count = SUMMARY_MONTH_COUNT, debts: SpendingDebts = []): SummaryReport {
+  const links = debtLinks(debts)
   const current = yearMonthContaining(now, zone)
-  const months = Array.from({ length: count }, (_, index) => monthlySummary(addMonths(current, index - (count - 1)), transactions, currency, zone))
-  const averageExpense = averageMonthlyTotal("expense", transactions, currency, zone)
-  const averageIncome = averageMonthlyTotal("income", transactions, currency, zone)
+  const months = Array.from({ length: count }, (_, index) => monthlySummary(addMonths(current, index - (count - 1)), transactions, currency, zone, links))
+  const averageExpense = averageMonthlyTotal("expense", transactions, currency, zone, links)
+  const averageIncome = averageMonthlyTotal("income", transactions, currency, zone, links)
   return {
     currency,
     months,
@@ -539,7 +546,7 @@ export function summaryReport(transactions: readonly Transaction[], currency: st
     cashFlow: cashFlowTrend(months),
     expenseBreakdowns: months.map((month) => categoryBreakdown(month.categories)),
     incomeBreakdowns: months.map((month) => categoryBreakdown(month.incomeCategories)),
-    paces: months.map((month) => spendingPace(month.month, transactions, currency, now, zone)),
+    paces: months.map((month) => spendingPace(month.month, transactions, currency, now, zone, links)),
   }
 }
 

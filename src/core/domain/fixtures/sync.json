@@ -618,6 +618,65 @@
         },
         "created_at": "2026-11-01T18:00:00.000Z"
       }
+    },
+    {
+      "name": "debt repayment deposited into an account",
+      "event": {
+        "event_id": "99999999-9999-4999-8999-999999999999",
+        "entity": "personalDebtRepayment",
+        "entity_id": "77777777-7777-4777-8777-777777777777",
+        "operation": "create",
+        "payload": {
+          "id": "77777777-7777-4777-8777-777777777777",
+          "debt_id": "55555555-5555-4555-8555-555555555555",
+          "amount": "300",
+          "date": "2026-11-05T18:00:00.000Z",
+          "transaction_id": "44444444-4444-4444-8444-444444444444",
+          "created_at": "2026-11-01T18:00:00.000Z",
+          "updated_at": "2026-11-01T18:00:00.000Z",
+          "deleted_at": null
+        },
+        "created_at": "2026-11-01T18:00:00.000Z"
+      }
+    },
+    {
+      "name": "debt repayment only recorded",
+      "event": {
+        "event_id": "99999999-9999-4999-8999-999999999999",
+        "entity": "personalDebtRepayment",
+        "entity_id": "77777777-7777-4777-8777-777777777777",
+        "operation": "create",
+        "payload": {
+          "id": "77777777-7777-4777-8777-777777777777",
+          "debt_id": "55555555-5555-4555-8555-555555555555",
+          "amount": "300",
+          "date": "2026-11-05T18:00:00.000Z",
+          "transaction_id": null,
+          "created_at": "2026-11-01T18:00:00.000Z",
+          "updated_at": "2026-11-01T18:00:00.000Z",
+          "deleted_at": null
+        },
+        "created_at": "2026-11-01T18:00:00.000Z"
+      }
+    },
+    {
+      "name": "debt repayment from an app older than deposits",
+      "event": {
+        "event_id": "99999999-9999-4999-8999-999999999999",
+        "entity": "personalDebtRepayment",
+        "entity_id": "77777777-7777-4777-8777-777777777777",
+        "operation": "create",
+        "payload": {
+          "id": "77777777-7777-4777-8777-777777777777",
+          "debt_id": "55555555-5555-4555-8555-555555555555",
+          "amount": "300",
+          "date": "2026-11-05T18:00:00.000Z",
+          "created_at": "2026-11-01T18:00:00.000Z",
+          "updated_at": "2026-11-01T18:00:00.000Z",
+          "deleted_at": null
+        },
+        "created_at": "2026-11-01T18:00:00.000Z"
+      }
     }
   ],
   "invalid": [
@@ -1111,6 +1170,27 @@
           "imported_id": null,
           "merchant_id": "subway",
           "via_merchant_id": null,
+          "created_at": "2026-11-01T18:00:00.000Z",
+          "updated_at": "2026-11-01T18:00:00.000Z",
+          "deleted_at": null
+        },
+        "created_at": "2026-11-01T18:00:00.000Z"
+      }
+    },
+    {
+      "name": "debt repayment with a transaction id that isn't an id",
+      "reason": "transaction_id must be an id",
+      "event": {
+        "event_id": "99999999-9999-4999-8999-999999999999",
+        "entity": "personalDebtRepayment",
+        "entity_id": "77777777-7777-4777-8777-777777777777",
+        "operation": "create",
+        "payload": {
+          "id": "77777777-7777-4777-8777-777777777777",
+          "debt_id": "55555555-5555-4555-8555-555555555555",
+          "amount": "300",
+          "date": "2026-11-05T18:00:00.000Z",
+          "transaction_id": "deposit",
           "created_at": "2026-11-01T18:00:00.000Z",
           "updated_at": "2026-11-01T18:00:00.000Z",
           "deleted_at": null

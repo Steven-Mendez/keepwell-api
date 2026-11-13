@@ -2,7 +2,7 @@ import type { Transaction } from "../schema"
 import { addMonths, compareMonths, daysInMonth, monthKey, yearMonthContaining, zonedDate, zonedParts, type TimeZone, type YearMonth } from "./calendar"
 import { Decimal, ZERO, sum } from "./decimal"
 import { cashFlowTrend, categoryBreakdown, type CashFlowTrend, type CategoryBreakdown } from "./overviews"
-import { isConfirmed, monthlySummary, savings, type CategoryTotal, type MonthlySummary } from "./rules"
+import { debtLinks, isConfirmed, monthlySummary, savings, type CategoryTotal, type MonthlySummary, type SpendingDebts } from "./rules"
 
 // Trends: any span of whole months read as one period (a year, the last 12 months, March–August),
 // next to the same months a year earlier. Web only: the iPhone keeps Summary to one month at a time.
@@ -193,7 +193,8 @@ function monthsBefore(date: Date, months: number, zone: TimeZone): Date {
  * in the comparison is cut at the same day, so a half-finished November isn't measured against a
  * whole one.
  */
-export function trendReport(transactions: readonly Transaction[], currency: string, requested: MonthRange, zone: TimeZone, now: Date = new Date()): TrendReport {
+export function trendReport(transactions: readonly Transaction[], currency: string, requested: MonthRange, zone: TimeZone, now: Date = new Date(), debts: SpendingDebts = []): TrendReport {
+  const links = debtLinks(debts)
   const current = yearMonthContaining(now, zone)
   const end = compareMonths(requested.end, current) > 0 ? current : requested.end
   const range = monthRange(requested.start, end)
@@ -202,12 +203,12 @@ export function trendReport(transactions: readonly Transaction[], currency: stri
   const comparison = shiftRange(range, -shift)
 
   const buckets = byMonth(transactions, zone)
-  const months = rangeMonths(range).map((month) => monthlySummary(month, buckets.get(monthKey(month)) ?? [], currency, zone))
+  const months = rangeMonths(range).map((month) => monthlySummary(month, buckets.get(monthKey(month)) ?? [], currency, zone, links))
   // Only the running month's counterpart is cut; the rest of the comparison is whole months.
   const cutBuckets = isRunning ? byMonth(transactions, zone, monthsBefore(now, shift, zone)) : buckets
   const comparisonMonths = rangeMonths(comparison).map((month, index, all) => {
     const source = index === all.length - 1 ? cutBuckets : buckets
-    return monthlySummary(month, source.get(monthKey(month)) ?? [], currency, zone)
+    return monthlySummary(month, source.get(monthKey(month)) ?? [], currency, zone, links)
   })
 
   const cashFlow = cashFlowTrend(months)
@@ -271,13 +272,14 @@ export interface YearTotals {
 }
 
 /** Every year from the first movement through the running one, oldest first. */
-export function yearTotals(transactions: readonly Transaction[], currency: string, zone: TimeZone, now: Date = new Date()): YearTotals[] {
+export function yearTotals(transactions: readonly Transaction[], currency: string, zone: TimeZone, now: Date = new Date(), debts: SpendingDebts = []): YearTotals[] {
+  const links = debtLinks(debts)
   const activity = activityRange(transactions, now, zone)
   if (!activity) return []
   const buckets = byMonth(transactions, zone)
   const years: YearTotals[] = []
   for (let year = activity.start.year; year <= activity.end.year; year++) {
-    const months = rangeMonths(calendarYear(year)).map((month) => monthlySummary(month, buckets.get(monthKey(month)) ?? [], currency, zone))
+    const months = rangeMonths(calendarYear(year)).map((month) => monthlySummary(month, buckets.get(monthKey(month)) ?? [], currency, zone, links))
     years.push({ year, cashFlow: cashFlowTrend(months), isRunning: year === activity.end.year })
   }
   return years

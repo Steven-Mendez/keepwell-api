@@ -1,6 +1,7 @@
 import type {
   Account,
   Card,
+  PersonalDebt,
   Transaction,
   TransactionCategory,
 } from "../schema"
@@ -8,7 +9,7 @@ import type {
 import { dayKey, type TimeZone } from "./calendar"
 import { Decimal, decimalText } from "./decimal"
 import { rateHasSecondCurrency } from "./money"
-import { accountDisplayName } from "./rules"
+import { accountDisplayName, debtLinks, isSplit } from "./rules"
 import type { LedgerStore } from "./store"
 import { tagsCsvField } from "./tags"
 
@@ -68,8 +69,11 @@ export function exportCsv(
   accounts: readonly Account[],
   cards: readonly Card[],
   categories: readonly TransactionCategory[],
-  zone: TimeZone
+  zone: TimeZone,
+  /** Make an expense with debts split from it read `shared` (`isSplit`); old rows' `isShared` still does. */
+  debts: readonly PersonalDebt[] = []
 ): string {
+  const links = debtLinks(debts)
   const accountNames = new Map(
     accounts.map((account) => [account.id, accountDisplayName(account)])
   )
@@ -98,7 +102,7 @@ export function exportCsv(
       ),
       t.actualDebitedPrincipal ? decimalField(t.actualDebitedPrincipal) : "",
       rateHasSecondCurrency(t.exchangeRate) ? decimalField(t.exchangeRate.rate) : "",
-      t.isShared ? "yes" : "no",
+      isSplit(t, links) || t.isShared ? "yes" : "no",
       neutralizeCsvFormula(t.note ?? ""),
       neutralizeCsvFormula(tagsCsvField(t.tags ?? [])),
     ])
@@ -146,11 +150,12 @@ export function parseCsvRows(text: string): string[][] {
 }
 
 export async function exportCsvFrom(store: LedgerStore): Promise<string> {
-  const [accounts, cards, transactions, categories] = await Promise.all([
+  const [accounts, cards, transactions, categories, debts] = await Promise.all([
     store.fetchAccounts(),
     store.fetchCards(),
     store.fetchTransactions(),
     store.fetchCategories(),
+    store.fetchPersonalDebts(),
   ])
-  return exportCsv(transactions, accounts, cards, categories, store.timeZone)
+  return exportCsv(transactions, accounts, cards, categories, store.timeZone, debts)
 }
