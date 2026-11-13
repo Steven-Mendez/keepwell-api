@@ -100,6 +100,8 @@ export function getMonthlySummary(ledger: Ledger, month: YearMonth) {
     income: amountText(summary.income),
     expense: amountText(summary.expense),
     net: amountText(savings(summary)),
+    /** Recorded under other currencies whose stored rate doesn't reach `currency`: not in any total. */
+    excluded_movements: summary.excluded,
     spending_by_category: summary.categories.map((total) => ({
       category_id: total.categoryId,
       category: categoryName(ledger, total.categoryId),
@@ -127,6 +129,7 @@ export function getTrends(ledger: Ledger, months: number, now: Date) {
       income: amountText(month.income),
       expense: amountText(month.expense),
       net: amountText(savings(month)),
+      excluded_movements: month.excluded,
     })),
   }
 }
@@ -275,7 +278,7 @@ export function getFinancialContext(ledger: Ledger, now: Date) {
     accounts: listAccounts(ledger)
       .filter((account) => account.closed_at === null)
       .map(({ id, name, kind, balances }) => ({ id, name, kind, balances })),
-    this_month: { month: month.month, income: month.income, expense: month.expense, net: month.net, top_spending: month.spending_by_category.slice(0, 5), budgets: month.budgets },
+    this_month: { month: month.month, income: month.income, expense: month.expense, net: month.net, excluded_movements: month.excluded_movements, top_spending: month.spending_by_category.slice(0, 5), budgets: month.budgets },
     upcoming_14_days: getUpcomingPayments(ledger, 14, now).payments,
     pending_confirmation: ledger.transactions.filter((t) => t.status === "planned").length,
   }

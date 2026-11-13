@@ -75,7 +75,7 @@ export function createMcpServer(context: McpContext): McpServer {
   tool("get_net_worth", { title: "Net worth", description: "Net worth in the principal currency (and the second, at the settings rate), with each account's share." }, {}, (_, ledger) => getNetWorth(ledger))
   tool(
     "get_monthly_summary",
-    { title: "Monthly summary", description: "Income, spending and net for one month, by category, with budgets. Confirmed movements only, in the principal currency.", view: true },
+    { title: "Monthly summary", description: "Income, spending and net for one month, by category, with budgets. Confirmed movements only, in the principal currency, each converted with the rate it stored; excluded_movements counts by currency those whose stored rate doesn't reach today's principal currency, which no total includes.", view: true },
     { month: z.string().regex(/^\d{4}-\d{2}$/).optional().describe("YYYY-MM; this month when left out") },
     (args, ledger) => getMonthlySummary(ledger, parseMonth(args.month, context.now(), ledger.timeZone))
   )
