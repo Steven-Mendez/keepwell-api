@@ -6,7 +6,7 @@ import { addDays, dayKey, daysInMonth, startOfDay, zonedDate, zonedParts, type T
 import { Decimal, ZERO, dec, decimalText } from "./decimal"
 import { DomainError } from "./errors"
 import { convert, settingsRate, type Money } from "./money"
-import { accountIdFor, getTransactionContext, saveTransaction, validatedTransaction, type PaymentSource, type SavedTransaction, type TransactionContext, type TransactionDraft } from "./movements"
+import { accountIdFor, getTransactionContext, merchantLinks, saveTransaction, validatedTransaction, type PaymentSource, type SavedTransaction, type TransactionContext, type TransactionDraft } from "./movements"
 import { SUBSCRIPTIONS_CATEGORY_ID, checkAmounts } from "./rules"
 import type { LedgerStore } from "./store"
 import { tagsField } from "./tags"
@@ -133,6 +133,8 @@ function occurrenceDraft(rule: RecurringRule, date: Date, id: string = newID()):
     note: rule.note ?? "",
     isDraft: !rule.autoConfirm,
     ...(rule.tags ? { tags: [...rule.tags] } : {}),
+    ...(rule.merchantId ? { merchantId: rule.merchantId } : {}),
+    ...(rule.viaMerchantId ? { viaMerchantId: rule.viaMerchantId } : {}),
   }
 }
 
@@ -267,6 +269,9 @@ export interface RecurringRuleDraft {
   note: string
   /** Left out keeps an edited rule's tags as they were. */
   tags?: string[]
+  /** Left out keeps an edited rule's business; `null` removes it (as on a movement's draft). A transfer drops both. */
+  merchantId?: string | null
+  viaMerchantId?: string | null
 }
 
 /**
@@ -322,6 +327,8 @@ export async function saveRecurringRule(store: LedgerStore, draft: RecurringRule
     ...(note === "" ? {} : { note }),
     ...tagsField(draft.tags ?? existing?.tags),
     ...(existing?.source ? { source: existing.source } : {}),
+    // A transfer names no business or platform, as on a movement (`categorizedTransaction`).
+    ...(draft.kind === "transfer" ? {} : merchantLinks(draft, context.merchants, existing)),
   }
   checkRecurringRule(rule, context)
   await store.saveRecurringRule(rule)
@@ -372,6 +379,8 @@ export function ruleRepeating(transaction: Transaction, frequency: RecurringFreq
     isPaused: false,
     ...(transaction.note === undefined ? {} : { note: transaction.note }),
     ...tagsField(transaction.tags),
+    ...(transaction.merchantId === undefined ? {} : { merchantId: transaction.merchantId }),
+    ...(transaction.viaMerchantId === undefined ? {} : { viaMerchantId: transaction.viaMerchantId }),
   }
 }
 

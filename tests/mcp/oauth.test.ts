@@ -56,7 +56,7 @@ describe("MCP over OAuth 2.1", () => {
     expect(claims).toMatchObject({ aud: `${base}/mcp`, scope: "read offline_access" })
     const list = await mcpCall(base, token!.access_token, "tools/list")
     expect(list.status).toBe(200)
-    expect(((await list.json()) as { result: { tools: unknown[] } }).result.tools.length).toBe(13)
+    expect(((await list.json()) as { result: { tools: unknown[] } }).result.tools.length).toBe(14)
   })
 
   it("refuses a redirect URI the client didn't register", async () => {

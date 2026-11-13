@@ -45,10 +45,11 @@ describe("account deletion", () => {
     await admin.db.execute(sql`insert into change_log (user_id, server_seq, entity, entity_id, operation, payload, status, client_id, event_id) values (${userId}, 1, 'category', 'groceries', 'create', '{}', 'applied', 'c', 'e')`)
     await admin.db.execute(sql`insert into sync_state (user_id, last_seq) values (${userId}, 1)`)
     await admin.db.execute(sql`insert into entitlements (id, user_id, plan, source, reference) values ('ent-1', ${userId}, 'supporter', 'app_store', 'otx-1')`)
+    await admin.db.execute(sql`insert into merchants (user_id, id, name, domain, brand_id, default_category_id, is_platform, created_at, updated_at) values (${userId}, 'm-1', 'Subway', 'subway.com', null, null, false, 'x', 'x')`)
     const result = await deletionJob().execute(userId)
     expect(result.status).toBe("deleted")
 
-    for (const table of ["users", "sessions", "accounts", "change_log", "sync_state", "entitlements"]) {
+    for (const table of ["users", "sessions", "accounts", "change_log", "sync_state", "entitlements", "merchants"]) {
       const column = table === "users" ? "id" : "user_id"
       const rows = await admin.db.execute(sql.raw(`select 1 from ${table} where ${column} = '${userId}'`))
       expect(rows.rows, table).toEqual([])

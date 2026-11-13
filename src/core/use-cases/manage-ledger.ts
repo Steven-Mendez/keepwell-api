@@ -8,6 +8,7 @@ import {
   categoryColumns,
   loanColumns,
   loanPaymentColumns,
+  merchantColumns,
   NO_AUDIT,
   personalDebtColumns,
   recurringRuleColumns,
@@ -271,6 +272,11 @@ export class ManageLedger {
       if (store.categorizationRules.some((rule) => rule.id === id)) continue
       tombstone("categorizationRule", id)
     }
+    for (const id of touched("merchant")) {
+      const merchant = store.merchants.find((candidate) => candidate.id === id)
+      if (merchant) upsert("merchant", merchantColumns(merchant))
+      else tombstone("merchant", id)
+    }
     if (store.touched.has("settings") && store.settings) upsert("settings", settingsColumns(store.settings))
     return { events, created }
   }
@@ -345,11 +351,21 @@ export class ManageLedger {
     }
     const restoredAccounts = new Set(entry.rows.filter((row) => row.deleted && row.entity === "account").map((row) => ids.get(row.before.id as string)!))
     const accountExists = (id: unknown) => typeof id !== "string" || restoredAccounts.has(id) || alive("account", id)
+    const restoredMerchants = new Set(entry.rows.filter((row) => row.deleted && row.entity === "merchant").map((row) => ids.get(row.before.id as string)!))
+    const merchantExists = (id: unknown) => typeof id !== "string" || restoredMerchants.has(id) || alive("merchant", id)
+    // A merchant gone for good (deleted or merged since) can't be named: the link is dropped, the row comes back.
+    const merchantsLive = (entity: SyncEntity, row: Row): Row => {
+      if (entity !== "transaction" && entity !== "recurringRule" && entity !== "categorizationRule") return row
+      const links: Record<string, unknown> = {}
+      if (!merchantExists(row.merchant_id)) links.merchant_id = null
+      if ("via_merchant_id" in row && !merchantExists(row.via_merchant_id)) links.via_merchant_id = null
+      return { ...row, ...links }
+    }
 
     const events: Event[] = []
     let skipped = 0
     for (const trashed of entry.rows) {
-      const row = remapRow(trashed.before as Row, ids)
+      const row = merchantsLive(trashed.entity, remapRow(trashed.before as Row, ids))
       if (trashed.deleted) {
         // A movement or rule whose account is gone for good can't come back pointing at nothing.
         if ((trashed.entity === "transaction" || trashed.entity === "recurringRule" || trashed.entity === "card") && !(accountExists(row.account_id) && (row.destination_account_id == null || accountExists(row.destination_account_id)))) {

@@ -11,24 +11,30 @@ import {
   applyRuleToPast,
   closeAccount,
   confirmPlannedTransaction,
+  createMerchant,
   currencySettings,
   dec,
   isTimeZone,
   deleteAccount,
   deleteCategorizationRule,
   deleteCategory,
+  deleteDebtRepayment,
   deleteLoan,
+  deleteMerchant,
   deletePersonalDebt,
   deleteRecurringRule,
   deleteSavingsGoal,
   dayKey,
+  INITIAL_CURRENCIES,
   deleteTransaction,
   DomainError,
   draftFrom,
+  equalShare,
   importedLineIds,
   importedTransactionId,
   importTransactions,
   MAX_IMPORT_LINES,
+  mergeMerchants,
   payLoanInstallment,
   renameAccount,
   reopenAccount,
@@ -39,6 +45,7 @@ import {
   saveCategorizationRule,
   saveCategory,
   saveLoan,
+  saveMerchant,
   savePersonalDebt,
   saveRecurringRule,
   saveSavingsGoal,
@@ -48,6 +55,8 @@ import {
   setCardNumber,
   setRecurringRulePaused,
   settlePersonalDebt,
+  splitRemaining,
+  splitTransaction,
   unpayLoanInstallment,
   updateCreditTerms,
   withRate,
@@ -59,11 +68,12 @@ import {
 } from "../../core/domain/domain"
 import { swapCurrencies, updateSettings } from "../../core/domain/domain/onboarding"
 import { CardColor, CardNetwork, DebtDirection, DebtMode, LoanFrequency, RecurringFrequency } from "../../core/domain/schema"
+import { actualDebitedOf, checkedActualDebited } from "../../core/mcp/actual-debited"
 import { categoryOutcome } from "../../core/mcp/category-outcome"
 import { instantIn } from "../../core/mcp/dates"
 import { ManageError, type ManageLedger } from "../../core/use-cases/manage-ledger"
 import type { RecordingStore } from "../../core/ledger/recording-store"
-import { decimal } from "./inputs"
+import { actualDebited, decimal } from "./inputs"
 import { VIEWS_URI } from "./ui/resources"
 
 // The `manage` tools (ADR 0011): everything the apps' screens do, through the apps' own domain use
@@ -99,6 +109,37 @@ function find<T extends { id: string }>(list: readonly T[], id: string, what: st
   const found = list.find((item) => item.id === id)
   if (!found) throw new ManageError("not_found", `${what} ${id} isn't one of this person's (see the list tools)`)
   return found
+}
+
+/**
+ * One of the person's merchants by id, or by the id an earlier `create_merchant` of the same batch
+ * chose for a merchant that already existed.
+ */
+function findMerchant(store: RecordingStore, id: string) {
+  return find(store.merchants, store.merchantId(id), "Merchant")
+}
+
+/** A merchant link as given (`null` removes it), once the merchant is known to be the person's. */
+function merchantLink<T extends string | null | undefined>(store: RecordingStore, id: T): T {
+  return (typeof id === "string" ? findMerchant(store, id).id : id) as T
+}
+
+/** `args` with its merchant links checked and pointing at the merchants they name. */
+function withMerchantLinks<T extends { merchant_id?: string | null | undefined; via_merchant_id?: string | null | undefined }>(store: RecordingStore, args: T): T {
+  return {
+    ...args,
+    ...(args.merchant_id === undefined ? {} : { merchant_id: merchantLink(store, args.merchant_id) }),
+    ...(args.via_merchant_id === undefined ? {} : { via_merchant_id: merchantLink(store, args.via_merchant_id) }),
+  }
+}
+
+/** The draft fields for the links a tool was given; left out, they stay as they are. */
+function merchantDraft(store: RecordingStore, args: { merchant_id?: string | null | undefined; via_merchant_id?: string | null | undefined }) {
+  const links = withMerchantLinks(store, args)
+  return {
+    ...(links.merchant_id === undefined ? {} : { merchantId: links.merchant_id }),
+    ...(links.via_merchant_id === undefined ? {} : { viaMerchantId: links.via_merchant_id }),
+  }
 }
 
 /**
@@ -396,7 +437,12 @@ export function registerManageTools(server: McpServer, options: { manage: Manage
 
   // Movements ----------------------------------------------------------------------------------
 
+  const merchantLinks = {
+    merchant_id: ref("From list_merchants: the business it was with. null removes it; left out it stays").nullable().optional(),
+    via_merchant_id: ref("From list_merchants: the platform it went through (Uber Eats delivering from a restaurant, Apple billing an app), never the business itself. null removes it; left out it stays").nullable().optional(),
+  }
   const movementBase = {
+    ...merchantLinks,
     kind,
     amount: decimal.describe("Always positive; kind gives the direction"),
     currency,
@@ -416,10 +462,28 @@ export function registerManageTools(server: McpServer, options: { manage: Manage
 
   tool(
     "create_transaction",
-    { title: "Record a movement", description: "Records one expense, income or transfer, saved like one typed in the app. status planned keeps it out of balances until confirmed. For more than one, use apply_changes.", annotations: CREATE, view: true },
-    { id: newId, ...movement, status: z.enum(["confirmed", "planned"]).default("confirmed") },
+    {
+      title: "Record a movement",
+      description:
+        "Records one expense, income or transfer, saved like one typed in the app. status planned keeps it out of balances until confirmed. When a movement in the second currency was charged a known different amount in the principal currency, pass it as actual_debited instead of writing it in the note. For more than one, use apply_changes.",
+      annotations: CREATE,
+      view: true,
+    },
+    {
+      id: newId,
+      ...movement,
+      merchant: z.string().min(1).max(60).optional().describe("Instead of merchant_id: the business by name; an existing merchant with that name (any case or accents) is used, otherwise one is created"),
+      actual_debited: actualDebited.optional(),
+      status: z.enum(["confirmed", "planned"]).default("confirmed"),
+    },
     (args) => args.id,
     async (store, args) => {
+      if (args.merchant !== undefined && args.merchant_id !== undefined) throw new ManageError("invalid", "Give merchant or merchant_id, not both")
+      // A transfer names no merchant (the domain drops the links); refused before `merchant` creates one.
+      if (args.kind === "transfer" && (args.merchant !== undefined || args.merchant_id != null || args.via_merchant_id != null)) throw new ManageError("invalid", "A transfer names no merchant: leave out merchant, merchant_id and via_merchant_id")
+      const merchantId = args.merchant !== undefined ? (await createMerchant(store, { name: args.merchant })).id : args.merchant_id
+      const principal = ((await store.loadSettings())?.currencies ?? INITIAL_CURRENCIES).principal
+      const debited = checkedActualDebited(args.actual_debited, args.currency, principal, (message) => new ManageError("invalid", message))
       const draft: TransactionDraft = {
         id: args.id,
         kind: args.kind,
@@ -433,6 +497,8 @@ export function registerManageTools(server: McpServer, options: { manage: Manage
         note: args.note ?? "",
         isDraft: args.status === "planned",
         ...(args.tags ? { tags: args.tags } : {}),
+        ...(debited ? { actualDebitedPrincipal: debited } : {}),
+        ...merchantDraft(store, { merchant_id: merchantId, via_merchant_id: args.via_merchant_id }),
       }
       const saved = await saveTransaction(store, draft)
       const transaction = saved.transaction
@@ -440,8 +506,11 @@ export function registerManageTools(server: McpServer, options: { manage: Manage
         id: transaction.id,
         status: transaction.status === "planned" ? "planned" : "saved",
         amount: { amount: transaction.amount, currency: transaction.currency },
+        ...(transaction.actualDebitedPrincipal === undefined ? {} : { actual_debited: actualDebitedOf(transaction) }),
         date: transaction.date,
         description: transaction.description,
+        merchant_id: transaction.merchantId ?? null,
+        via_merchant_id: transaction.viaMerchantId ?? null,
         ...categoryOutcome({ categories: await store.fetchCategories() }, transaction, saved.rule),
       }
     }
@@ -449,7 +518,12 @@ export function registerManageTools(server: McpServer, options: { manage: Manage
 
   tool(
     "update_transaction",
-    { title: "Edit a movement", description: "Changes any field of a movement; fields left out stay as they are.", annotations: WRITE },
+    {
+      title: "Edit a movement",
+      description:
+        "Changes any field of a movement; fields left out stay as they are, except actual_debited, which a new amount or currency clears unless given again (null clears it). Use actual_debited for what the bank charged in the principal currency on a movement in the second currency.",
+      annotations: WRITE,
+    },
     {
       transaction_id: ref("From search_transactions"),
       kind: kind.optional(),
@@ -463,13 +537,31 @@ export function registerManageTools(server: McpServer, options: { manage: Manage
       date: instant.optional(),
       note: z.string().max(500).optional(),
       tags: tags.optional(),
+      actual_debited: actualDebited.nullable().optional().describe("null clears it; left out it stays, unless amount or currency change"),
+      ...merchantLinks,
     },
     (args) => JSON.stringify(args),
     async (store, args) => {
-      const draft = draftFrom(find(store.transactions, args.transaction_id, "Movement"))
+      const existing = find(store.transactions, args.transaction_id, "Movement")
+      const draft = draftFrom(existing)
       const accountId = args.account_id ?? (draft.source?.type === "account" ? draft.source.id : store.cards.find((card) => card.id === draft.source?.id)?.accountId ?? "")
       const cardId = args.card_id === null ? undefined : (args.card_id ?? (args.account_id === undefined && draft.source?.type === "card" ? draft.source.id : undefined))
-      const { categoryId: _c, destinationAccountId: _d, source: _s, ...rest } = draft
+      const { categoryId: _c, destinationAccountId: _d, source: _s, actualDebitedPrincipal: _a, debitedFor: _f, ...rest } = draft
+      const currency = args.currency ? args.currency.toUpperCase() : draft.currency
+      // The bank's charge was for the old amount, currency and account: a change drops it unless given
+      // again, as the domain's applicableDebit does for an edit in the apps.
+      // The account it ends up in is the card's when it ends up paid by card.
+      const finalAccountId = cardId ? (store.cards.find((card) => card.id === cardId)?.accountId ?? accountId) : accountId
+      const moved = (args.amount !== undefined && !dec(args.amount).eq(draft.amount)) || currency !== draft.currency || finalAccountId !== existing.accountId
+      // An edit keeps the rate it was recorded with, so its principal is the one that counts (as in the domain).
+      const debited =
+        args.actual_debited === null
+          ? undefined
+          : args.actual_debited !== undefined
+            ? checkedActualDebited(args.actual_debited, currency, existing.exchangeRate.principal, (message) => new ManageError("invalid", message))
+            : moved
+              ? undefined
+              : draft.actualDebitedPrincipal
       const categoryId = args.category_id === null ? undefined : (args.category_id ?? draft.categoryId)
       const destination = args.destination_account_id === null ? undefined : (args.destination_account_id ?? draft.destinationAccountId)
       const saved = await saveTransaction(store, {
@@ -484,6 +576,8 @@ export function registerManageTools(server: McpServer, options: { manage: Manage
         ...(args.date ? { date: instantIn(args.date, store.timeZone) } : {}),
         ...(args.note !== undefined ? { note: args.note } : {}),
         ...(args.tags ? { tags: args.tags } : {}),
+        ...(debited ? { actualDebitedPrincipal: debited } : {}),
+        ...merchantDraft(store, args),
       })
       return { id: saved.transaction.id }
     }
@@ -577,7 +671,7 @@ export function registerManageTools(server: McpServer, options: { manage: Manage
     auto_confirm: z.boolean().default(true).describe("Record each occurrence as confirmed; false leaves them planned to confirm"),
   }
 
-  const ruleDraft = (args: Record<string, unknown> & { kind: "expense" | "income" | "transfer"; amount: string; currency: string; account_id: string; card_id?: string | undefined; destination_account_id?: string | undefined; category_id?: string | undefined; name: string; frequency: RecurringRuleDraft["frequency"]; interval: number; start_date: string; end_date?: string | undefined; is_subscription: boolean; auto_confirm: boolean; note?: string | undefined; tags?: string[] | undefined }, zone: string, id?: string): RecurringRuleDraft => ({
+  const ruleDraft = (args: Record<string, unknown> & { kind: "expense" | "income" | "transfer"; amount: string; currency: string; account_id: string; card_id?: string | undefined; destination_account_id?: string | undefined; category_id?: string | undefined; name: string; frequency: RecurringRuleDraft["frequency"]; interval: number; start_date: string; end_date?: string | undefined; is_subscription: boolean; auto_confirm: boolean; note?: string | undefined; tags?: string[] | undefined; merchant_id?: string | null | undefined; via_merchant_id?: string | null | undefined }, zone: string, id?: string): RecurringRuleDraft => ({
     ...(id ? { id } : {}),
     name: args.name,
     kind: args.kind,
@@ -594,6 +688,8 @@ export function registerManageTools(server: McpServer, options: { manage: Manage
     autoConfirm: args.auto_confirm,
     note: args.note ?? "",
     ...(args.tags ? { tags: args.tags } : {}),
+    ...(args.merchant_id === undefined ? {} : { merchantId: args.merchant_id }),
+    ...(args.via_merchant_id === undefined ? {} : { viaMerchantId: args.via_merchant_id }),
   })
 
   tool(
@@ -603,7 +699,7 @@ export function registerManageTools(server: McpServer, options: { manage: Manage
     (args) => args.id,
     async (store, args, now) => {
       if (existing(store.recurringRules, args.id)) return { id: args.id, status: "saved", already_existed: true }
-      const rule = await saveRecurringRule(store, ruleDraft(args, store.timeZone), now)
+      const rule = await saveRecurringRule(store, ruleDraft(withMerchantLinks(store, args), store.timeZone), now)
       store.renameId(rule.id, args.id)
       return { id: args.id, status: "saved", next_date: rule.nextDate.slice(0, 10), name: rule.name }
     }
@@ -611,12 +707,12 @@ export function registerManageTools(server: McpServer, options: { manage: Manage
 
   tool(
     "update_recurring_rule",
-    { title: "Edit a recurring payment", description: "Changes a recurring payment; send every field (read it first with list_recurring_rules).", annotations: WRITE },
+    { title: "Edit a recurring payment", description: "Changes a recurring payment; send every field (read it first with list_recurring_rules), except merchant_id and via_merchant_id, which stay when left out.", annotations: WRITE },
     { rule_id: ref("From list_recurring_rules"), ...movementBase, ...schedule },
     (args) => JSON.stringify(args),
     async (store, args, now) => {
       find(store.recurringRules, args.rule_id, "Recurring payment")
-      const rule = await saveRecurringRule(store, ruleDraft(args, store.timeZone, args.rule_id), now)
+      const rule = await saveRecurringRule(store, ruleDraft(withMerchantLinks(store, args), store.timeZone, args.rule_id), now)
       return { id: rule.id, next_date: rule.nextDate.slice(0, 10) }
     }
   )
@@ -832,17 +928,89 @@ export function registerManageTools(server: McpServer, options: { manage: Manage
 
   tool(
     "update_personal_debt_status",
-    { title: "Repay, settle or reopen a personal debt", description: "repay records a partial repayment (never more than what remains); settle marks it settled; reopen undoes that.", annotations: WRITE },
-    { debt_id: ref("From list_personal_debts"), action: z.enum(["repay", "settle", "reopen"]), amount: decimal.optional().describe("repay only"), date: instant.optional() },
+    {
+      title: "Repay, settle or reopen a personal debt",
+      description:
+        "Use when someone pays back part of a debt (repay, never more than what remains; with deposit_account_id the money also enters that account as an income movement that isn't counted as income, only for debts they owe the person, in the ledger's principal or second currency), or to mark one settled (settle) or open again (reopen).",
+      annotations: WRITE,
+    },
+    {
+      debt_id: ref("From list_personal_debts"),
+      action: z.enum(["repay", "settle", "reopen"]),
+      amount: decimal.optional().describe("repay only"),
+      date: instant.optional(),
+      deposit_account_id: ref("repay only, on a debt someone owes the person: the account (list_accounts) the repayment was deposited into; left out, it is only recorded").optional(),
+      category_id: ref("With deposit_account_id: the income category (list_categories); Refunds when left out").optional(),
+    },
     (args) => JSON.stringify(args),
     async (store, args, now) => {
       const day = args.date ? instantIn(args.date, store.timeZone) : now
+      if (args.action !== "repay" && (args.deposit_account_id !== undefined || args.category_id !== undefined)) throw new ManageError("invalid", "deposit_account_id and category_id are for repay only")
+      if (args.deposit_account_id === undefined && args.category_id !== undefined) throw new ManageError("invalid", "category_id needs deposit_account_id")
       if (args.action === "repay") {
         if (!args.amount) throw new ManageError("invalid", "repay needs an amount")
-        await repayPersonalDebt(store, args.debt_id, args.amount, day)
+        const deposit = args.deposit_account_id === undefined ? undefined : { accountId: find(store.accounts, args.deposit_account_id, "Account").id, ...(args.category_id === undefined ? {} : { categoryId: args.category_id }) }
+        if (deposit && find(store.personalDebts, args.debt_id, "Debt").direction !== "theyOweMe") throw new ManageError("invalid", "Only a debt someone owes the person can be deposited into an account")
+        const saved = await repayPersonalDebt(store, args.debt_id, args.amount, day, deposit)
+        const repayment = saved.repayments.at(-1)!
+        return { debt_id: args.debt_id, action: args.action, repayment_id: repayment.id ?? null, transaction_id: repayment.transactionId ?? null, settled: saved.settledAt !== undefined }
       } else if (args.action === "settle") await settlePersonalDebt(store, args.debt_id, day)
       else await reopenPersonalDebt(store, args.debt_id)
       return { debt_id: args.debt_id, action: args.action }
+    }
+  )
+
+  tool(
+    "delete_debt_repayment",
+    { title: "Delete a debt repayment", description: "Use to undo one repayment recorded by mistake: deletes it and the income movement it was deposited as, and opens the debt again if that repayment settled it. Can be undone with restore_deleted.", annotations: DELETE },
+    { debt_id: ref("From list_personal_debts"), repayment_id: ref("The repayment's id, from list_personal_debts") },
+    (args) => `${args.debt_id}|${args.repayment_id}`,
+    async (store, args) => {
+      const saved = await deleteDebtRepayment(store, args.debt_id, args.repayment_id)
+      return { debt_id: saved.id, settled: saved.settledAt !== undefined }
+    },
+    (store, args) => {
+      const debt = find(store.personalDebts, args.debt_id, "Debt")
+      const repayment = find(debt.repayments.map((candidate) => ({ ...candidate, id: candidate.id ?? "" })), args.repayment_id, "Repayment")
+      return `Repayment of ${repayment.amount} ${debt.amount.currency} from ${debt.person}`
+    }
+  )
+
+  tool(
+    "split_transaction",
+    {
+      title: "Split an expense with others",
+      description:
+        "Use when the person paid an expense shared with others: records a debt each person owes the person, linked to the movement, so summaries and budgets count only the person's share. Give each person's amount, or leave every amount out to split equally between the person and everyone listed. An expense already split shares only what is left of it.",
+      annotations: WRITE,
+    },
+    {
+      transaction_id: ref("An expense, from search_transactions"),
+      shares: z
+        .array(z.object({ person: z.string().min(1).max(60), amount: decimal.optional().describe("What this person owes, in the expense's currency") }))
+        .min(1)
+        .max(20)
+        .describe("Who shared it, never the person themself; all amounts, or none for an equal split"),
+    },
+    (args) => JSON.stringify(args),
+    async (store, args) => {
+      const expense = find(store.transactions, args.transaction_id, "Movement")
+      const given = args.shares.filter((share) => share.amount !== undefined).length
+      if (given !== 0 && given !== args.shares.length) throw new ManageError("invalid", "Give every person's amount, or none to split equally")
+      // A second split shares only what earlier ones left (`splitRemaining`), as the apps' Split does.
+      const remaining = splitRemaining(expense, store.personalDebts)
+      const equal = equalShare(remaining, args.shares.length)
+      const shares = args.shares.map((share) => ({ person: share.person, amount: share.amount === undefined ? equal : dec(share.amount) }))
+      if (expense.kind === "expense") {
+        const left = `${remaining.toString()} ${expense.currency}`
+        const already = remaining.lt(dec(expense.amount))
+        if (remaining.lte(0)) throw new ManageError("invalid", "This expense is already split in full: nothing is left to split")
+        if (shares.some((share) => share.amount.lte(0))) throw new ManageError("invalid", already ? `Every share must be more than zero (only ${left} left to split)` : "Every share must be more than zero")
+        if (shares.reduce((sum, share) => sum.plus(share.amount), dec(0)).gt(remaining))
+          throw new ManageError("invalid", already ? `The shares add up to more than what is left: only ${left} left to split` : `The shares add up to more than the expense (${left})`)
+      }
+      const created = await splitTransaction(store, args.transaction_id, shares)
+      return { transaction_id: args.transaction_id, debts: created.map((debt) => ({ debt_id: debt.id, person: debt.person, amount: debt.amount })) }
     }
   )
 
@@ -860,11 +1028,19 @@ export function registerManageTools(server: McpServer, options: { manage: Manage
   tool(
     "create_categorization_rule",
     { title: "Create a categorization rule", description: "Movements whose description or note contains `match` get this category (and tags). apply_to_past also recategorizes existing ones.", annotations: CREATE },
-    { id: newId, match: z.string().min(1).max(60), category_id: ref("From list_categories"), kind: categoryKind, tags: tags.optional(), apply_to_past: z.boolean().default(false) },
+    {
+      id: newId,
+      match: z.string().min(1).max(60),
+      category_id: ref("From list_categories"),
+      kind: categoryKind,
+      tags: tags.optional(),
+      merchant_id: ref("From list_merchants: the business it sets on movements that name none yet").optional(),
+      apply_to_past: z.boolean().default(false),
+    },
     (args) => args.id,
     async (store, args) => {
       if (existing(store.categorizationRules, args.id)) return { rule_id: args.id, already_existed: true }
-      const rule = await saveCategorizationRule(store, { match: args.match, categoryId: args.category_id, kind: args.kind, ...(args.tags ? { tags: args.tags } : {}) })
+      const rule = await saveCategorizationRule(store, { match: args.match, categoryId: args.category_id, kind: args.kind, ...(args.tags ? { tags: args.tags } : {}), ...(args.merchant_id ? { merchantId: merchantLink(store, args.merchant_id) } : {}) })
       store.renameId(rule.id, args.id)
       const applied = args.apply_to_past ? await applyRuleToPast(store, { ...rule, id: args.id }) : 0
       return { rule_id: args.id, applied_to_past: applied }
@@ -873,12 +1049,23 @@ export function registerManageTools(server: McpServer, options: { manage: Manage
 
   tool(
     "update_categorization_rule",
-    { title: "Edit a categorization rule", description: "Changes a rule's match, category or tags.", annotations: WRITE },
-    { rule_id: ref("From list_categorization_rules"), match: z.string().min(1).max(60), category_id: ref("From list_categories"), kind: categoryKind, tags: tags.optional() },
+    { title: "Edit a categorization rule", description: "Changes a rule's match, category, tags or merchant (merchant_id stays when left out; null removes it).", annotations: WRITE },
+    {
+      rule_id: ref("From list_categorization_rules"),
+      match: z.string().min(1).max(60),
+      category_id: ref("From list_categories"),
+      kind: categoryKind,
+      tags: tags.optional(),
+      merchant_id: ref("From list_merchants").nullable().optional(),
+    },
     (args) => JSON.stringify(args),
     async (store, args) => {
-      find(store.categorizationRules, args.rule_id, "Rule")
-      const rule = await saveCategorizationRule(store, { id: args.rule_id, match: args.match, categoryId: args.category_id, kind: args.kind, ...(args.tags ? { tags: args.tags } : {}) })
+      const current = find(store.categorizationRules, args.rule_id, "Rule")
+      // Left out, the stored merchant stays only while it exists: one deleted since is dropped, as the
+      // apps do, instead of refusing to save the rule.
+      const merchantId =
+        args.merchant_id === undefined ? (current.merchantId !== undefined && store.merchants.some((merchant) => merchant.id === current.merchantId) ? current.merchantId : undefined) : (merchantLink(store, args.merchant_id) ?? undefined)
+      const rule = await saveCategorizationRule(store, { id: args.rule_id, match: args.match, categoryId: args.category_id, kind: args.kind, ...(args.tags ? { tags: args.tags } : {}), ...(merchantId ? { merchantId } : {}) })
       return { rule_id: rule.id }
     }
   )
@@ -890,6 +1077,104 @@ export function registerManageTools(server: McpServer, options: { manage: Manage
     (args) => args.rule_id,
     async (store, args) => deleteCategorizationRule(store, args.rule_id),
     (store, args) => `Rule “${find(store.categorizationRules, args.rule_id, "Rule").match}”`
+  )
+
+  // Merchants ----------------------------------------------------------------------------------
+
+  const merchantFields = {
+    domain: z.string().max(253).describe("Its web domain (subway.com), where its logo comes from; an address is reduced to its domain"),
+    default_category_id: ref("From list_categories (expense or income): the category a new movement with it takes when given none"),
+    is_platform: z.boolean().describe("A platform movements go through (Uber Eats, Apple), offered first as via"),
+  }
+
+  tool(
+    "create_merchant",
+    { title: "Create a merchant", description: "A business (Subway) or platform (Uber Eats) movements can name. One with the same name (any case or accents) or domain is used instead of making a second.", annotations: CREATE },
+    { id: newId, name: z.string().min(1).max(60), domain: merchantFields.domain.optional(), default_category_id: merchantFields.default_category_id.optional(), is_platform: merchantFields.is_platform.optional() },
+    (args) => args.id,
+    async (store, args) => {
+      if (existing(store.merchants, store.merchantId(args.id))) return { merchant_id: store.merchantId(args.id), already_existed: true }
+      const before = new Set(store.merchants.map((merchant) => merchant.id))
+      const merchant = await createMerchant(store, {
+        name: args.name,
+        ...(args.domain ? { domain: args.domain } : {}),
+        ...(args.default_category_id ? { defaultCategoryId: args.default_category_id } : {}),
+        ...(args.is_platform === undefined ? {} : { isPlatform: args.is_platform }),
+      })
+      if (before.has(merchant.id)) {
+        // The same merchant already exists: the caller's id names it for the rest of the batch, and
+        // it takes the domain and default category given where it has none (what it has stays).
+        store.aliasMerchant(args.id, merchant.id)
+        const domain = merchant.domain ?? args.domain
+        const category = merchant.defaultCategoryId ?? args.default_category_id
+        const filled =
+          domain === merchant.domain && category === merchant.defaultCategoryId
+            ? merchant
+            : await saveMerchant(store, {
+                id: merchant.id,
+                name: merchant.name,
+                ...(domain ? { domain } : {}),
+                ...(merchant.brandId ? { brandId: merchant.brandId } : {}),
+                ...(category ? { defaultCategoryId: category } : {}),
+                isPlatform: merchant.isPlatform,
+              })
+        return { merchant_id: filled.id, name: filled.name, already_existed: true, ...(filled === merchant ? {} : { domain: filled.domain ?? null, default_category_id: filled.defaultCategoryId ?? null }) }
+      }
+      store.renameId(merchant.id, args.id)
+      return { merchant_id: args.id, name: merchant.name, domain: merchant.domain ?? null }
+    }
+  )
+
+  tool(
+    "update_merchant",
+    { title: "Edit a merchant", description: "Renames a merchant or sets its domain, default category or whether it is a platform; fields left out stay, null removes one. Every movement naming it shows the change.", annotations: WRITE },
+    {
+      merchant_id: ref("From list_merchants"),
+      name: z.string().min(1).max(60).optional(),
+      domain: merchantFields.domain.nullable().optional(),
+      default_category_id: merchantFields.default_category_id.nullable().optional(),
+      is_platform: merchantFields.is_platform.optional(),
+    },
+    (args) => JSON.stringify(args),
+    async (store, args) => {
+      const current = findMerchant(store, args.merchant_id)
+      const domain = args.domain === undefined ? current.domain : (args.domain ?? undefined)
+      const category = args.default_category_id === undefined ? current.defaultCategoryId : (args.default_category_id ?? undefined)
+      const saved = await saveMerchant(store, {
+        id: current.id,
+        name: args.name ?? current.name,
+        ...(domain ? { domain } : {}),
+        ...(current.brandId ? { brandId: current.brandId } : {}),
+        ...(category ? { defaultCategoryId: category } : {}),
+        ...(args.is_platform === undefined ? {} : { isPlatform: args.is_platform }),
+      })
+      return { merchant_id: saved.id, name: saved.name, domain: saved.domain ?? null, default_category_id: saved.defaultCategoryId ?? null, is_platform: saved.isPlatform }
+    }
+  )
+
+  tool(
+    "merge_merchants",
+    {
+      title: "Merge two merchants",
+      description: "Merges a duplicate into another: whatever named from_merchant_id (movements, recurring payments, rules) names into_merchant_id, which keeps its fields and takes the duplicate's where it has none. The duplicate is deleted. Can be undone with restore_deleted.",
+      annotations: DELETE,
+    },
+    { from_merchant_id: ref("From list_merchants: the duplicate, deleted"), into_merchant_id: ref("From list_merchants: the one that stays") },
+    (args) => `${args.from_merchant_id}|${args.into_merchant_id}`,
+    async (store, args) => {
+      const merged = await mergeMerchants(store, store.merchantId(args.from_merchant_id), store.merchantId(args.into_merchant_id))
+      return { merchant_id: merged.id, name: merged.name }
+    },
+    (store, args) => `Merchant ${findMerchant(store, args.from_merchant_id).name} (merged into ${findMerchant(store, args.into_merchant_id).name})`
+  )
+
+  tool(
+    "delete_merchant",
+    { title: "Delete a merchant", description: "Deletes a merchant; movements and rules that named it keep everything else and name no merchant, as in the app. Can be undone with restore_deleted.", annotations: DELETE },
+    { merchant_id: ref("From list_merchants") },
+    (args) => args.merchant_id,
+    async (store, args) => deleteMerchant(store, store.merchantId(args.merchant_id)),
+    (store, args) => `Merchant ${findMerchant(store, args.merchant_id).name}`
   )
 
   // Settings -----------------------------------------------------------------------------------
@@ -940,9 +1225,9 @@ export function registerManageTools(server: McpServer, options: { manage: Manage
 
   // Batches ------------------------------------------------------------------------------------
 
-  // Deletes stay one by one: each is destructive, so Claude asks about each.
+  // Deletes (and merges, which delete one merchant) stay one by one: each is destructive, so Claude asks about each.
   // import_transactions neither: it has its own preview (dry_run) and ids derived from each line.
-  const batchable = [...specs.keys()].filter((name) => !name.startsWith("delete_") && name !== "unpay_loan_installment" && name !== "import_transactions")
+  const batchable = [...specs.keys()].filter((name) => !name.startsWith("delete_") && name !== "unpay_loan_installment" && name !== "merge_merchants" && name !== "import_transactions")
   registerAppTool(
     server,
     "apply_changes",

@@ -1,4 +1,4 @@
-import type { Account, Card, CategorizationRule, Loan, PersonalDebt, RecurringRule, SavingsGoal, Settings, Transaction, TransactionCategory } from "../schema"
+import type { Account, Card, CategorizationRule, DebtRepayment, Loan, Merchant, PersonalDebt, RecurringRule, SavingsGoal, Settings, Transaction, TransactionCategory } from "../schema"
 import { DEFAULT_CATEGORIES, isFallbackCategory, orderedCategories, shippedCategory } from "../schema"
 
 import type { TimeZone } from "./calendar"
@@ -58,6 +58,13 @@ export interface LedgerStore {
   savePersonalDebt(debt: PersonalDebt): Promise<void>
   /** Soft-deletes; throws `notFound` for a missing or deleted debt. */
   deletePersonalDebt(id: string): Promise<void>
+  /**
+   * The income movements debt repayments deposited (`DebtRepayment.transactionId`), read from every
+   * repayment, deleted ones and those of deleted debts included (their tombstones keep the link).
+   * Deleting a debt deletes its repayments but keeps the movements they deposited, and those still
+   * aren't income (`isReimbursement` with `ledgerDebtLinks`).
+   */
+  fetchRepaymentDepositIds(): Promise<string[]>
 
   /** Alive categorization rules in the person's order, which decides the one that wins. */
   fetchCategorizationRules(): Promise<CategorizationRule[]>
@@ -78,6 +85,13 @@ export interface LedgerStore {
   reorderCategories(ids: readonly string[]): Promise<void>
   /** Every default back as shipped, deleted ones included; the person's own follow. */
   restoreDefaultCategories(): Promise<void>
+
+  /** Alive merchants (businesses and platforms), in no particular order. */
+  fetchMerchants(): Promise<Merchant[]>
+  /** Inserts or replaces the merchant with the same id. */
+  saveMerchant(merchant: Merchant): Promise<void>
+  /** Soft-deletes; throws `notFound` for a missing or deleted merchant. */
+  deleteMerchant(id: string): Promise<void>
 
   /** `undefined` before onboarding saves the first settings. */
   loadSettings(): Promise<Settings | undefined>
@@ -104,7 +118,10 @@ export class InMemoryStore implements LedgerStore, ProfileStore {
   savingsGoals: SavingsGoal[]
   loans: Loan[]
   personalDebts: PersonalDebt[]
+  /** What the repayments' tombstones keep: movements deposited by repayments deleted, alone or with their debt. */
+  deletedRepaymentDepositIds: ReadonlySet<string>
   categorizationRules: CategorizationRule[]
+  merchants: Merchant[]
   /** In stored order; ids in `deletedCategoryIds` are tombstones. */
   categories: TransactionCategory[]
   deletedCategoryIds = new Set<string>()
@@ -113,7 +130,7 @@ export class InMemoryStore implements LedgerStore, ProfileStore {
 
   constructor(
     readonly timeZone: TimeZone,
-    seed: Partial<{ accounts: Account[]; cards: Card[]; transactions: Transaction[]; recurringRules: RecurringRule[]; savingsGoals: SavingsGoal[]; loans: Loan[]; personalDebts: PersonalDebt[]; categorizationRules: CategorizationRule[]; categories: TransactionCategory[]; settings: Settings }> = {},
+    seed: Partial<{ accounts: Account[]; cards: Card[]; transactions: Transaction[]; recurringRules: RecurringRule[]; savingsGoals: SavingsGoal[]; loans: Loan[]; personalDebts: PersonalDebt[]; categorizationRules: CategorizationRule[]; categories: TransactionCategory[]; merchants: Merchant[]; settings: Settings; deletedRepaymentDepositIds: string[] }> = {},
   ) {
     this.accounts = [...(seed.accounts ?? [])]
     this.cards = [...(seed.cards ?? [])]
@@ -122,8 +139,10 @@ export class InMemoryStore implements LedgerStore, ProfileStore {
     this.savingsGoals = [...(seed.savingsGoals ?? [])]
     this.loans = [...(seed.loans ?? [])]
     this.personalDebts = [...(seed.personalDebts ?? [])]
+    this.deletedRepaymentDepositIds = new Set(seed.deletedRepaymentDepositIds ?? [])
     this.categorizationRules = [...(seed.categorizationRules ?? [])]
     this.categories = [...(seed.categories ?? DEFAULT_CATEGORIES)]
+    this.merchants = [...(seed.merchants ?? [])]
     this.settings = seed.settings
   }
 
@@ -197,11 +216,26 @@ export class InMemoryStore implements LedgerStore, ProfileStore {
     return [...this.personalDebts]
   }
   async savePersonalDebt(debt: PersonalDebt) {
+    const kept = new Set(debt.repayments.map((repayment) => repayment.id))
+    const previous = this.personalDebts.find((existing) => existing.id === debt.id)
+    this.forgetRepayments((previous?.repayments ?? []).filter((repayment) => repayment.id === undefined || !kept.has(repayment.id)))
     this.personalDebts = upsert(this.personalDebts, debt)
   }
   async deletePersonalDebt(id: string) {
-    if (!this.personalDebts.some((debt) => debt.id === id)) throw DomainError.notFound(id)
-    this.personalDebts = this.personalDebts.filter((debt) => debt.id !== id)
+    const debt = this.personalDebts.find((candidate) => candidate.id === id)
+    if (!debt) throw DomainError.notFound(id)
+    this.forgetRepayments(debt.repayments)
+    this.personalDebts = this.personalDebts.filter((candidate) => candidate.id !== id)
+  }
+  async fetchRepaymentDepositIds() {
+    const ids = new Set(this.deletedRepaymentDepositIds)
+    for (const debt of this.personalDebts) for (const repayment of debt.repayments) if (repayment.transactionId !== undefined) ids.add(repayment.transactionId)
+    return [...ids]
+  }
+  /** Repayments leaving the store: their deposits stay known, as a database's tombstones keep them. */
+  private forgetRepayments(repayments: readonly DebtRepayment[]) {
+    const deposits = repayments.flatMap((repayment) => (repayment.transactionId === undefined ? [] : [repayment.transactionId]))
+    if (deposits.length > 0) this.deletedRepaymentDepositIds = new Set([...this.deletedRepaymentDepositIds, ...deposits])
   }
 
   async fetchCategorizationRules() {
@@ -251,6 +285,17 @@ export class InMemoryStore implements LedgerStore, ProfileStore {
     this.categories = [...DEFAULT_CATEGORIES, ...this.categories.filter((category) => !shippedCategory(category.id))]
   }
 
+  async fetchMerchants() {
+    return [...this.merchants]
+  }
+  async saveMerchant(merchant: Merchant) {
+    this.merchants = upsert(this.merchants, merchant)
+  }
+  async deleteMerchant(id: string) {
+    if (!this.merchants.some((merchant) => merchant.id === id)) throw DomainError.notFound(id)
+    this.merchants = this.merchants.filter((merchant) => merchant.id !== id)
+  }
+
   async loadSettings() {
     return this.settings
   }
@@ -259,7 +304,7 @@ export class InMemoryStore implements LedgerStore, ProfileStore {
   }
 
   async atomically<T>(work: () => Promise<T>): Promise<T> {
-    const snapshot = { accounts: this.accounts, cards: this.cards, transactions: this.transactions, recurringRules: this.recurringRules, savingsGoals: this.savingsGoals, loans: this.loans, personalDebts: this.personalDebts, categorizationRules: this.categorizationRules, categories: this.categories, settings: this.settings }
+    const snapshot = { accounts: this.accounts, cards: this.cards, transactions: this.transactions, recurringRules: this.recurringRules, savingsGoals: this.savingsGoals, loans: this.loans, personalDebts: this.personalDebts, deletedRepaymentDepositIds: this.deletedRepaymentDepositIds, categorizationRules: this.categorizationRules, categories: this.categories, merchants: this.merchants, settings: this.settings }
     try {
       return await work()
     } catch (error) {

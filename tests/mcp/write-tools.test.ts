@@ -132,4 +132,19 @@ describe("MCP write tools", () => {
     await syncClient(harness.app, cookie).push([event("transaction", confirmed as never)])
     expect((await admin.db.execute(sql`select status, source from transactions where id = ${id}`)).rows).toEqual([{ status: "confirmed", source: "mcp" }])
   })
+
+  it("records what the bank actually charged on a pending movement in the second currency", async () => {
+    const { tool } = await setup("read write offline_access")
+    const id = randomUUID()
+    const result = await tool("create_transaction", { ...lunch(id), amount: "3690", currency: "NIO", actual_debited: "100" })
+    expect(result.isError, result.content[0]?.text).toBeFalsy()
+    expect(result.structuredContent).toMatchObject({ id, status: "pending_confirmation", actual_debited: { amount: "100", currency: "USD" } })
+    expect((await admin.db.execute(sql`select actual_debited_principal from transactions where id = ${id}`)).rows).toEqual([{ actual_debited_principal: "100" }])
+
+    const same = await tool("create_transaction", { ...lunch(), actual_debited: "18.50" })
+    expect(same.isError).toBe(true)
+    expect(same.content[0]!.text).toContain("actual_debited")
+    const zero = await tool("create_transaction", { ...lunch(), amount: "3690", currency: "NIO", actual_debited: "0.00" })
+    expect(zero.isError).toBe(true)
+  })
 })

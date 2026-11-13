@@ -284,4 +284,74 @@ describe("MCP manage tools", () => {
     expect((await admin.db.execute(sql`select closed_at from ledger_accounts where id = ${oldId}`)).rows).toEqual([{ closed_at: null }])
     expect((await tool("create_transaction", { id: randomUUID(), kind: "expense", amount: "5", currency: "USD", account_id: oldId, category_id: "groceries", description: "Café", date: today() })).isError).toBeFalsy()
   })
+
+  it("records, shows, edits and clears what the bank actually charged (actual_debited)", async () => {
+    const { tool, data } = await setup()
+    const accountId = data<{ result: { account_id: string } }>(await tool("create_account", { id: randomUUID(), kind: "cash", name: "Efectivo", balance: "1000", currency: "USD" })).result.account_id
+    const stored = async (id: string) => ((await admin.db.execute(sql`select amount, actual_debited_principal from transactions where id = ${id}`)).rows[0] as { amount: string; actual_debited_principal: string | null })
+    const nio = (extra: Record<string, unknown> = {}) => ({ id: randomUUID(), kind: "expense", amount: "3690", currency: "NIO", account_id: accountId, category_id: "groceries", description: "Compra", date: today(), ...extra })
+
+    // A movement in the second currency, charged 100 USD by the bank: balances count the charge.
+    const call = nio({ actual_debited: "100" })
+    const created = await tool("create_transaction", call)
+    expect(created.isError, created.content[0]?.text).toBeFalsy()
+    expect(data(created)).toMatchObject({ result: { amount: { amount: "3690", currency: "NIO" }, actual_debited: { amount: "100", currency: "USD" } } })
+    expect((await stored(call.id)).actual_debited_principal).toBe("100")
+    expect(data(await tool("get_net_worth"))).toMatchObject({ net_worth: { amount: "900" } })
+
+    // Refused on a movement already in the principal currency, and when it isn't positive.
+    const same = await tool("create_transaction", nio({ currency: "USD", amount: "10", actual_debited: "10" }))
+    expect(same.isError).toBe(true)
+    expect(same.content[0]!.text).toContain("actual_debited")
+    expect(same.content[0]!.text).toContain("invalid")
+    const zero = await tool("create_transaction", nio({ actual_debited: "0" }))
+    expect(zero.isError).toBe(true)
+    expect(zero.content[0]!.text).toContain("greater than zero")
+    expect(await count(sql`select count(*) as n from transactions`)).toBe(1)
+
+    // search_transactions shows it next to the amount; null when there is none.
+    const plain = nio()
+    await tool("create_transaction", plain)
+    type Found = { transactions: { id: string; actual_debited: { amount: string; currency: string } | null }[] }
+    const found = data<Found>(await tool("search_transactions", { account_id: accountId })).transactions
+    expect(found.find((t) => t.id === call.id)!.actual_debited).toEqual({ amount: "100", currency: "USD" })
+    expect(found.find((t) => t.id === plain.id)!.actual_debited).toBeNull()
+
+    // Left out, an edit keeps it; a new amount clears it unless given again; null clears it.
+    expect((await tool("update_transaction", { transaction_id: call.id, description: "Compra grande" })).isError).toBeFalsy()
+    expect((await stored(call.id)).actual_debited_principal).toBe("100")
+    expect((await tool("update_transaction", { transaction_id: call.id, amount: "3690.00" })).isError).toBeFalsy()
+    expect((await stored(call.id)).actual_debited_principal).toBe("100")
+    expect((await tool("update_transaction", { transaction_id: call.id, amount: "3700" })).isError).toBeFalsy()
+    expect(await stored(call.id)).toEqual({ amount: "3700", actual_debited_principal: null })
+    expect((await tool("update_transaction", { transaction_id: call.id, amount: "3800", actual_debited: "102.50" })).isError).toBeFalsy()
+    expect(await stored(call.id)).toEqual({ amount: "3800", actual_debited_principal: "102.5" })
+    expect((await tool("update_transaction", { transaction_id: call.id, actual_debited: null })).isError).toBeFalsy()
+    expect((await stored(call.id)).actual_debited_principal).toBeNull()
+    expect((await tool("update_transaction", { transaction_id: call.id, actual_debited: "101" })).isError).toBeFalsy()
+    // Moving it to another account drops it too, unless given again.
+    const otherId = data<{ result: { account_id: string } }>(await tool("create_account", { id: randomUUID(), kind: "cash", name: "Billetera", balance: "0", currency: "USD" })).result.account_id
+    expect((await tool("update_transaction", { transaction_id: call.id, account_id: otherId })).isError).toBeFalsy()
+    expect((await stored(call.id)).actual_debited_principal).toBeNull()
+    expect((await tool("update_transaction", { transaction_id: call.id, account_id: accountId, actual_debited: "101" })).isError).toBeFalsy()
+    expect((await stored(call.id)).actual_debited_principal).toBe("101")
+    // Moving it by card alone (the card's account is another one) drops it too.
+    const card = data<{ result: { account_id: string; card_id: string } }>(await tool("create_credit_card", { id: randomUUID(), bank: "BAC", last_four: "4242", network: "visa", debt_mode: "dual" })).result
+    expect((await tool("update_transaction", { transaction_id: call.id, card_id: card.card_id })).isError).toBeFalsy()
+    expect((await stored(call.id)).actual_debited_principal).toBeNull()
+    expect((await tool("update_transaction", { transaction_id: call.id, account_id: accountId, card_id: null, actual_debited: "101" })).isError).toBeFalsy()
+    expect((await stored(call.id)).actual_debited_principal).toBe("101")
+    // A change to the principal currency drops it; asking to keep one there is refused.
+    const toUsd = await tool("update_transaction", { transaction_id: call.id, currency: "USD", amount: "101", actual_debited: "101" })
+    expect(toUsd.isError).toBe(true)
+    expect(toUsd.content[0]!.text).toContain("actual_debited")
+    expect((await tool("update_transaction", { transaction_id: call.id, currency: "USD", amount: "101" })).isError).toBeFalsy()
+    expect(await stored(call.id)).toEqual({ amount: "101", actual_debited_principal: null })
+
+    // apply_changes takes it too.
+    const batched = nio({ actual_debited: "50" })
+    const applied = await tool("apply_changes", { changes: [{ tool: "create_transaction", arguments: batched }] })
+    expect(applied.isError, applied.content[0]?.text).toBeFalsy()
+    expect((await stored(batched.id)).actual_debited_principal).toBe("50")
+  })
 })

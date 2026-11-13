@@ -23,6 +23,7 @@ function rows(categorizationRule: LedgerRows["categorizationRule"]): LedgerRows 
     categorizationRule,
     settings: [],
     notificationState: [],
+    merchant: [],
   }
 }
 

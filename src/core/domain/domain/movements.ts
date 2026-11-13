@@ -1,10 +1,11 @@
-import type { Account, Card, CategorizationRule, CurrencySettings, ExchangeRate, Transaction, TransactionCategory, TransactionKind } from "../schema"
+import type { Account, Card, CategorizationRule, CurrencySettings, ExchangeRate, Merchant, PersonalDebt, Transaction, TransactionCategory, TransactionKind } from "../schema"
 import { OTHER_EXPENSE_ID, OTHER_INCOME_ID } from "../schema"
 
 import { Decimal, ZERO, decimalText } from "./decimal"
 import { yearMonthContaining, type TimeZone } from "./calendar"
 import { applyingRule, categorizingRule, usableRules } from "./categorization"
 import { DomainError } from "./errors"
+import { merchantCategory } from "./merchants"
 import { INITIAL_CURRENCIES, settingsRate, type Money } from "./money"
 import { balanceOf, checkAmounts, isConfirmed, isOpen, monthlySummary } from "./rules"
 import type { LedgerStore } from "./store"
@@ -86,6 +87,12 @@ export interface TransactionDraft {
   date: Date
   /** "USD charged by the bank". */
   actualDebitedPrincipal?: Decimal
+  /**
+   * What a charged amount carried over from a saved movement (`draftFrom`) was charged for: the
+   * amount, currency and account it was recorded with. Once any of them changes that charge no longer
+   * applies, so the movement saves without it (`applicableDebit`). A charge typed for the draft leaves this out.
+   */
+  debitedFor?: { amount: Decimal; currency: string; accountId: string }
   note: string
   /** Saved without counting toward balances until confirmed. */
   isDraft: boolean
@@ -95,6 +102,15 @@ export interface TransactionDraft {
   tags?: string[]
   /** The statement line a new movement is imported from (`importTransactions`); an edit keeps the one it had. */
   importedId?: string
+  /**
+   * The business it was with. Absent keeps the edited movement's (an editor or a client that doesn't
+   * know merchants never unlinks one); `null` removes it, and no categorization rule sets one then. A
+   * new movement without a category that no rule matches takes the merchant's default category. A
+   * transfer never names one: its links are dropped whatever the draft says.
+   */
+  merchantId?: string | null
+  /** The platform it went through, like `merchantId`. Never the business itself. */
+  viaMerchantId?: string | null
 }
 
 export interface TransactionContext {
@@ -111,6 +127,8 @@ export interface TransactionContext {
   zone: TimeZone
   /** Categorization rules in the person's order, only those whose category exists with their kind. */
   rules: CategorizationRule[]
+  /** Alive merchants; a movement may only name one of these. */
+  merchants: Merchant[]
 }
 
 export function accountIdFor(context: Pick<TransactionContext, "cards">, source: PaymentSource): string | undefined {
@@ -127,12 +145,13 @@ export function lastUsedSource(context: TransactionContext): PaymentSource | und
 
 export async function getTransactionContext(store: LedgerStore): Promise<TransactionContext> {
   const currencies = (await store.loadSettings())?.currencies ?? INITIAL_CURRENCIES
-  const [accounts, cards, transactions, categories, allRules] = await Promise.all([
+  const [accounts, cards, transactions, categories, allRules, merchants] = await Promise.all([
     store.fetchAccounts(),
     store.fetchCards(),
     store.fetchTransactions(),
     store.fetchCategories(),
     store.fetchCategorizationRules(),
+    store.fetchMerchants(),
   ])
   const zone = store.timeZone
   const balances = new Map(accounts.map((account) => [account.id, balanceOf(account, transactions, zone)]))
@@ -145,7 +164,7 @@ export async function getTransactionContext(store: LedgerStore): Promise<Transac
     if (!previous || date > previous) lastUsed.set(key, date)
     if (movement.categoryId) categoryUsage.set(movement.categoryId, (categoryUsage.get(movement.categoryId) ?? 0) + 1)
   }
-  return { currencies, categories, accounts, cards, balances, lastUsed, categoryUsage, transactions, zone, rules: usableRules(allRules, categories) }
+  return { currencies, categories, accounts, cards, balances, lastUsed, categoryUsage, transactions, zone, rules: usableRules(allRules, categories), merchants }
 }
 
 /**
@@ -167,7 +186,8 @@ export function validatedTransaction(draft: TransactionDraft, context: Transacti
 /**
  * `validatedTransaction`, plus the categorization rule that chose its category. Only a new movement
  * goes through the rules: one without a category, or in "Other" of its kind, takes the first rule
- * that matches; a new one without a category and no matching rule goes to "Other". An edit never.
+ * that matches; a new one without a category and no matching rule takes its merchant's default
+ * category, else goes to "Other". An edit never.
  */
 export function categorizedTransaction(
   draft: TransactionDraft,
@@ -181,6 +201,11 @@ export function categorizedTransaction(
   const accountId = draft.source ? accountIdFor(context, draft.source) : undefined
   if (!draft.source || !accountId) throw DomainError.notFound("source")
   const isNew = existing === undefined
+  // A transfer is between the person's own accounts: it names no business or platform, and turning
+  // an expense or income into one drops the links it had.
+  const links = draft.kind === "transfer" ? {} : merchantLinks(draft, context.merchants, existing)
+  // A new one without a category starts in "Other": a matching rule decides first, and only when
+  // none matches does the merchant's default category (below) take its place.
   const categoryId =
     draft.kind === "transfer" || draft.categoryId !== undefined || !isNew ? draft.categoryId : draft.kind === "income" ? OTHER_INCOME_ID : OTHER_EXPENSE_ID
   if (draft.kind === "transfer") {
@@ -195,7 +220,7 @@ export function categorizedTransaction(
   }
   const description = draft.description.trim()
   const note = draft.note.trim()
-  const debited = draft.currency === rate.principal ? undefined : draft.actualDebitedPrincipal
+  const debited = applicableDebit(draft, rate, accountId)
   const recurringId = draft.recurringId ?? existing?.recurringId
   // Nobody types it: an edit from any editor keeps the statement line the movement came from.
   const importedId = existing?.importedId ?? draft.importedId
@@ -211,17 +236,19 @@ export function categorizedTransaction(
     accountId,
     ...(draft.source.type === "card" ? { cardId: draft.source.id } : {}),
     ...(draft.kind === "transfer" && draft.destinationAccountId ? { destinationAccountId: draft.destinationAccountId } : {}),
-    ...(debited === undefined ? {} : { actualDebitedPrincipal: decimalText(debited) }),
+    ...debitedField(debited),
     exchangeRate: rate,
     isShared: existing?.isShared ?? false,
     ...(note === "" ? {} : { note }),
     ...(recurringId === undefined ? {} : { recurringId }),
     ...tagsField(draft.tags),
     ...(importedId === undefined ? {} : { importedId }),
+    ...links,
   }
   // The rule reads the text as typed, before the safety net below fills in a category's name.
   const rule = isNew ? categorizingRule(built, context.rules) : undefined
-  const transaction = rule ? applyingRule(rule, built) : built
+  // A business the draft cleared (`null`) stays cleared, whatever the rule names.
+  const transaction = rule ? applyingRule(rule, built, context.merchants, draft.merchantId !== null) : withMerchantCategory(built, draft, context, isNew)
   if (description === "") {
     const category = context.categories.find((candidate) => candidate.id === transaction.categoryId)
     // Safety net only: the flow fills a localized description before saving.
@@ -229,6 +256,58 @@ export function categorizedTransaction(
   }
   checkClosedAccounts(transaction, context.accounts, existing)
   return rule ? { transaction, rule } : { transaction }
+}
+
+/**
+ * A new movement the draft left without a category, that no rule categorized: its merchant's default
+ * category (of its kind), if it has one. Rules come first (`categorizedTransaction`).
+ */
+function withMerchantCategory(built: Transaction, draft: TransactionDraft, context: TransactionContext, isNew: boolean): Transaction {
+  if (!isNew || draft.categoryId !== undefined || built.merchantId === undefined) return built
+  const suggested = merchantCategory(
+    context.merchants.find((merchant) => merchant.id === built.merchantId),
+    built.kind,
+    context.categories,
+  )
+  return suggested === undefined ? built : { ...built, categoryId: suggested }
+}
+
+/**
+ * The merchant links a draft saves: the edited movement's where the draft leaves them out, none where
+ * it says `null`, and no platform that is the business itself. A newly chosen id is kept only when it
+ * is one of `merchants` (the alive ones; an unknown one is dropped); the id the edited movement
+ * already had stays even when it isn't (a merchant this device hasn't pulled yet), since the person
+ * didn't change it. A link to a deleted merchant is removed by the repair after a pull instead.
+ */
+export function merchantLinks(draft: Pick<TransactionDraft, "merchantId" | "viaMerchantId">, merchants: readonly Pick<Merchant, "id">[], existing?: Pick<Transaction, "merchantId" | "viaMerchantId">): Pick<Transaction, "merchantId" | "viaMerchantId"> {
+  const link = (chosen: string | null | undefined, stored: string | undefined) => {
+    const id = chosen === undefined ? stored : chosen
+    if (id == null) return undefined
+    return id === stored || merchants.some((merchant) => merchant.id === id) ? id : undefined
+  }
+  const merchantId = link(draft.merchantId, existing?.merchantId)
+  const viaMerchantId = link(draft.viaMerchantId, existing?.viaMerchantId)
+  return {
+    ...(merchantId === undefined ? {} : { merchantId }),
+    ...(viaMerchantId === undefined || viaMerchantId === merchantId ? {} : { viaMerchantId }),
+  }
+}
+
+/**
+ * The charge in the principal currency a draft saves: none when it is in the principal currency, and
+ * none when it was carried over from a saved movement (`debitedFor`) whose amount, currency or account
+ * changed since, since the bank charged it for something else and balances would follow it.
+ */
+export function applicableDebit(draft: TransactionDraft, rate: Pick<ExchangeRate, "principal">, accountId: string | undefined): Decimal | undefined {
+  const debited = draft.actualDebitedPrincipal
+  if (debited === undefined || draft.currency === rate.principal) return undefined
+  const charged = draft.debitedFor
+  if (charged && (!charged.amount.eq(draft.amount) || charged.currency !== draft.currency || charged.accountId !== accountId)) return undefined
+  return debited
+}
+
+function debitedField(debited: Decimal | undefined): Pick<Transaction, "actualDebitedPrincipal"> {
+  return debited === undefined ? {} : { actualDebitedPrincipal: decimalText(debited) }
 }
 
 /** Whether two versions of a movement move the same money: same accounts, amounts, day and status. */
@@ -276,13 +355,15 @@ export async function saveTransaction(store: LedgerStore, draft: TransactionDraf
   const existing = context.transactions.find((transaction) => transaction.id === draft.id)
   const { transaction, rule } = categorizedTransaction(draft, context, existing)
   await store.saveTransaction(transaction)
-  const saved = savedTransactionOf(transaction, context.accounts, await store.fetchTransactions(), context.currencies.principal, context.zone)
+  const [movements, debts] = await Promise.all([store.fetchTransactions(), store.fetchPersonalDebts()])
+  const saved = savedTransactionOf(transaction, context.accounts, movements, context.currencies.principal, context.zone, debts)
   return rule ? { ...saved, rule } : saved
 }
 
 /**
  * What the receipt states about a stored movement: its account's balances with every movement,
- * and, for an expense, its category's spending that month. Also rebuilds a receipt from history.
+ * and, for an expense, its category's spending that month (the person's part of split expenses, as
+ * the summary counts it with `debts`). Also rebuilds a receipt from history.
  */
 export function savedTransactionOf(
   transaction: Transaction,
@@ -290,13 +371,14 @@ export function savedTransactionOf(
   movements: readonly Transaction[],
   principal: string,
   zone: TimeZone,
+  debts: readonly PersonalDebt[] = [],
 ): SavedTransaction {
   const account = accounts.find((candidate) => candidate.id === transaction.accountId)
   if (!account) throw DomainError.notFound(transaction.accountId)
   const newBalances = balanceOf(account, movements, zone)
   let categoryMonthTotal: Money | undefined
   if (transaction.kind === "expense") {
-    const summary = monthlySummary(yearMonthContaining(new Date(transaction.date), zone), movements, principal, zone)
+    const summary = monthlySummary(yearMonthContaining(new Date(transaction.date), zone), movements, principal, zone, debts)
     const total = summary.categories.find((entry) => entry.categoryId === transaction.categoryId)?.amount ?? ZERO
     categoryMonthTotal = { amount: total, currency: principal }
   }
@@ -348,7 +430,7 @@ export function previewMovement(context: TransactionContext, draft: TransactionD
     currency: draft.currency,
     accountId: sourceId,
     ...(destinationAccount ? { destinationAccountId: destinationAccount.id } : {}),
-    ...(draft.currency !== rate.principal && draft.actualDebitedPrincipal ? { actualDebitedPrincipal: decimalText(draft.actualDebitedPrincipal) } : {}),
+    ...debitedField(applicableDebit(draft, rate, sourceId)),
     exchangeRate: rate,
     isShared: false,
   }
@@ -402,8 +484,13 @@ export async function deleteTransaction(store: LedgerStore, id: string): Promise
   await store.deleteTransaction(id)
 }
 
-/** A draft that edits `transaction`, with every field as it was saved. */
+/**
+ * A draft that edits `transaction`, with every field as it was saved. Its charge in the principal
+ * currency (only a movement in another currency has one) keeps what it was charged for, so changing the
+ * amount, currency or account drops it instead of leaving a stale charge driving balances.
+ */
 export function draftFrom(transaction: Transaction): TransactionDraft {
+  const charged = transaction.currency === transaction.exchangeRate.principal ? undefined : transaction.actualDebitedPrincipal
   return {
     id: transaction.id,
     kind: transaction.kind,
@@ -414,9 +501,16 @@ export function draftFrom(transaction: Transaction): TransactionDraft {
     ...(transaction.destinationAccountId ? { destinationAccountId: transaction.destinationAccountId } : {}),
     description: transaction.description,
     date: new Date(transaction.date),
-    ...(transaction.actualDebitedPrincipal ? { actualDebitedPrincipal: new Decimal(transaction.actualDebitedPrincipal) } : {}),
+    ...(charged
+      ? {
+          actualDebitedPrincipal: new Decimal(charged),
+          debitedFor: { amount: new Decimal(transaction.amount), currency: transaction.currency, accountId: transaction.accountId },
+        }
+      : {}),
     note: transaction.note ?? "",
     isDraft: transaction.status === "planned",
     ...(transaction.tags ? { tags: [...transaction.tags] } : {}),
+    ...(transaction.merchantId ? { merchantId: transaction.merchantId } : {}),
+    ...(transaction.viaMerchantId ? { viaMerchantId: transaction.viaMerchantId } : {}),
   }
 }

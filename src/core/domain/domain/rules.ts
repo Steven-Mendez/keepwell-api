@@ -1,4 +1,4 @@
-import type { Account, Card, CurrencySettings, RecurringRule, Transaction, TransactionKind } from "../schema"
+import type { Account, Card, CurrencySettings, PersonalDebt, RecurringRule, Transaction, TransactionKind } from "../schema"
 import { OTHER_EXPENSE_ID, OTHER_INCOME_ID } from "../schema"
 
 import {
@@ -86,6 +86,100 @@ export class UnconvertedTally {
   get entries(): UnconvertedMovements[] {
     return [...this.counts].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)).map(([currency, count]) => ({ currency, count }))
   }
+}
+
+// Shared expenses: a split movement only cost the person their part, and the repayment of a share
+// that comes back into an account is that money returning, not income.
+
+/**
+ * What the personal debts say about the movements, by movement id: the "they owe me" debts split
+ * from each one (`PersonalDebt.transactionId`) and the income movements that deposited a repayment
+ * (`DebtRepayment.transactionId`). Build it once and pass it to the totals.
+ */
+export interface DebtLinks {
+  readonly shares: ReadonlyMap<string, readonly PersonalDebt[]>
+  readonly reimbursements: ReadonlySet<string>
+}
+
+/** The debts, or links already built from them (`debtLinks`). */
+export type SpendingDebts = readonly PersonalDebt[] | DebtLinks
+
+export const NO_DEBT_LINKS: DebtLinks = { shares: new Map(), reimbursements: new Set() }
+
+/**
+ * `deposits` adds movements known to have deposited a repayment that `debts` no longer list: those of
+ * deleted debts and repayments (`LedgerStore.fetchRepaymentDepositIds`, `ledgerDebtLinks`).
+ */
+export function debtLinks(debts: SpendingDebts, deposits: Iterable<string> = []): DebtLinks {
+  const extra = [...deposits]
+  if (!Array.isArray(debts)) {
+    const links = debts as DebtLinks
+    return extra.length === 0 ? links : { shares: links.shares, reimbursements: new Set([...links.reimbursements, ...extra]) }
+  }
+  if (debts.length === 0 && extra.length === 0) return NO_DEBT_LINKS
+  const shares = new Map<string, PersonalDebt[]>()
+  const reimbursements = new Set<string>(extra)
+  for (const debt of debts as readonly PersonalDebt[]) {
+    if (debt.direction === "theyOweMe" && debt.transactionId !== undefined) {
+      shares.set(debt.transactionId, [...(shares.get(debt.transactionId) ?? []), debt])
+    }
+    for (const repayment of debt.repayments) if (repayment.transactionId !== undefined) reimbursements.add(repayment.transactionId)
+  }
+  return { shares, reimbursements }
+}
+
+/** The "they owe me" debts split from an expense; empty for anything else. */
+export function splitDebts(transaction: Transaction, debts: SpendingDebts): readonly PersonalDebt[] {
+  if (transaction.kind !== "expense") return []
+  return debtLinks(debts).shares.get(transaction.id) ?? []
+}
+
+/** Shared: an expense that has debts split from it. Old rows only carry `isShared`, which doesn't count here. */
+export function isSplit(transaction: Transaction, debts: SpendingDebts): boolean {
+  return splitDebts(transaction, debts).length > 0
+}
+
+/** An income movement that deposited a personal-debt repayment: money coming back, not income. */
+export function isReimbursement(transaction: Transaction, debts: SpendingDebts): boolean {
+  return transaction.kind === "income" && debtLinks(debts).reimbursements.has(transaction.id)
+}
+
+/**
+ * A debt's share of the movement in `currency`, the way the movement converts: in the movement's own
+ * currency it is that fraction of `storedAmountIn` (so a bank's real charge is shared alike);
+ * otherwise it converts with the movement's stored rate. `undefined` when that rate can't reach
+ * `currency`, and the share is then ignored.
+ */
+export function debtShareIn(debt: PersonalDebt, transaction: Transaction, currency: string): Decimal | undefined {
+  const owed = dec(debt.amount.amount)
+  if (debt.amount.currency === transaction.currency) {
+    const total = storedAmountIn(transaction, currency)
+    return total === undefined ? undefined : owed.times(total).div(dec(transaction.amount))
+  }
+  if (debt.amount.currency === currency) return owed
+  try {
+    return convert({ amount: owed, currency: debt.amount.currency }, transaction.exchangeRate, currency).amount
+  } catch {
+    return undefined
+  }
+}
+
+/**
+ * What the movement cost the person in `currency`: `storedAmountIn`, less the shares split from it
+ * (settled or not: those were never the person's spending), never below zero. `undefined` when the
+ * movement itself can't be converted, as `storedAmountIn`. Only expenses have shares.
+ */
+export function spendingAmountIn(transaction: Transaction, debts: SpendingDebts, currency: string): Decimal | undefined {
+  const total = storedAmountIn(transaction, currency)
+  if (total === undefined) return undefined
+  let others = ZERO
+  for (const debt of splitDebts(transaction, debts)) others = others.plus(debtShareIn(debt, transaction, currency) ?? ZERO)
+  return Decimal.max(total.minus(others), ZERO)
+}
+
+/** The person's spending on the movement in its principal currency (`spendingAmountIn`). */
+export function spendingAmount(transaction: Transaction, debts: SpendingDebts): Decimal {
+  return spendingAmountIn(transaction, debts, transaction.exchangeRate.principal) ?? principalAmount(transaction)
 }
 
 /** The rate the bank effectively applied (second per principal), when it reported a real debit. */
@@ -224,7 +318,21 @@ function ranked(totals: Map<string, Decimal>, total: Decimal): CategoryTotal[] {
     .sort((a, b) => (a.amount.eq(b.amount) ? (a.categoryId < b.categoryId ? -1 : 1) : b.amount.cmp(a.amount)))
 }
 
-export function monthlySummary(month: YearMonth, transactions: readonly Transaction[], currency: string, zone: TimeZone): MonthlySummary {
+/**
+ * The movement's part of a summary total in `currency`: an expense's `spendingAmountIn`, an income's
+ * amount; `undefined` when the stored rate can't convert it. Repayment deposits (`isReimbursement`)
+ * are skipped before this.
+ */
+function summaryAmount(transaction: Transaction, links: DebtLinks, currency: string): Decimal | undefined {
+  return transaction.kind === "expense" ? spendingAmountIn(transaction, links, currency) : storedAmountIn(transaction, currency)
+}
+
+/**
+ * Income and spending of the month. With `debts`, an expense counts only the person's part
+ * (`spendingAmountIn`) and an income that deposited a debt repayment doesn't count at all.
+ */
+export function monthlySummary(month: YearMonth, transactions: readonly Transaction[], currency: string, zone: TimeZone, debts: SpendingDebts = []): MonthlySummary {
+  const links = debtLinks(debts)
   let income = ZERO
   let expense = ZERO
   const perCategory = new Map<string, Decimal>()
@@ -232,11 +340,14 @@ export function monthlySummary(month: YearMonth, transactions: readonly Transact
   const excluded = new UnconvertedTally()
   for (const transaction of transactions) {
     if (!isConfirmed(transaction) || transaction.kind === "transfer" || !sameMonth(yearMonthContaining(dateOf(transaction), zone), month)) continue
-    const amount = storedAmountIn(transaction, currency)
+    if (isReimbursement(transaction, links)) continue
+    const amount = summaryAmount(transaction, links, currency)
     if (amount === undefined) {
       excluded.add(transaction)
       continue
     }
+    // A movement entirely paid for by others adds nothing, not even an empty category.
+    if (amount.isZero()) continue
     if (transaction.kind === "income") {
       income = income.plus(amount)
       const id = transaction.categoryId ?? OTHER_INCOME_ID
@@ -265,13 +376,14 @@ export function savingsRate(summary: { income: Decimal; expense: Decimal }): Dec
   return summary.income.gt(0) ? savings(summary).div(summary.income) : undefined
 }
 
-/** Totals in `currency`, leaving out what `storedAmountIn` can't convert, as `monthlySummary` does. */
-function totalsByMonth(kind: TransactionKind, transactions: readonly Transaction[], currency: string, zone: TimeZone): Map<string, Decimal> {
+/** Totals in `currency`, read as `monthlySummary` does (`summaryAmount`), leaving out what can't be converted. */
+function totalsByMonth(kind: TransactionKind, transactions: readonly Transaction[], currency: string, zone: TimeZone, debts: SpendingDebts): Map<string, Decimal> {
+  const links = debtLinks(debts)
   const totals = new Map<string, Decimal>()
   for (const transaction of transactions) {
-    if (!isConfirmed(transaction) || transaction.kind !== kind) continue
-    const amount = storedAmountIn(transaction, currency)
-    if (amount === undefined) continue
+    if (!isConfirmed(transaction) || transaction.kind !== kind || isReimbursement(transaction, links)) continue
+    const amount = kind === "transfer" ? storedAmountIn(transaction, currency) : summaryAmount(transaction, links, currency)
+    if (amount === undefined || amount.isZero()) continue
     const key = monthKey(yearMonthContaining(dateOf(transaction), zone))
     totals.set(key, (totals.get(key) ?? ZERO).plus(amount))
   }
@@ -279,8 +391,8 @@ function totalsByMonth(kind: TransactionKind, transactions: readonly Transaction
 }
 
 /** Monthly totals of one kind in `currency` for `count` months ending at `last`, oldest first. */
-export function monthlyTotals(kind: TransactionKind, last: YearMonth, count: number, transactions: readonly Transaction[], currency: string, zone: TimeZone) {
-  const totals = totalsByMonth(kind, transactions, currency, zone)
+export function monthlyTotals(kind: TransactionKind, last: YearMonth, count: number, transactions: readonly Transaction[], currency: string, zone: TimeZone, debts: SpendingDebts = []) {
+  const totals = totalsByMonth(kind, transactions, currency, zone, debts)
   return Array.from({ length: count }, (_, index) => {
     const month = addMonths(last, index - (count - 1))
     return { month, total: totals.get(monthKey(month)) ?? ZERO }
@@ -288,8 +400,8 @@ export function monthlyTotals(kind: TransactionKind, last: YearMonth, count: num
 }
 
 /** Average over the months that have any movement of that kind; `undefined` when there are none. */
-export function averageMonthlyTotal(kind: TransactionKind, transactions: readonly Transaction[], currency: string, zone: TimeZone): Decimal | undefined {
-  const totals = [...totalsByMonth(kind, transactions, currency, zone).values()].filter((total) => total.gt(0))
+export function averageMonthlyTotal(kind: TransactionKind, transactions: readonly Transaction[], currency: string, zone: TimeZone, debts: SpendingDebts = []): Decimal | undefined {
+  const totals = [...totalsByMonth(kind, transactions, currency, zone, debts).values()].filter((total) => total.gt(0))
   return totals.length === 0 ? undefined : sum(totals).div(totals.length)
 }
 

@@ -6,7 +6,10 @@ import {
   dayKey,
   dec,
   debtDueStatus,
+  debtLinks,
   inSecondCurrency,
+  ledgerDebtLinks,
+  isSplit,
   lastMonths,
   monthlySummary,
   netWorth,
@@ -14,6 +17,7 @@ import {
   normalizedTags,
   originMatches,
   savings,
+  spendingAmount,
   trendReport,
   upcomingPayments,
   yearMonth,
@@ -24,7 +28,8 @@ import {
   type TransactionOrigin,
   type YearMonth,
 } from "../domain/domain"
-import type { Transaction } from "../domain/schema"
+import type { Merchant, Transaction } from "../domain/schema"
+import { actualDebitedOf } from "./actual-debited"
 
 // The MCP read tools as pure functions over the domain's Ledger (ADR 0007 covers the transport).
 // Everything is typed JSON: amounts are decimal text rounded to cents with their ISO 4217 code, never prose that
@@ -50,6 +55,15 @@ export function parseMonth(text: string | undefined, now: Date, zone: string): Y
   const parsed = match ? yearMonth(Number(match[1]), Number(match[2])) : undefined
   if (!parsed) throw new Error("month must be YYYY-MM")
   return parsed
+}
+
+/** The ledger with the person's merchants, when the caller loaded them (`ServerLedger`). */
+type WithMerchants = Ledger & { merchants?: readonly Merchant[] }
+
+/** `{ id, name }` of the merchant a movement or rule names, or null (also for one since deleted). */
+function merchantRef(ledger: WithMerchants, id: string | undefined) {
+  const merchant = id === undefined ? undefined : ledger.merchants?.find((candidate) => candidate.id === id)
+  return merchant ? { id: merchant.id, name: merchant.name } : null
 }
 
 function categoryName(ledger: Ledger, id: string) {
@@ -91,9 +105,14 @@ export function getNetWorth(ledger: Ledger) {
   }
 }
 
+/**
+ * As the apps' Summary: an expense split with others counts only the person's part, and a debt
+ * repayment deposited into an account isn't income (`ledgerDebtLinks`: the debts' links plus the
+ * deposits deleted debts and repayments left behind).
+ */
 export function getMonthlySummary(ledger: Ledger, month: YearMonth) {
   const currency = ledger.settings.currencies.principal
-  const summary = monthlySummary(month, ledger.transactions, currency, ledger.timeZone)
+  const summary = monthlySummary(month, ledger.transactions, currency, ledger.timeZone, ledgerDebtLinks(ledger))
   return {
     month: monthText(month),
     currency,
@@ -121,7 +140,7 @@ export function getMonthlySummary(ledger: Ledger, month: YearMonth) {
 
 export function getTrends(ledger: Ledger, months: number, now: Date) {
   const currency = ledger.settings.currencies.principal
-  const report = trendReport(ledger.transactions, currency, lastMonths(months, now, ledger.timeZone), ledger.timeZone, now)
+  const report = trendReport(ledger.transactions, currency, lastMonths(months, now, ledger.timeZone), ledger.timeZone, now, ledgerDebtLinks(ledger))
   return {
     currency,
     months: report.months.map((month) => ({
@@ -187,6 +206,8 @@ export interface TransactionSearch {
   recurring_rule_id?: string
   /** Movements of rules that are subscriptions today. */
   subscriptions_only?: boolean
+  /** Movements with this business, or that went through it as the platform. */
+  merchant_id?: string
   limit: number
   cursor?: number
 }
@@ -216,12 +237,13 @@ function searchedOrigin(query: TransactionSearch): TransactionOrigin[] {
   ]
 }
 
-export function searchTransactions(ledger: Ledger, query: TransactionSearch) {
+export function searchTransactions(ledger: WithMerchants, query: TransactionSearch) {
   const text = query.text?.toLocaleLowerCase()
   const tags = searchedTags(query.tags)
   const range = searchedRange(query)
   const origins = searchedOrigin(query)
   const principal = ledger.settings.currencies.principal
+  const links = ledgerDebtLinks(ledger)
   const matches = ledger.transactions.filter((transaction: Transaction) => {
     const date = dayKey(new Date(transaction.date), ledger.timeZone)
     if (query.from && date < query.from) return false
@@ -231,7 +253,8 @@ export function searchTransactions(ledger: Ledger, query: TransactionSearch) {
     if (query.kind && transaction.kind !== query.kind) return false
     if (query.currency && transaction.currency !== query.currency.toUpperCase()) return false
     if (query.status && transaction.status !== query.status) return false
-    if (text && !`${transaction.description} ${transaction.note ?? ""} ${(transaction.tags ?? []).join(" ")}`.toLocaleLowerCase().includes(text)) return false
+    if (query.merchant_id && transaction.merchantId !== query.merchant_id && transaction.viaMerchantId !== query.merchant_id) return false
+    if (text && !searchedText(ledger, transaction).includes(text)) return false
     if (range && !amountInRange(transaction, range, principal)) return false
     if (tags && !tags.every((tag) => (transaction.tags ?? []).includes(tag))) return false
     if (!origins.every((origin) => originMatches(transaction, origin, ledger.recurringRules))) return false
@@ -252,15 +275,35 @@ export function searchTransactions(ledger: Ledger, query: TransactionSearch) {
       description: transaction.description,
       note: transaction.note ?? null,
       amount: { amount: transaction.amount, currency: transaction.currency },
+      // What the bank charged in the principal currency, when it differs from converting the amount.
+      actual_debited: actualDebitedOf(transaction),
       category_id: transaction.categoryId ?? null,
       category: transaction.categoryId ? categoryName(ledger, transaction.categoryId) : null,
       account_id: transaction.accountId,
       destination_account_id: transaction.destinationAccountId ?? null,
       tags: transaction.tags ?? [],
       recurring_rule_id: transaction.recurringId ?? null,
+      merchant: merchantRef(ledger, transaction.merchantId),
+      via: merchantRef(ledger, transaction.viaMerchantId),
       recorded_by: transaction.source === "mcp" ? "mcp" : "app",
+      ...splitOf(transaction, links),
     })),
   }
+}
+
+/**
+ * `split`: an expense with personal debts split from it (split_transaction); `your_share` is then
+ * what it cost the person in the movement's principal currency, as the summaries count it.
+ */
+function splitOf(transaction: Transaction, links: ReturnType<typeof debtLinks>) {
+  if (!isSplit(transaction, links)) return { split: false, your_share: null }
+  return { split: true, your_share: money({ amount: spendingAmount(transaction, links), currency: transaction.exchangeRate.principal }) }
+}
+
+/** What `text` searches: description, note, tags and the names of its business and platform. */
+function searchedText(ledger: WithMerchants, transaction: Transaction) {
+  const names = [merchantRef(ledger, transaction.merchantId)?.name, merchantRef(ledger, transaction.viaMerchantId)?.name].filter((name) => name !== undefined)
+  return `${transaction.description} ${transaction.note ?? ""} ${(transaction.tags ?? []).join(" ")} ${names.join(" ")}`.toLocaleLowerCase()
 }
 
 /** One call instead of five: what a model needs to start a conversation about money. */
@@ -297,7 +340,7 @@ export function listCategories(ledger: Ledger) {
   }
 }
 
-export function listRecurringRules(ledger: Ledger) {
+export function listRecurringRules(ledger: WithMerchants) {
   return {
     rules: ledger.recurringRules.map((rule) => ({
       id: rule.id,
@@ -318,6 +361,8 @@ export function listRecurringRules(ledger: Ledger) {
       is_paused: rule.isPaused,
       note: rule.note ?? null,
       tags: rule.tags ?? [],
+      merchant_id: rule.merchantId ?? null,
+      via_merchant_id: rule.viaMerchantId ?? null,
       recorded_by: rule.source === "mcp" ? "mcp" : "app",
     })),
   }
@@ -365,7 +410,10 @@ export function listPersonalDebts(ledger: Ledger, now: Date) {
         amount: debt.amount,
         date: debt.date,
         note: debt.note ?? null,
-        repayments: debt.repayments.map((repayment) => ({ amount: repayment.amount, date: repayment.date })),
+        // transaction_id: the income movement the repayment was deposited as, null when only recorded.
+        repayments: debt.repayments.map((repayment) => ({ id: repayment.id ?? null, amount: repayment.amount, date: repayment.date, transaction_id: repayment.transactionId ?? null })),
+        /** The expense this debt was split from (split_transaction), null for one recorded on its own. */
+        transaction_id: debt.transactionId ?? null,
         settled_at: debt.settledAt ?? null,
         due_date: debt.dueDate ? dayKey(new Date(debt.dueDate), ledger.timeZone) : null,
         due_status: due?.state ?? null,
@@ -378,6 +426,28 @@ export function listPersonalDebts(ledger: Ledger, now: Date) {
 
 export function listCategorizationRules(ledger: Ledger) {
   return {
-    rules: ledger.categorizationRules.map((rule) => ({ id: rule.id, match: rule.match, kind: rule.kind, category_id: rule.categoryId, category: categoryName(ledger, rule.categoryId), tags: rule.tags ?? [] })),
+    rules: ledger.categorizationRules.map((rule) => ({ id: rule.id, match: rule.match, kind: rule.kind, category_id: rule.categoryId, category: categoryName(ledger, rule.categoryId), tags: rule.tags ?? [], merchant_id: rule.merchantId ?? null })),
+  }
+}
+
+/**
+ * The person's businesses and platforms, by name, with how many movements name each (as business or
+ * as platform). The ids are what merchant_id and via_merchant_id take.
+ */
+export function listMerchants(ledger: WithMerchants) {
+  const uses = new Map<string, number>()
+  for (const transaction of ledger.transactions) {
+    for (const id of new Set([transaction.merchantId, transaction.viaMerchantId])) if (id !== undefined) uses.set(id, (uses.get(id) ?? 0) + 1)
+  }
+  return {
+    merchants: (ledger.merchants ?? []).map((merchant) => ({
+      id: merchant.id,
+      name: merchant.name,
+      domain: merchant.domain ?? null,
+      is_platform: merchant.isPlatform,
+      default_category_id: merchant.defaultCategoryId ?? null,
+      default_category: merchant.defaultCategoryId ? categoryName(ledger, merchant.defaultCategoryId) : null,
+      movements: uses.get(merchant.id) ?? 0,
+    })),
   }
 }

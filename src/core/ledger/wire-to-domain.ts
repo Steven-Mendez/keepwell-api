@@ -3,6 +3,7 @@ import type {
   Card,
   CategorizationRule,
   Loan,
+  Merchant,
   PersonalDebt,
   RecurringRule,
   SavingsGoal,
@@ -38,6 +39,7 @@ export interface LedgerRows {
   categorizationRule: Row<"categorizationRule">[]
   settings: Row<"settings">[]
   notificationState: Row<"notificationState">[]
+  merchant: Row<"merchant">[]
 }
 
 const alive = <T extends { deleted_at: string | null }>(rows: T[]) => rows.filter((row) => row.deleted_at === null)
@@ -104,6 +106,8 @@ export function toDomain(rows: LedgerRows) {
       ...tags(row.tags),
       ...(row.source === "mcp" ? { source: "mcp" as const } : {}),
       ...present("importedId", row.imported_id ?? null),
+      ...present("merchantId", row.merchant_id),
+      ...present("viaMerchantId", row.via_merchant_id),
     }))
     .sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0))
   const recurringRules: RecurringRule[] = alive(rows.recurringRule).map((row) => ({
@@ -127,6 +131,8 @@ export function toDomain(rows: LedgerRows) {
     ...present("note", row.note),
     ...tags(row.tags),
     ...(row.source === "mcp" ? { source: "mcp" as const } : {}),
+    ...present("merchantId", row.merchant_id),
+    ...present("viaMerchantId", row.via_merchant_id),
   }))
   const savingsGoals: SavingsGoal[] = alive(rows.savingsGoal).map((row) => ({
     id: row.id,
@@ -163,7 +169,7 @@ export function toDomain(rows: LedgerRows) {
     repayments: repayments
       .filter((repayment) => repayment.debt_id === row.id)
       .sort((a, b) => (a.date < b.date ? -1 : 1))
-      .map((repayment) => ({ id: repayment.id, amount: repayment.amount, date: repayment.date })),
+      .map((repayment) => ({ id: repayment.id, amount: repayment.amount, date: repayment.date, ...present("transactionId", repayment.transaction_id) })),
     ...present("settledAt", row.settled_at),
     ...present("transactionId", row.transaction_id),
     ...present("dueDate", row.due_date),
@@ -172,7 +178,7 @@ export function toDomain(rows: LedgerRows) {
   // so every platform picks the same winning rule.
   const categorizationRules: CategorizationRule[] = alive(rows.categorizationRule)
     .sort((a, b) => a.sort_index - b.sort_index || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
-    .map((row) => ({ id: row.id, match: row.match, categoryId: row.category_id, kind: row.kind, ...tags(row.tags) }))
+    .map((row) => ({ id: row.id, match: row.match, categoryId: row.category_id, kind: row.kind, ...tags(row.tags), ...present("merchantId", row.merchant_id) }))
   const stored = alive(rows.settings)[0]
   // Device preferences don't sync; the server uses the defaults, which no computation here reads.
   const settings: Settings = stored
@@ -184,7 +190,19 @@ export function toDomain(rows: LedgerRows) {
         ...present("timeZone", stored.time_zone),
       }
     : DEFAULT_SETTINGS
-  return { accounts, cards, categories, transactions, recurringRules, savingsGoals, loans, personalDebts, categorizationRules, settings }
+  const merchants: Merchant[] = alive(rows.merchant).map((row) => ({
+    id: row.id,
+    name: row.name,
+    ...present("domain", row.domain),
+    ...present("brandId", row.brand_id),
+    ...present("defaultCategoryId", row.default_category_id),
+    isPlatform: row.is_platform,
+  }))
+  // What `SELECT DISTINCT transaction_id FROM personal_debt_repayments` gives, tombstones included:
+  // a deleted debt or repayment keeps its link, so the movement it deposited still isn't income
+  // (`LedgerStore.fetchRepaymentDepositIds`, `ledgerDebtLinks`).
+  const deletedRepaymentDepositIds = [...new Set(rows.personalDebtRepayment.flatMap((row) => (row.transaction_id ? [row.transaction_id] : [])))]
+  return { accounts, cards, categories, transactions, recurringRules, savingsGoals, loans, personalDebts, categorizationRules, settings, merchants, deletedRepaymentDepositIds }
 }
 
 /** Domain → wire, for rows the server itself writes (materialized occurrences, MCP writes). */
@@ -210,6 +228,9 @@ export function transactionToWire(transaction: Transaction, audit: { created_at:
     recurring_id: transaction.recurringId ?? null,
     tags: transaction.tags ?? [],
     imported_id: transaction.importedId ?? null,
+    // Always written, null for none: unlinking reaches every device (absent would keep the stored one).
+    merchant_id: transaction.merchantId ?? null,
+    via_merchant_id: transaction.viaMerchantId ?? null,
     ...audit,
     deleted_at: null,
   }
@@ -236,6 +257,8 @@ export function recurringRuleToWire(rule: RecurringRule, audit: { created_at: st
     is_paused: rule.isPaused,
     note: rule.note ?? null,
     tags: rule.tags ?? [],
+    merchant_id: rule.merchantId ?? null,
+    via_merchant_id: rule.viaMerchantId ?? null,
     ...audit,
     deleted_at: null,
   }

@@ -30,7 +30,7 @@ function rows(manualPayment: Record<string, unknown> | undefined): LedgerRows {
     account: [account], card: [], category: [categoryRow("housing", "Housing", AT)],
     transaction: manualPayment ? [transactionRow(MANUAL, "2026-11-01T16:00:00.000Z", { description: "Alquiler", category_id: "housing", amount: "500", ...manualPayment })] : [],
     recurringRule: [rule], savingsGoal: [], loan: [], loanPayment: [], personalDebt: [], personalDebtRepayment: [], categorizationRule: [],
-    settings: [settings], notificationState: [],
+    settings: [settings], notificationState: [], merchant: [],
   } as unknown as LedgerRows
 }
 
