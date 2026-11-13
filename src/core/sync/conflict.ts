@@ -27,8 +27,9 @@ export const SOURCED_ENTITIES: ReadonlySet<SyncEntity> = new Set(["transaction",
  *   whatever the client sends.
  * - A column the incoming row lacks keeps its stored value. Only optional wire columns can be
  *   absent, and only from an app older than the column (settings `time_zone`, an account's
- *   `closed_at`, the merchant links of movements and rules): replacing the row whole would clear it
- *   here and, through the change log, on every other device. Sending `null` still clears it.
+ *   `closed_at`, the merchant links of movements and rules, a debt repayment's `transaction_id`):
+ *   replacing the row whole would clear it here and, through the change log, on every other
+ *   device. Sending `null` still clears it.
  * - A column in `KEPT_ONCE_SET` is the server's once it isn't null (a movement's `imported_id`):
  *   whatever the client sends, absent, `null` or another value, the stored one stays, in the table
  *   and in the change log. Apps that don't know it (iOS before the field) can then edit the row.

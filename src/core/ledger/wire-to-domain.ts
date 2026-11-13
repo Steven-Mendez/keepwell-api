@@ -169,7 +169,7 @@ export function toDomain(rows: LedgerRows) {
     repayments: repayments
       .filter((repayment) => repayment.debt_id === row.id)
       .sort((a, b) => (a.date < b.date ? -1 : 1))
-      .map((repayment) => ({ id: repayment.id, amount: repayment.amount, date: repayment.date })),
+      .map((repayment) => ({ id: repayment.id, amount: repayment.amount, date: repayment.date, ...present("transactionId", repayment.transaction_id) })),
     ...present("settledAt", row.settled_at),
     ...present("transactionId", row.transaction_id),
     ...present("dueDate", row.due_date),

@@ -169,6 +169,13 @@
       "when": 1794553154361,
       "tag": "0023_merchant_grants",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1794571623116,
+      "tag": "0024_debt_repayment_transaction",
+      "breakpoints": true
     }
   ]
 }

@@ -76,13 +76,13 @@ export function createMcpServer(context: McpContext): McpServer {
   tool("get_net_worth", { title: "Net worth", description: "Net worth in the principal currency (and the second, at the settings rate), with each account's share." }, {}, (_, ledger) => getNetWorth(ledger))
   tool(
     "get_monthly_summary",
-    { title: "Monthly summary", description: "Income, spending and net for one month, by category, with budgets. Confirmed movements only, in the principal currency, each converted with the rate it stored; excluded_movements counts by currency those whose stored rate doesn't reach today's principal currency, which no total includes.", view: true },
+    { title: "Monthly summary", description: "Income, spending and net for one month, by category, with budgets. Confirmed movements only, in the principal currency, each converted with the rate it stored; excluded_movements counts by currency those whose stored rate doesn't reach today's principal currency, which no total includes. As in the apps, a split expense counts only the person's share and a debt repayment deposited into an account isn't income.", view: true },
     { month: z.string().regex(/^\d{4}-\d{2}$/).optional().describe("YYYY-MM; this month when left out") },
     (args, ledger) => getMonthlySummary(ledger, parseMonth(args.month, context.now(), ledger.timeZone))
   )
   tool(
     "get_trends",
-    { title: "Monthly trends", description: "Income, spending and net for each of the last months, oldest first.", view: true },
+    { title: "Monthly trends", description: "Income, spending and net for each of the last months, oldest first, counting only the person's share of split expenses, as get_monthly_summary does.", view: true },
     { months: z.number().int().min(1).max(24).default(6) },
     (args, ledger) => getTrends(ledger, args.months, context.now())
   )
@@ -94,7 +94,7 @@ export function createMcpServer(context: McpContext): McpServer {
   )
   tool(
     "search_transactions",
-    { title: "Search movements", description: "Movements, newest first, filtered by date (YYYY-MM-DD), account, category, kind, currency, status, amount range (min_amount/max_amount, inclusive, in the principal currency at each movement's own recorded rate), tags (movements carrying all of them), recurring rule (recurring_rule_id, subscriptions_only), merchant (merchant_id) or text in the description, note, tags or merchant names. merchant is the business it was with and via the platform it went through (Uber Eats, Apple), each {id, name} or null. Paged with cursor. actual_debited, when not null, is what the bank charged in the principal currency for a movement in the second currency, and is what balances count." },
+    { title: "Search movements", description: "Movements, newest first, filtered by date (YYYY-MM-DD), account, category, kind, currency, status, amount range (min_amount/max_amount, inclusive, in the principal currency at each movement's own recorded rate), tags (movements carrying all of them), recurring rule (recurring_rule_id, subscriptions_only), merchant (merchant_id) or text in the description, note, tags or merchant names. merchant is the business it was with and via the platform it went through (Uber Eats, Apple), each {id, name} or null. Paged with cursor. actual_debited, when not null, is what the bank charged in the principal currency for a movement in the second currency, and is what balances count. split is true for an expense shared with others (split_transaction), and your_share is then what it cost the person in the principal currency, which is what summaries count." },
     {
       from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
       to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
@@ -121,7 +121,7 @@ export function createMcpServer(context: McpContext): McpServer {
   tool("list_loans", { title: "List loans", description: "Loans with their installments and which are paid." }, {}, (_, ledger) => listLoans(ledger))
   tool(
     "list_personal_debts",
-    { title: "List personal debts", description: "Money owed to or by people, with repayments, whether settled, and the due date (YYYY-MM-DD) with its status today: upcoming (days_left), today or overdue (days_late)." },
+    { title: "List personal debts", description: "Money owed to or by people, with repayments, whether settled, and the due date (YYYY-MM-DD) with its status today: upcoming (days_left), today or overdue (days_late). transaction_id is the expense a debt was split from; a repayment's transaction_id is the income movement it was deposited as (null when only recorded), and its id is what delete_debt_repayment takes." },
     {},
     (_, ledger) => listPersonalDebts(ledger, context.now())
   )

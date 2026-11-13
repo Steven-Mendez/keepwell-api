@@ -160,6 +160,8 @@ export function repaymentColumns(debt: PersonalDebt): Columns<"personalDebtRepay
     debt_id: debt.id,
     amount: repayment.amount,
     date: repayment.date,
+    // Always written, null for none, as the apps do: the server sends every column it knows.
+    transaction_id: orNull(repayment.transactionId),
   }))
 }
 

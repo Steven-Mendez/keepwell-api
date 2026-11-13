@@ -18,6 +18,7 @@ import {
   deleteAccount,
   deleteCategorizationRule,
   deleteCategory,
+  deleteDebtRepayment,
   deleteLoan,
   deleteMerchant,
   deletePersonalDebt,
@@ -28,6 +29,7 @@ import {
   deleteTransaction,
   DomainError,
   draftFrom,
+  equalShare,
   importedLineIds,
   importedTransactionId,
   importTransactions,
@@ -53,6 +55,7 @@ import {
   setCardNumber,
   setRecurringRulePaused,
   settlePersonalDebt,
+  splitTransaction,
   unpayLoanInstallment,
   updateCreditTerms,
   withRate,
@@ -924,17 +927,82 @@ export function registerManageTools(server: McpServer, options: { manage: Manage
 
   tool(
     "update_personal_debt_status",
-    { title: "Repay, settle or reopen a personal debt", description: "repay records a partial repayment (never more than what remains); settle marks it settled; reopen undoes that.", annotations: WRITE },
-    { debt_id: ref("From list_personal_debts"), action: z.enum(["repay", "settle", "reopen"]), amount: decimal.optional().describe("repay only"), date: instant.optional() },
+    {
+      title: "Repay, settle or reopen a personal debt",
+      description:
+        "Use when someone pays back part of a debt (repay, never more than what remains; with deposit_account_id the money also enters that account as an income movement that isn't counted as income, only for debts they owe the person), or to mark one settled (settle) or open again (reopen).",
+      annotations: WRITE,
+    },
+    {
+      debt_id: ref("From list_personal_debts"),
+      action: z.enum(["repay", "settle", "reopen"]),
+      amount: decimal.optional().describe("repay only"),
+      date: instant.optional(),
+      deposit_account_id: ref("repay only, on a debt someone owes the person: the account (list_accounts) the repayment was deposited into; left out, it is only recorded").optional(),
+      category_id: ref("With deposit_account_id: the income category (list_categories); Refunds when left out").optional(),
+    },
     (args) => JSON.stringify(args),
     async (store, args, now) => {
       const day = args.date ? instantIn(args.date, store.timeZone) : now
+      if (args.action !== "repay" && (args.deposit_account_id !== undefined || args.category_id !== undefined)) throw new ManageError("invalid", "deposit_account_id and category_id are for repay only")
+      if (args.deposit_account_id === undefined && args.category_id !== undefined) throw new ManageError("invalid", "category_id needs deposit_account_id")
       if (args.action === "repay") {
         if (!args.amount) throw new ManageError("invalid", "repay needs an amount")
-        await repayPersonalDebt(store, args.debt_id, args.amount, day)
+        const deposit = args.deposit_account_id === undefined ? undefined : { accountId: find(store.accounts, args.deposit_account_id, "Account").id, ...(args.category_id === undefined ? {} : { categoryId: args.category_id }) }
+        if (deposit && find(store.personalDebts, args.debt_id, "Debt").direction !== "theyOweMe") throw new ManageError("invalid", "Only a debt someone owes the person can be deposited into an account")
+        const saved = await repayPersonalDebt(store, args.debt_id, args.amount, day, deposit)
+        const repayment = saved.repayments.at(-1)!
+        return { debt_id: args.debt_id, action: args.action, repayment_id: repayment.id ?? null, transaction_id: repayment.transactionId ?? null, settled: saved.settledAt !== undefined }
       } else if (args.action === "settle") await settlePersonalDebt(store, args.debt_id, day)
       else await reopenPersonalDebt(store, args.debt_id)
       return { debt_id: args.debt_id, action: args.action }
+    }
+  )
+
+  tool(
+    "delete_debt_repayment",
+    { title: "Delete a debt repayment", description: "Use to undo one repayment recorded by mistake: deletes it and the income movement it was deposited as, and opens the debt again if that repayment settled it. Can be undone with restore_deleted.", annotations: DELETE },
+    { debt_id: ref("From list_personal_debts"), repayment_id: ref("The repayment's id, from list_personal_debts") },
+    (args) => `${args.debt_id}|${args.repayment_id}`,
+    async (store, args) => {
+      const saved = await deleteDebtRepayment(store, args.debt_id, args.repayment_id)
+      return { debt_id: saved.id, settled: saved.settledAt !== undefined }
+    },
+    (store, args) => {
+      const debt = find(store.personalDebts, args.debt_id, "Debt")
+      const repayment = find(debt.repayments.map((candidate) => ({ ...candidate, id: candidate.id ?? "" })), args.repayment_id, "Repayment")
+      return `Repayment of ${repayment.amount} ${debt.amount.currency} from ${debt.person}`
+    }
+  )
+
+  tool(
+    "split_transaction",
+    {
+      title: "Split an expense with others",
+      description:
+        "Use when the person paid an expense shared with others: records a debt each person owes the person, linked to the movement, so summaries and budgets count only the person's share. Give each person's amount, or leave every amount out to split equally between the person and everyone listed.",
+      annotations: WRITE,
+    },
+    {
+      transaction_id: ref("An expense, from search_transactions"),
+      shares: z
+        .array(z.object({ person: z.string().min(1).max(60), amount: decimal.optional().describe("What this person owes, in the expense's currency") }))
+        .min(1)
+        .max(20)
+        .describe("Who shared it, never the person themself; all amounts, or none for an equal split"),
+    },
+    (args) => JSON.stringify(args),
+    async (store, args) => {
+      const expense = find(store.transactions, args.transaction_id, "Movement")
+      const given = args.shares.filter((share) => share.amount !== undefined).length
+      if (given !== 0 && given !== args.shares.length) throw new ManageError("invalid", "Give every person's amount, or none to split equally")
+      const equal = equalShare(dec(expense.amount), args.shares.length)
+      const created = await splitTransaction(
+        store,
+        args.transaction_id,
+        args.shares.map((share) => ({ person: share.person, amount: share.amount === undefined ? equal : dec(share.amount) }))
+      )
+      return { transaction_id: args.transaction_id, debts: created.map((debt) => ({ debt_id: debt.id, person: debt.person, amount: debt.amount })) }
     }
   )
 

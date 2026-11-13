@@ -6,7 +6,9 @@ import {
   dayKey,
   dec,
   debtDueStatus,
+  debtLinks,
   inSecondCurrency,
+  isSplit,
   lastMonths,
   monthlySummary,
   netWorth,
@@ -14,6 +16,7 @@ import {
   normalizedTags,
   originMatches,
   savings,
+  spendingAmount,
   trendReport,
   upcomingPayments,
   yearMonth,
@@ -101,9 +104,13 @@ export function getNetWorth(ledger: Ledger) {
   }
 }
 
+/**
+ * As the apps' Summary: an expense split with others counts only the person's part, and a debt
+ * repayment deposited into an account isn't income (the personal debts say which).
+ */
 export function getMonthlySummary(ledger: Ledger, month: YearMonth) {
   const currency = ledger.settings.currencies.principal
-  const summary = monthlySummary(month, ledger.transactions, currency, ledger.timeZone)
+  const summary = monthlySummary(month, ledger.transactions, currency, ledger.timeZone, ledger.personalDebts)
   return {
     month: monthText(month),
     currency,
@@ -131,7 +138,7 @@ export function getMonthlySummary(ledger: Ledger, month: YearMonth) {
 
 export function getTrends(ledger: Ledger, months: number, now: Date) {
   const currency = ledger.settings.currencies.principal
-  const report = trendReport(ledger.transactions, currency, lastMonths(months, now, ledger.timeZone), ledger.timeZone, now)
+  const report = trendReport(ledger.transactions, currency, lastMonths(months, now, ledger.timeZone), ledger.timeZone, now, ledger.personalDebts)
   return {
     currency,
     months: report.months.map((month) => ({
@@ -234,6 +241,7 @@ export function searchTransactions(ledger: WithMerchants, query: TransactionSear
   const range = searchedRange(query)
   const origins = searchedOrigin(query)
   const principal = ledger.settings.currencies.principal
+  const links = debtLinks(ledger.personalDebts)
   const matches = ledger.transactions.filter((transaction: Transaction) => {
     const date = dayKey(new Date(transaction.date), ledger.timeZone)
     if (query.from && date < query.from) return false
@@ -276,8 +284,18 @@ export function searchTransactions(ledger: WithMerchants, query: TransactionSear
       merchant: merchantRef(ledger, transaction.merchantId),
       via: merchantRef(ledger, transaction.viaMerchantId),
       recorded_by: transaction.source === "mcp" ? "mcp" : "app",
+      ...splitOf(transaction, links),
     })),
   }
+}
+
+/**
+ * `split`: an expense with personal debts split from it (split_transaction); `your_share` is then
+ * what it cost the person in the movement's principal currency, as the summaries count it.
+ */
+function splitOf(transaction: Transaction, links: ReturnType<typeof debtLinks>) {
+  if (!isSplit(transaction, links)) return { split: false, your_share: null }
+  return { split: true, your_share: money({ amount: spendingAmount(transaction, links), currency: transaction.exchangeRate.principal }) }
 }
 
 /** What `text` searches: description, note, tags and the names of its business and platform. */
@@ -390,7 +408,10 @@ export function listPersonalDebts(ledger: Ledger, now: Date) {
         amount: debt.amount,
         date: debt.date,
         note: debt.note ?? null,
-        repayments: debt.repayments.map((repayment) => ({ amount: repayment.amount, date: repayment.date })),
+        // transaction_id: the income movement the repayment was deposited as, null when only recorded.
+        repayments: debt.repayments.map((repayment) => ({ id: repayment.id ?? null, amount: repayment.amount, date: repayment.date, transaction_id: repayment.transactionId ?? null })),
+        /** The expense this debt was split from (split_transaction), null for one recorded on its own. */
+        transaction_id: debt.transactionId ?? null,
         settled_at: debt.settledAt ?? null,
         due_date: debt.dueDate ? dayKey(new Date(debt.dueDate), ledger.timeZone) : null,
         due_status: due?.state ?? null,
