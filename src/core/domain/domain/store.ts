@@ -1,6 +1,7 @@
 import type { Account, Card, CategorizationRule, Loan, PersonalDebt, RecurringRule, SavingsGoal, Settings, Transaction, TransactionCategory } from "../schema"
 import { DEFAULT_CATEGORIES, isFallbackCategory, orderedCategories, shippedCategory } from "../schema"
 
+import type { TimeZone } from "./calendar"
 import { DomainError } from "./errors"
 
 /**
@@ -8,6 +9,13 @@ import { DomainError } from "./errors"
  * IndexedDB (`src/lib/repositories/ledger-store.ts`); tests use `InMemoryStore`.
  */
 export interface LedgerStore {
+  /**
+   * The zone the use cases over this store read days and months in ("today", what is due, which
+   * month a movement counts in). The apps build it with the device's zone; the server with the
+   * person's home zone from their settings.
+   */
+  readonly timeZone: TimeZone
+
   fetchAccounts(): Promise<Account[]>
   /** Inserts or replaces the account with the same id. */
   saveAccount(account: Account): Promise<void>
@@ -103,7 +111,10 @@ export class InMemoryStore implements LedgerStore, ProfileStore {
   settings: Settings | undefined
   name: string | undefined
 
-  constructor(seed: Partial<{ accounts: Account[]; cards: Card[]; transactions: Transaction[]; recurringRules: RecurringRule[]; savingsGoals: SavingsGoal[]; loans: Loan[]; personalDebts: PersonalDebt[]; categorizationRules: CategorizationRule[]; categories: TransactionCategory[]; settings: Settings }> = {}) {
+  constructor(
+    readonly timeZone: TimeZone,
+    seed: Partial<{ accounts: Account[]; cards: Card[]; transactions: Transaction[]; recurringRules: RecurringRule[]; savingsGoals: SavingsGoal[]; loans: Loan[]; personalDebts: PersonalDebt[]; categorizationRules: CategorizationRule[]; categories: TransactionCategory[]; settings: Settings }> = {},
+  ) {
     this.accounts = [...(seed.accounts ?? [])]
     this.cards = [...(seed.cards ?? [])]
     this.transactions = [...(seed.transactions ?? [])]

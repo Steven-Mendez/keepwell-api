@@ -1,22 +1,25 @@
 import type { Account, Card, CategorizationRule, CurrencySettings, Loan, PersonalDebt, RecurringRule, SavingsGoal, Settings, Transaction, TransactionCategory } from "../schema"
 import { DEFAULT_SETTINGS } from "../schema"
 
-import { addMonths, contains, daysInMonth, sameMonth, yearMonthContaining, type DateInterval, type YearMonth } from "./calendar"
-import { Decimal, ZERO, dec, sum } from "./decimal"
+import { addMonths, contains, daysInMonth, sameMonth, yearMonthContaining, zonedParts, type DateInterval, type TimeZone, type YearMonth } from "./calendar"
+import { Decimal, ZERO, dec, roundedHalfUp, sum } from "./decimal"
 import { DomainError } from "./errors"
 import { balanceForecast, type BalanceForecast } from "./forecast"
 import { convert, settingsRate, zeroMoney, type Money } from "./money"
 import {
+  amountIn,
   averageMonthlyTotal,
   balanceOf,
   billingCycle,
   folded,
   inSecondCurrency,
   isConfirmed,
+  isOpen,
   monthlySummary,
   netWorth,
   excludedCurrencies,
   nextOccurrence,
+  openAccounts,
   plannedSummary,
   priceIncreases,
   principalAmount,
@@ -47,6 +50,8 @@ export interface Ledger {
   personalDebts: PersonalDebt[]
   /** In the person's order: the first that matches wins. */
   categorizationRules: CategorizationRule[]
+  /** The zone its days and months are read in: the store's (`LedgerStore.timeZone`). */
+  timeZone: TimeZone
 }
 
 export async function loadLedger(store: LedgerStore): Promise<Ledger> {
@@ -73,6 +78,7 @@ export async function loadLedger(store: LedgerStore): Promise<Ledger> {
     loans,
     personalDebts,
     categorizationRules,
+    timeZone: store.timeZone,
   }
 }
 
@@ -89,9 +95,9 @@ export interface HomeOverview {
   netWorthInSecond?: Money
   /** Currencies of balances the net worth leaves out (no rate in the settings); empty when none. */
   netWorthExcluded: string[]
-  /** Deposit and cash accounts. */
+  /** Open deposit and cash accounts. */
   accountCount: number
-  /** Plastics, not transfer channels. */
+  /** Plastics of open accounts, not transfer channels. */
   cardCount: number
   month: MonthlySummary
   hasTransactions: boolean
@@ -100,7 +106,7 @@ export interface HomeOverview {
   /** Planned movements, soonest first. */
   planned: Transaction[]
   plannedSummary: PlannedSummary
-  /** Deposits first, then cash. */
+  /** Open accounts: deposits first, then cash. */
   balances: { account: Account; balance: Money }[]
   /** Every credit card's debt in the principal currency (negative); `undefined` without cards. */
   cardDebt?: Money
@@ -116,18 +122,19 @@ export interface HomeOverview {
 
 export function homeOverview(ledger: Ledger, now: Date = new Date(), recentCount = HOME_RECENT_COUNT): HomeOverview {
   const currencies = ledger.settings.currencies
-  const { accounts, cards, transactions } = ledger
+  const { accounts, cards, transactions, timeZone: zone } = ledger
   const allBalances: Money[] = []
   let balances: HomeOverview["balances"] = []
   let cardDebt = ZERO
   for (const account of accounts) {
-    const accountBalances = balanceOf(account, transactions)
+    const accountBalances = balanceOf(account, transactions, zone)
     allBalances.push(...accountBalances)
     if (account.kind === "credit") cardDebt = cardDebt.plus(netWorth(accountBalances, currencies).amount)
-    else if (accountBalances[0]) balances.push({ account, balance: accountBalances[0] })
+    else if (accountBalances[0] && isOpen(account)) balances.push({ account, balance: accountBalances[0] })
   }
   balances = [...balances.filter((line) => line.account.kind !== "cash"), ...balances.filter((line) => line.account.kind === "cash")]
   const total = netWorth(allBalances, currencies)
+  const closedIds = new Set(accounts.filter((account) => !isOpen(account)).map((account) => account.id))
   const planned = transactions.filter((transaction) => !isConfirmed(transaction)).sort(oldestFirst)
   const recent = transactions.filter(isConfirmed).sort(newestFirst).slice(0, recentCount)
   const usage = new Map<string, number>()
@@ -146,9 +153,9 @@ export function homeOverview(ledger: Ledger, now: Date = new Date(), recentCount
     netWorth: total,
     ...(second ? { netWorthInSecond: second } : {}),
     netWorthExcluded: excludedCurrencies(allBalances, currencies),
-    accountCount: accounts.filter((account) => account.kind !== "credit").length,
-    cardCount: cards.filter((card) => card.kind !== "transfer").length,
-    month: monthlySummary(yearMonthContaining(now), transactions, currencies.principal),
+    accountCount: accounts.filter((account) => account.kind !== "credit" && isOpen(account)).length,
+    cardCount: cards.filter((card) => card.kind !== "transfer" && !closedIds.has(card.accountId)).length,
+    month: monthlySummary(yearMonthContaining(now, zone), transactions, currencies.principal, zone),
     hasTransactions: transactions.length > 0,
     recent,
     planned,
@@ -157,11 +164,11 @@ export function homeOverview(ledger: Ledger, now: Date = new Date(), recentCount
     ...(accounts.some((account) => account.kind === "credit") ? { cardDebt: { amount: cardDebt, currency: currencies.principal } } : {}),
     frequentExpenseCategoryIds: frequent,
     paymentReminderDaysBefore: ledger.settings.paymentReminderDaysBefore,
-    cardSubscriptions: new Map(cards.filter((card) => card.expiry).map((card) => [card.id, subscriptionsCharged(card.id, transactions, ledger.recurringRules)])),
+    cardSubscriptions: new Map(cards.filter((card) => card.expiry).map((card) => [card.id, subscriptionsCharged(card.id, transactions, zone, ledger.recurringRules)])),
     ...(accounts.some((account) => account.kind !== "credit")
-      ? { forecast: balanceForecast(accounts, transactions, ledger.recurringRules, currencies, now) }
+      ? { forecast: balanceForecast(accounts, transactions, ledger.recurringRules, currencies, zone, now) }
       : {}),
-    priceIncreases: priceIncreases(transactions, now),
+    priceIncreases: priceIncreases(transactions, zone, now),
   }
 }
 
@@ -174,14 +181,20 @@ export interface AccountsOverview {
   creditCards: { account: Account; holder?: Card; balances: Money[] }[]
   deposits: { account: Account; balance: Money; debitCard?: Card }[]
   cash: { account: Account; balance: Money; principalEquivalent?: Money }[]
+  /** Closed accounts, most recently closed first: out of the lists above, still in `netWorth`. */
+  closed: { account: Account; balances: Money[] }[]
 }
 
-export function accountsOverview(accounts: readonly Account[], cards: readonly Card[], transactions: readonly Transaction[], currencies: CurrencySettings): AccountsOverview {
-  const result: AccountsOverview = { settings: currencies, netWorth: zeroMoney(currencies.principal), creditCards: [], deposits: [], cash: [] }
+export function accountsOverview(accounts: readonly Account[], cards: readonly Card[], transactions: readonly Transaction[], currencies: CurrencySettings, zone: TimeZone): AccountsOverview {
+  const result: AccountsOverview = { settings: currencies, netWorth: zeroMoney(currencies.principal), creditCards: [], deposits: [], cash: [], closed: [] }
   const all: Money[] = []
   for (const account of accounts) {
-    const balances = balanceOf(account, transactions)
+    const balances = balanceOf(account, transactions, zone)
     all.push(...balances)
+    if (!isOpen(account)) {
+      result.closed.push({ account, balances })
+      continue
+    }
     const own = cards.filter((card) => card.accountId === account.id)
     switch (account.kind) {
       case "credit": {
@@ -209,6 +222,7 @@ export function accountsOverview(accounts: readonly Account[], cards: readonly C
     }
   }
   result.netWorth = netWorth(all, currencies)
+  result.closed.sort((a, b) => ((a.account.closedAt ?? "") < (b.account.closedAt ?? "") ? 1 : -1))
   return result
 }
 
@@ -229,7 +243,7 @@ export function debitCardDetail(ledger: Ledger, accountId: string): DebitCardDet
   if (!account) throw DomainError.notFound(accountId)
   const card = ledger.cards.find((candidate) => candidate.accountId === accountId && candidate.kind === "debit")
   if (!card) throw DomainError.notFound(accountId)
-  const balance = balanceOf(account, ledger.transactions)[0] ?? zeroMoney(ledger.settings.currencies.principal)
+  const balance = balanceOf(account, ledger.transactions, ledger.timeZone)[0] ?? zeroMoney(ledger.settings.currencies.principal)
   const touching = ledger.transactions.filter((transaction) => scopeIncludes({ kind: "account", id: accountId }, transaction))
   return {
     card,
@@ -262,10 +276,11 @@ export function creditCardDetail(ledger: Ledger, accountId: string, now: Date = 
   const account = ledger.accounts.find((candidate) => candidate.id === accountId && candidate.kind === "credit")
   if (!account) throw DomainError.notFound(accountId)
   const currencies = ledger.settings.currencies
-  const balances = balanceOf(account, ledger.transactions)
+  const zone = ledger.timeZone
+  const balances = balanceOf(account, ledger.transactions, zone)
   const totalDebt = netWorth(balances, currencies)
   const terms = account.creditTerms
-  const cycle = billingCycle(now, terms?.cutoffDay)
+  const cycle = billingCycle(now, terms?.cutoffDay, zone)
   let available: Money | undefined
   if (terms?.limit) {
     try {
@@ -285,8 +300,8 @@ export function creditCardDetail(ledger: Ledger, accountId: string, now: Date = 
     ...(available ? { available } : {}),
     cycle,
     cycleTransactions: ledger.transactions.filter((t) => t.accountId === accountId && contains(cycle, new Date(t.date))).sort(newestFirst),
-    ...(terms?.cutoffDay ? { nextCutoff: nextOccurrence(terms.cutoffDay, now) } : {}),
-    ...(terms?.dueDay ? { nextDue: nextOccurrence(terms.dueDay, now) } : {}),
+    ...(terms?.cutoffDay ? { nextCutoff: nextOccurrence(terms.cutoffDay, now, zone) } : {}),
+    ...(terms?.dueDay ? { nextDue: nextOccurrence(terms.dueDay, now, zone) } : {}),
     limitCurrency: terms?.limit?.currency ?? (terms?.debtMode === "second" ? currencies.second : undefined) ?? currencies.principal,
   }
 }
@@ -303,35 +318,105 @@ export function filterMatches(filter: TransactionFilter, transaction: Transactio
   return isConfirmed(transaction) && transaction.kind === filter
 }
 
+/** Bounds on a movement's amount in the principal currency, both inclusive; either may be left out. */
+export interface AmountRange {
+  min?: Decimal
+  max?: Decimal
+}
+
+/** Where a movement came from: anything, a subscription's rule, or one recurring rule. */
+export type TransactionOrigin = { kind: "any" } | { kind: "subscriptions" } | { kind: "rule"; id: string }
+
+const ANY_ORIGIN: TransactionOrigin = { kind: "any" }
+
+/** Why a range can't be applied; `undefined` when it can. */
+export function amountRangeError(range: AmountRange): "minAboveMax" | undefined {
+  return range.min !== undefined && range.max !== undefined && range.min.gt(range.max) ? "minAboveMax" : undefined
+}
+
+/**
+ * Whether the movement's amount in the principal currency, converted with the rate it recorded
+ * (the figure the totals strip adds up), falls in the range. Compared rounded to cents, as shown:
+ * 99.996 reads 100.00 and passes "at least 100". A range with `min` above `max` matches nothing.
+ */
+export function amountInRange(transaction: Transaction, range: AmountRange, principal: string): boolean {
+  if (amountRangeError(range)) return false
+  const amount = roundedHalfUp(amountIn(transaction, principal), 2)
+  if (range.min !== undefined && amount.lt(range.min)) return false
+  if (range.max !== undefined && amount.gt(range.max)) return false
+  return true
+}
+
+/**
+ * Whether the movement came from the origin. A rule matches by `recurringId`, even once deleted;
+ * a subscription needs the rule to still exist and be one today (paused counts). Movements logged
+ * by hand match neither.
+ */
+export function originMatches(transaction: Transaction, origin: TransactionOrigin, rules: readonly RecurringRule[]): boolean {
+  switch (origin.kind) {
+    case "any":
+      return true
+    case "rule":
+      return transaction.recurringId === origin.id
+    case "subscriptions":
+      return transaction.recurringId !== undefined && rules.some((rule) => rule.id === transaction.recurringId && rule.isSubscription)
+  }
+}
+
 export interface TransactionQuery {
   kind: TransactionFilter
   scope: TransactionScope
   text: string
+  /** Read in `context.principal`; left out, amounts don't narrow. */
+  amount?: AmountRange
+  /** Read against `context.rules`; left out, every origin passes. */
+  origin?: TransactionOrigin
+}
+
+/** What the amount and origin filters read: the principal currency and the recurring rules. */
+export interface TransactionQueryContext {
+  principal: string
+  rules: readonly RecurringRule[]
 }
 
 /**
  * Narrows movements; `searchableText` is presentation (translated category, method name). A search
- * like "#boda" narrows to that tag instead of the text (iOS `TransactionQuery.tag`).
+ * like "#boda" narrows to that tag instead of the text (iOS `TransactionQuery.tag`). The amount and
+ * origin filters apply only with a `context`.
  */
-export function filterTransactions(transactions: readonly Transaction[], query: TransactionQuery, searchableText: (transaction: Transaction) => string): Transaction[] {
+export function filterTransactions(
+  transactions: readonly Transaction[],
+  query: TransactionQuery,
+  searchableText: (transaction: Transaction) => string,
+  context?: TransactionQueryContext,
+): Transaction[] {
   const needle = folded(query.text.trim())
   const tag = searchedTag(query.text)
   const matchesText = (transaction: Transaction) =>
     tag !== undefined ? (transaction.tags ?? []).includes(tag) : needle === "" || folded(searchableText(transaction)).includes(needle)
-  return transactions.filter((transaction) => filterMatches(query.kind, transaction) && scopeIncludes(query.scope, transaction) && matchesText(transaction))
+  const range = query.amount
+  const narrowsAmount = range !== undefined && (range.min !== undefined || range.max !== undefined)
+  const origin = query.origin ?? ANY_ORIGIN
+  const matchesExtras = (transaction: Transaction) =>
+    context === undefined ||
+    ((!narrowsAmount || amountInRange(transaction, range, context.principal)) && originMatches(transaction, origin, context.rules))
+  return transactions.filter(
+    (transaction) => filterMatches(query.kind, transaction) && scopeIncludes(query.scope, transaction) && matchesText(transaction) && matchesExtras(transaction),
+  )
 }
 
 /** Accounts in the Accounts tab's order (credit, bank, cash), each with the card that is its face. */
 export function scopeOptions(accounts: readonly Account[], cards: readonly Card[]): { account: Account; card?: Card }[] {
-  return (["credit", "deposit", "cash"] as const).flatMap((kind) =>
+  // Closed accounts come last, so their history can still be looked up (the screen heads them "Closed").
+  return [true, false].flatMap((open) => (["credit", "deposit", "cash"] as const).flatMap((kind) =>
     accounts
-      .filter((account) => account.kind === kind)
+      .filter((account) => account.kind === kind && isOpen(account) === open)
       .map((account) => {
         const face = kind === "deposit" ? "debit" : kind === "credit" ? "creditHolder" : undefined
         const card = face ? cards.find((candidate) => candidate.accountId === account.id && candidate.kind === face) : undefined
         return { account, ...(card ? { card } : {}) }
       }),
-  )
+  ))
 }
 
 // Summary.
@@ -396,12 +481,12 @@ export interface SpendingPace {
   previous: { day: number; cumulative: Decimal }[]
 }
 
-function pacePoints(month: YearMonth, lastDay: number, transactions: readonly Transaction[]) {
+function pacePoints(month: YearMonth, lastDay: number, transactions: readonly Transaction[], zone: TimeZone) {
   const perDay = new Map<number, Decimal>()
   for (const transaction of transactions) {
-    const date = new Date(transaction.date)
-    if (!isConfirmed(transaction) || transaction.kind !== "expense" || !sameMonth(yearMonthContaining(date), month)) continue
-    perDay.set(date.getDate(), (perDay.get(date.getDate()) ?? ZERO).plus(principalAmount(transaction)))
+    const date = zonedParts(new Date(transaction.date), zone)
+    if (!isConfirmed(transaction) || transaction.kind !== "expense" || !sameMonth(date, month)) continue
+    perDay.set(date.day, (perDay.get(date.day) ?? ZERO).plus(principalAmount(transaction)))
   }
   let running = ZERO
   return Array.from({ length: Math.max(lastDay, 1) }, (_, index) => {
@@ -410,11 +495,12 @@ function pacePoints(month: YearMonth, lastDay: number, transactions: readonly Tr
   })
 }
 
-export function spendingPace(month: YearMonth, transactions: readonly Transaction[], now: Date): SpendingPace {
+export function spendingPace(month: YearMonth, transactions: readonly Transaction[], now: Date, zone: TimeZone): SpendingPace {
   const previousMonth = addMonths(month, -1)
   const days = daysInMonth(month)
-  const lastDay = sameMonth(yearMonthContaining(now), month) ? Math.min(now.getDate(), days) : days
-  return { month, previousMonth, current: pacePoints(month, lastDay, transactions), previous: pacePoints(previousMonth, daysInMonth(previousMonth), transactions) }
+  const today = zonedParts(now, zone)
+  const lastDay = sameMonth(today, month) ? Math.min(today.day, days) : days
+  return { month, previousMonth, current: pacePoints(month, lastDay, transactions, zone), previous: pacePoints(previousMonth, daysInMonth(previousMonth), transactions, zone) }
 }
 
 export const paceComparisonDay = (pace: SpendingPace) => pace.current.at(-1)?.day ?? 1
@@ -438,11 +524,11 @@ export interface SummaryReport {
   paces: SpendingPace[]
 }
 
-export function summaryReport(transactions: readonly Transaction[], currency: string, now: Date = new Date(), count = SUMMARY_MONTH_COUNT): SummaryReport {
-  const current = yearMonthContaining(now)
-  const months = Array.from({ length: count }, (_, index) => monthlySummary(addMonths(current, index - (count - 1)), transactions, currency))
-  const averageExpense = averageMonthlyTotal("expense", transactions)
-  const averageIncome = averageMonthlyTotal("income", transactions)
+export function summaryReport(transactions: readonly Transaction[], currency: string, zone: TimeZone, now: Date = new Date(), count = SUMMARY_MONTH_COUNT): SummaryReport {
+  const current = yearMonthContaining(now, zone)
+  const months = Array.from({ length: count }, (_, index) => monthlySummary(addMonths(current, index - (count - 1)), transactions, currency, zone))
+  const averageExpense = averageMonthlyTotal("expense", transactions, zone)
+  const averageIncome = averageMonthlyTotal("income", transactions, zone)
   return {
     currency,
     months,
@@ -451,14 +537,14 @@ export function summaryReport(transactions: readonly Transaction[], currency: st
     cashFlow: cashFlowTrend(months),
     expenseBreakdowns: months.map((month) => categoryBreakdown(month.categories)),
     incomeBreakdowns: months.map((month) => categoryBreakdown(month.incomeCategories)),
-    paces: months.map((month) => spendingPace(month.month, transactions, now)),
+    paces: months.map((month) => spendingPace(month.month, transactions, now, zone)),
   }
 }
 
 // Settings › Payment methods: every method grouped by its account; cash has none.
 
 export function paymentMethodGroups(accounts: readonly Account[], cards: readonly Card[]): { account: Account; methods: Card[] }[] {
-  return accounts.flatMap((account) => {
+  return openAccounts(accounts).flatMap((account) => {
     const methods = cards.filter((card) => card.accountId === account.id)
     if (methods.length === 0) return []
     return [{ account, methods: [...methods.filter((card) => card.kind !== "transfer"), ...methods.filter((card) => card.kind === "transfer")] }]

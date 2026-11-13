@@ -60,6 +60,7 @@ export function toDomain(rows: LedgerRows) {
           },
         }
       : {}),
+    ...present("closedAt", row.closed_at),
   }))
   const cards: Card[] = alive(rows.card).map((row) => ({
     id: row.id,
@@ -102,6 +103,7 @@ export function toDomain(rows: LedgerRows) {
       ...present("recurringId", row.recurring_id),
       ...tags(row.tags),
       ...(row.source === "mcp" ? { source: "mcp" as const } : {}),
+      ...present("importedId", row.imported_id ?? null),
     }))
     .sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0))
   const recurringRules: RecurringRule[] = alive(rows.recurringRule).map((row) => ({
@@ -164,9 +166,12 @@ export function toDomain(rows: LedgerRows) {
       .map((repayment) => ({ id: repayment.id, amount: repayment.amount, date: repayment.date })),
     ...present("settledAt", row.settled_at),
     ...present("transactionId", row.transaction_id),
+    ...present("dueDate", row.due_date),
   }))
+  // Two offline devices can give rules the same `sort_index`; the `id` breaks the tie as the apps do,
+  // so every platform picks the same winning rule.
   const categorizationRules: CategorizationRule[] = alive(rows.categorizationRule)
-    .sort((a, b) => a.sort_index - b.sort_index)
+    .sort((a, b) => a.sort_index - b.sort_index || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
     .map((row) => ({ id: row.id, match: row.match, categoryId: row.category_id, kind: row.kind, ...tags(row.tags) }))
   const stored = alive(rows.settings)[0]
   // Device preferences don't sync; the server uses the defaults, which no computation here reads.
@@ -176,6 +181,7 @@ export function toDomain(rows: LedgerRows) {
         currencies: stored.second ? { principal: stored.principal, second: stored.second, rate: stored.rate } : { principal: stored.principal, rate: "1" },
         paymentReminderDaysBefore: stored.payment_reminder_days_before,
         hasCompletedOnboarding: stored.has_completed_onboarding,
+        ...present("timeZone", stored.time_zone),
       }
     : DEFAULT_SETTINGS
   return { accounts, cards, categories, transactions, recurringRules, savingsGoals, loans, personalDebts, categorizationRules, settings }
@@ -203,6 +209,7 @@ export function transactionToWire(transaction: Transaction, audit: { created_at:
     note: transaction.note ?? null,
     recurring_id: transaction.recurringId ?? null,
     tags: transaction.tags ?? [],
+    imported_id: transaction.importedId ?? null,
     ...audit,
     deleted_at: null,
   }

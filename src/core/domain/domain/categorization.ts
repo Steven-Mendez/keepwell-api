@@ -42,6 +42,26 @@ export function applyingRule(rule: CategorizationRule, transaction: Transaction)
   return { ...rest, categoryId: rule.categoryId, ...tagsField(mergeTags(transaction.tags ?? [], rule.tags ?? [])) }
 }
 
+/** The rule that would categorize this movement: none unless it is uncategorized, otherwise the first that matches. */
+export function categorizingRule(
+  transaction: Pick<Transaction, "kind" | "categoryId" | "description" | "note">,
+  rules: readonly CategorizationRule[],
+): CategorizationRule | undefined {
+  if (!isUncategorized(transaction)) return undefined
+  return firstMatchingRule(rules, transaction.kind, transaction.description, transaction.note)
+}
+
+/** A new uncategorized movement takes the first rule that matches; otherwise it stays as it is. */
+export function autoCategorized(transaction: Transaction, rules: readonly CategorizationRule[]): Transaction {
+  const rule = categorizingRule(transaction, rules)
+  return rule ? applyingRule(rule, transaction) : transaction
+}
+
+/** The rules saving may apply: those whose category still exists with the rule's kind, in the same order. */
+export function usableRules(rules: readonly CategorizationRule[], categories: readonly TransactionCategory[]): CategorizationRule[] {
+  return rules.filter((rule) => categories.some((category) => category.id === rule.categoryId && category.kind === rule.kind))
+}
+
 /** What the rule editor hands over; `id` absent for a new rule. */
 export interface CategorizationRuleDraft {
   id?: string

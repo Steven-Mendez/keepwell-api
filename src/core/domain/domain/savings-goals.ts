@@ -1,7 +1,7 @@
 import { newID } from "../schema/id"
 import { MAX_GOAL_NAME_LENGTH, type SavingsGoal, type TargetMonth } from "../schema"
 
-import { compareMonths, yearMonthContaining, type YearMonth } from "./calendar"
+import { compareMonths, yearMonthContaining, type TimeZone, type YearMonth } from "./calendar"
 import { Decimal, ZERO, dec, decimalText } from "./decimal"
 import { DomainError } from "./errors"
 import type { LedgerStore } from "./store"
@@ -28,14 +28,14 @@ function monthsBetween(from: YearMonth, to: YearMonth): number {
   return (to.year - from.year) * 12 + (to.month - from.month)
 }
 
-export function savingsGoalProgress(goal: SavingsGoal, now: Date): SavingsGoalProgress {
+export function savingsGoalProgress(goal: SavingsGoal, now: Date, zone: TimeZone): SavingsGoalProgress {
   const saved = dec(goal.saved)
   const target = dec(goal.target.amount)
   const remaining = Decimal.max(target.minus(saved), ZERO)
   const isReached = saved.gte(target)
   const base = { saved, target, remaining, fraction: target.gt(0) ? saved.div(target) : ZERO, isReached }
   if (!goal.targetMonth || isReached) return { ...base, isOverdue: false }
-  const current = yearMonthContaining(now)
+  const current = yearMonthContaining(now, zone)
   if (compareMonths(goal.targetMonth, current) < 0) return { ...base, isOverdue: true }
   const monthsLeft = monthsBetween(current, goal.targetMonth) + 1
   const monthlyAmount = remaining.div(monthsLeft).toDecimalPlaces(2, Decimal.ROUND_CEIL)
@@ -43,8 +43,8 @@ export function savingsGoalProgress(goal: SavingsGoal, now: Date): SavingsGoalPr
 }
 
 /** Goals still open first, the soonest deadline first and undated after; reached ones last. */
-export function orderedGoals(goals: readonly SavingsGoal[], now: Date): SavingsGoal[] {
-  const reached = (goal: SavingsGoal) => savingsGoalProgress(goal, now).isReached
+export function orderedGoals(goals: readonly SavingsGoal[], now: Date, zone: TimeZone): SavingsGoal[] {
+  const reached = (goal: SavingsGoal) => savingsGoalProgress(goal, now, zone).isReached
   return [...goals].sort((a, b) => {
     const byReached = Number(reached(a)) - Number(reached(b))
     if (byReached !== 0) return byReached

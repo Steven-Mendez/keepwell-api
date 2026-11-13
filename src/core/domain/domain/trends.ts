@@ -1,5 +1,5 @@
 import type { Transaction } from "../schema"
-import { addMonths, compareMonths, monthKey, yearMonthContaining, type YearMonth } from "./calendar"
+import { addMonths, compareMonths, daysInMonth, monthKey, yearMonthContaining, zonedDate, zonedParts, type TimeZone, type YearMonth } from "./calendar"
 import { Decimal, ZERO, sum } from "./decimal"
 import { cashFlowTrend, categoryBreakdown, type CashFlowTrend, type CategoryBreakdown } from "./overviews"
 import { isConfirmed, monthlySummary, savings, type CategoryTotal, type MonthlySummary } from "./rules"
@@ -41,8 +41,8 @@ export function comparisonShift(range: MonthRange): number {
 }
 
 /** January through the running month. */
-export function yearToDate(now: Date): MonthRange {
-  const current = yearMonthContaining(now)
+export function yearToDate(now: Date, zone: TimeZone): MonthRange {
+  const current = yearMonthContaining(now, zone)
   return { start: { year: current.year, month: 1 }, end: current }
 }
 
@@ -51,20 +51,20 @@ export function calendarYear(year: number): MonthRange {
 }
 
 /** `count` months ending with the running one. */
-export function lastMonths(count: number, now: Date): MonthRange {
-  const current = yearMonthContaining(now)
+export function lastMonths(count: number, now: Date, zone: TimeZone): MonthRange {
+  const current = yearMonthContaining(now, zone)
   return { start: addMonths(current, -(count - 1)), end: current }
 }
 
 /** First month with confirmed income or spending through the running month; `undefined` before any. */
-export function activityRange(transactions: readonly Transaction[], now: Date): MonthRange | undefined {
+export function activityRange(transactions: readonly Transaction[], now: Date, zone: TimeZone): MonthRange | undefined {
   let first: YearMonth | undefined
   for (const transaction of transactions) {
     if (!counts(transaction)) continue
-    const month = yearMonthContaining(new Date(transaction.date))
+    const month = yearMonthContaining(new Date(transaction.date), zone)
     if (!first || compareMonths(month, first) < 0) first = month
   }
-  const current = yearMonthContaining(now)
+  const current = yearMonthContaining(now, zone)
   if (!first) return undefined
   return monthRange(first, current)
 }
@@ -127,13 +127,13 @@ export const TREND_CATEGORY_COUNT = 4
 
 const counts = (transaction: Transaction) => isConfirmed(transaction) && transaction.kind !== "transfer"
 
-function byMonth(transactions: readonly Transaction[], until?: Date): Map<string, Transaction[]> {
+function byMonth(transactions: readonly Transaction[], zone: TimeZone, until?: Date): Map<string, Transaction[]> {
   const buckets = new Map<string, Transaction[]>()
   for (const transaction of transactions) {
     if (!counts(transaction)) continue
     const date = new Date(transaction.date)
     if (until && date > until) continue
-    const key = monthKey(yearMonthContaining(date))
+    const key = monthKey(yearMonthContaining(date, zone))
     const bucket = buckets.get(key)
     if (bucket) bucket.push(transaction)
     else buckets.set(key, [transaction])
@@ -181,14 +181,10 @@ const ranked = (entries: CategoryChange[]): CategoryTotal[] =>
   entries.filter((entry) => entry.amount.gt(0)).map(({ categoryId, amount, share }) => ({ categoryId, amount, share }))
 
 /** The same instant `months` earlier, clamped to the shorter month (March 31 → February 28). */
-function monthsBefore(date: Date, months: number): Date {
-  const shifted = new Date(date)
-  const day = shifted.getDate()
-  shifted.setDate(1)
-  shifted.setMonth(shifted.getMonth() - months)
-  const last = new Date(shifted.getFullYear(), shifted.getMonth() + 1, 0).getDate()
-  shifted.setDate(Math.min(day, last))
-  return shifted
+function monthsBefore(date: Date, months: number, zone: TimeZone): Date {
+  const parts = zonedParts(date, zone)
+  const month = addMonths(parts, -months)
+  return zonedDate(zone, month.year, month.month, Math.min(parts.day, daysInMonth(month)), parts.hour, parts.minute, parts.second, parts.millisecond)
 }
 
 /**
@@ -197,21 +193,21 @@ function monthsBefore(date: Date, months: number): Date {
  * in the comparison is cut at the same day, so a half-finished November isn't measured against a
  * whole one.
  */
-export function trendReport(transactions: readonly Transaction[], currency: string, requested: MonthRange, now: Date = new Date()): TrendReport {
-  const current = yearMonthContaining(now)
+export function trendReport(transactions: readonly Transaction[], currency: string, requested: MonthRange, zone: TimeZone, now: Date = new Date()): TrendReport {
+  const current = yearMonthContaining(now, zone)
   const end = compareMonths(requested.end, current) > 0 ? current : requested.end
   const range = monthRange(requested.start, end)
   const isRunning = compareMonths(range.end, current) === 0
   const shift = comparisonShift(range)
   const comparison = shiftRange(range, -shift)
 
-  const buckets = byMonth(transactions)
-  const months = rangeMonths(range).map((month) => monthlySummary(month, buckets.get(monthKey(month)) ?? [], currency))
+  const buckets = byMonth(transactions, zone)
+  const months = rangeMonths(range).map((month) => monthlySummary(month, buckets.get(monthKey(month)) ?? [], currency, zone))
   // Only the running month's counterpart is cut; the rest of the comparison is whole months.
-  const cutBuckets = isRunning ? byMonth(transactions, monthsBefore(now, shift)) : buckets
+  const cutBuckets = isRunning ? byMonth(transactions, zone, monthsBefore(now, shift, zone)) : buckets
   const comparisonMonths = rangeMonths(comparison).map((month, index, all) => {
     const source = index === all.length - 1 ? cutBuckets : buckets
-    return monthlySummary(month, source.get(monthKey(month)) ?? [], currency)
+    return monthlySummary(month, source.get(monthKey(month)) ?? [], currency, zone)
   })
 
   const cashFlow = cashFlowTrend(months)
@@ -275,13 +271,13 @@ export interface YearTotals {
 }
 
 /** Every year from the first movement through the running one, oldest first. */
-export function yearTotals(transactions: readonly Transaction[], currency: string, now: Date = new Date()): YearTotals[] {
-  const activity = activityRange(transactions, now)
+export function yearTotals(transactions: readonly Transaction[], currency: string, zone: TimeZone, now: Date = new Date()): YearTotals[] {
+  const activity = activityRange(transactions, now, zone)
   if (!activity) return []
-  const buckets = byMonth(transactions)
+  const buckets = byMonth(transactions, zone)
   const years: YearTotals[] = []
   for (let year = activity.start.year; year <= activity.end.year; year++) {
-    const months = rangeMonths(calendarYear(year)).map((month) => monthlySummary(month, buckets.get(monthKey(month)) ?? [], currency))
+    const months = rangeMonths(calendarYear(year)).map((month) => monthlySummary(month, buckets.get(monthKey(month)) ?? [], currency, zone))
     years.push({ year, cashFlow: cashFlowTrend(months), isRunning: year === activity.end.year })
   }
   return years

@@ -94,6 +94,27 @@ export async function deleteCategory(store: LedgerStore, id: string): Promise<vo
   })
 }
 
+/**
+ * Runs after every pull. A device that edited a movement (or recurring rule) before it heard of a
+ * category's deletion wins with its later edit and brings the deleted id back (ADR 0005 keeps the
+ * newest row whole). Whatever still points at one of `deletedCategoryIds` (the tombstones) moves to
+ * "Other" of its kind, as `deleteCategory` did; with nothing to repair nothing is written. Returns how
+ * many records moved.
+ */
+export async function reassignDeletedCategories(store: LedgerStore, deletedCategoryIds: ReadonlySet<string>): Promise<number> {
+  const orphaned = (item: { categoryId?: string | undefined; kind: TransactionKind }) =>
+    item.kind !== "transfer" && item.categoryId !== undefined && !isFallbackCategory(item.categoryId) && deletedCategoryIds.has(item.categoryId)
+  if (deletedCategoryIds.size === 0) return 0
+  const movements = (await store.fetchTransactions()).filter(orphaned)
+  const rules = (await store.fetchRecurringRules()).filter(orphaned)
+  if (movements.length === 0 && rules.length === 0) return 0
+  await store.atomically(async () => {
+    for (const movement of movements) await store.saveTransaction({ ...movement, categoryId: otherCategoryId(movement.kind) })
+    for (const rule of rules) await store.saveRecurringRule({ ...rule, categoryId: otherCategoryId(rule.kind) })
+  })
+  return movements.length + rules.length
+}
+
 export async function reorderCategories(store: LedgerStore, ids: readonly string[]): Promise<void> {
   await store.reorderCategories(ids)
 }

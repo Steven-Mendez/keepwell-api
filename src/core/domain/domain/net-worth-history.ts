@@ -1,6 +1,6 @@
 import type { Account, CurrencySettings, Transaction } from "../schema"
 
-import { addDays, addMonths, compareMonths, monthInterval, sameMonth, startOfDay, yearMonthContaining, type YearMonth } from "./calendar"
+import { addDays, addMonths, compareMonths, monthInterval, sameMonth, startOfDay, yearMonthContaining, type TimeZone, type YearMonth } from "./calendar"
 import type { Decimal } from "./decimal"
 import type { Money } from "./money"
 import { balanceOf, isConfirmed, netWorth } from "./rules"
@@ -33,25 +33,26 @@ export function netWorthHistory(
   accounts: readonly Account[],
   transactions: readonly Transaction[],
   settings: CurrencySettings,
+  zone: TimeZone,
   now: Date = new Date(),
   count = NET_WORTH_HISTORY_MONTHS,
 ): NetWorthPoint[] {
   if (accounts.length === 0) return []
   const firstOpening = Math.min(...accounts.map((account) => new Date(account.openingDate).getTime()))
-  const first = yearMonthContaining(new Date(firstOpening))
-  const current = yearMonthContaining(now)
-  const endOfToday = addDays(startOfDay(now), 1)
+  const first = yearMonthContaining(new Date(firstOpening), zone)
+  const current = yearMonthContaining(now, zone)
+  const endOfToday = addDays(startOfDay(now, zone), 1, zone)
   const confirmed = transactions.filter(isConfirmed)
   const points: NetWorthPoint[] = []
   for (let offset = count - 1; offset >= 0; offset--) {
     const month = addMonths(current, -offset)
     if (compareMonths(month, first) < 0) continue
     // Exclusive: the instant right after the moment the month is valued at.
-    const cutoff = (sameMonth(month, current) ? endOfToday : monthInterval(month).end).getTime()
+    const cutoff = (sameMonth(month, current) ? endOfToday : monthInterval(month, zone).end).getTime()
     const movements = confirmed.filter((transaction) => new Date(transaction.date).getTime() < cutoff)
     const balances = accounts
-      .filter((account) => startOfDay(new Date(account.openingDate)).getTime() < cutoff)
-      .flatMap((account) => balanceOf(account, movements))
+      .filter((account) => startOfDay(new Date(account.openingDate), zone).getTime() < cutoff)
+      .flatMap((account) => balanceOf(account, movements, zone))
     points.push({ month, total: netWorth(balances, { ...settings, rate: rateBefore(movements, settings) }) })
   }
   return points
