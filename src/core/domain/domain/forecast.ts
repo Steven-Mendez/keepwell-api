@@ -1,6 +1,6 @@
 import type { Account, CurrencySettings, RecurringRule, Transaction } from "../schema"
 
-import { addDays, addMonths, daysInMonth, monthInterval, startOfDay, yearMonthContaining, type YearMonth } from "./calendar"
+import { addDays, addMonths, daysInMonth, monthInterval, startOfDay, yearMonthContaining, zonedParts, type TimeZone, type YearMonth } from "./calendar"
 import { Decimal, ZERO, dec, sum } from "./decimal"
 import { convert, settingsRate } from "./money"
 import { pendingOccurrences } from "./recurring"
@@ -23,17 +23,18 @@ function principalOf(amount: Decimal, currency: string, settings: CurrencySettin
  * `CardStatement.amountDue`). With a cutoff day it's the debt through the last cutoff before `due`,
  * less payments and refunds that reached the card after it; without one, the whole debt today.
  */
-export function cardAmountDue(due: Date, account: Account, transactions: readonly Transaction[], settings: CurrencySettings): Decimal {
+export function cardAmountDue(due: Date, account: Account, transactions: readonly Transaction[], settings: CurrencySettings, zone: TimeZone): Decimal {
   const principal = (amount: Decimal, currency: string) => principalOf(amount, currency, settings)
   const cutoffDay = account.creditTerms?.cutoffDay
   if (cutoffDay === undefined) {
-    const debt = sum(balanceOf(account, transactions).map((balance) => principal(balance.amount, balance.currency)))
+    const debt = sum(balanceOf(account, transactions, zone).map((balance) => principal(balance.amount, balance.currency)))
     return Decimal.max(debt.neg(), ZERO)
   }
-  const closed = addDays(statementCutoff(due, cutoffDay), 1).getTime()
+  const closed = addDays(statementCutoff(due, cutoffDay, zone), 1, zone).getTime()
   const statement = balanceOf(
     account,
     transactions.filter((transaction) => new Date(transaction.date).getTime() < closed),
+    zone,
   )
   const owed = sum(statement.map((balance) => principal(balance.amount, balance.currency))).neg()
   let paid = ZERO
@@ -80,8 +81,8 @@ export function forecastTotal(forecast: BalanceForecast): Decimal {
  * Average confirmed spending of the complete months before `month` that had any, so a month before
  * the person started doesn't drag it down. Zero without any.
  */
-export function averageUsualSpending(transactions: readonly Transaction[], month: YearMonth): Decimal {
-  const totals = monthlyTotals("expense", addMonths(month, -1), USUAL_SPENDING_MONTHS, transactions)
+export function averageUsualSpending(transactions: readonly Transaction[], month: YearMonth, zone: TimeZone): Decimal {
+  const totals = monthlyTotals("expense", addMonths(month, -1), USUAL_SPENDING_MONTHS, transactions, zone)
     .map((entry) => entry.total)
     .filter((total) => total.gt(0))
   return totals.length === 0 ? ZERO : sum(totals).div(totals.length)
@@ -101,6 +102,7 @@ export function balanceForecast(
   transactions: readonly Transaction[],
   rules: readonly RecurringRule[],
   settings: CurrencySettings,
+  zone: TimeZone,
   now: Date = new Date(),
 ): BalanceForecast {
   const principal = (amount: Decimal, currency: string) => principalOf(amount, currency, settings)
@@ -109,17 +111,17 @@ export function balanceForecast(
     const kind = kinds.get(accountId)
     return kind !== undefined && kind !== "credit"
   }
-  const today = startOfDay(now).getTime()
-  const month = yearMonthContaining(now)
-  const end = monthInterval(month).end
-  const lastDay = addDays(end, -1)
+  const today = startOfDay(now, zone).getTime()
+  const month = yearMonthContaining(now, zone)
+  const end = monthInterval(month, zone).end
+  const lastDay = addDays(end, -1, zone)
   const days = daysInMonth(month)
-  const daysLeft = days - now.getDate()
+  const daysLeft = days - zonedParts(now, zone).day
 
   const availableToday = sum(
     accounts
       .filter((account) => account.kind !== "credit")
-      .flatMap((account) => balanceOf(account, transactions))
+      .flatMap((account) => balanceOf(account, transactions, zone))
       .map((balance) => principal(balance.amount, balance.currency)),
   )
 
@@ -137,7 +139,7 @@ export function balanceForecast(
   let recurringExpenses = ZERO
   for (const rule of rules) {
     if (rule.kind === "transfer" || !isSpendable(rule.accountId)) continue
-    const amount = principal(dec(rule.amount), rule.currency).times(pendingOccurrences(rule, lastDay).length)
+    const amount = principal(dec(rule.amount), rule.currency).times(pendingOccurrences(rule, lastDay, zone).length)
     if (rule.kind === "income") recurringIncome = recurringIncome.plus(amount)
     else recurringExpenses = recurringExpenses.plus(amount)
   }
@@ -146,14 +148,15 @@ export function balanceForecast(
   for (const account of accounts) {
     const dueDay = account.creditTerms?.dueDay
     if (account.kind !== "credit" || dueDay === undefined) continue
-    const due = nextOccurrence(dueDay, now)
+    const due = nextOccurrence(dueDay, now, zone)
     if (due.getTime() >= end.getTime()) continue
-    cardPayments = cardPayments.plus(cardAmountDue(due, account, transactions, settings))
+    cardPayments = cardPayments.plus(cardAmountDue(due, account, transactions, settings, zone))
   }
 
   const average = averageUsualSpending(
     transactions.filter((transaction) => transaction.recurringId === undefined && isSpendable(transaction.accountId)),
     month,
+    zone,
   )
 
   return {

@@ -1,7 +1,7 @@
 import { z } from "zod"
 
-import { CardColor, CardKind, CardNetwork, DebtDirection, DebtMode, LoanFrequency, RecurringFrequency, AccountKind } from "./entities"
-import { CurrencyCode, DecimalString, Id, IsoDateTime, PositiveDecimalString, RecordSource, TransactionKind, TransactionStatus } from "./primitives"
+import { CardColor, CardKind, CardNetwork, DebtDirection, DebtMode, ImportedId, LoanFrequency, RecurringFrequency, AccountKind } from "./entities"
+import { CurrencyCode, DecimalString, Id, IsoDateTime, PositiveDecimalString, RecordSource, TimeZoneId, TransactionKind, TransactionStatus } from "./primitives"
 
 // The sync wire format (ADR 0005): each event carries one row as stored, in snake_case, the same
 // shape on the web (Dexie), on iOS (SwiftData records) and on the server (DSQL). keepwell-api copies
@@ -54,6 +54,12 @@ export const AccountWire = z.object({
   limit_currency: CurrencyCode.nullable(),
   cutoff_day: Day.nullable(),
   due_day: Day.nullable(),
+  /**
+   * Optional, not only nullable: a row from an app older than the column lacks the key, and the
+   * server then keeps the stored closing instead of reopening the account (`decide` in keepwell-api).
+   * Newer apps always send it, null while open.
+   */
+  closed_at: IsoDateTime.nullable().optional(),
   ...Audit,
 })
 
@@ -105,6 +111,12 @@ export const TransactionWire = z.object({
   tags: z.array(z.string()),
   /** Optional for apps older than the field; the server keeps what it has. */
   source: RecordSource.optional(),
+  /**
+   * Optional, not only nullable: apps older than imports lack the key. Once set it is the server's
+   * to keep, like `source`: a row that lacks it or sends null doesn't clear it (`decide` in
+   * keepwell-api), so an app that doesn't know the field can edit an imported movement.
+   */
+  imported_id: ImportedId.nullable().optional(),
   ...Audit,
 })
 
@@ -179,6 +191,12 @@ export const PersonalDebtWire = z.object({
   note: z.string().nullable(),
   settled_at: IsoDateTime.nullable(),
   transaction_id: Id.nullable(),
+  /**
+   * Optional, not only nullable: a row from an app older than the column lacks the key, and the
+   * server then keeps the stored date instead of clearing it (`decide` in keepwell-api). Newer apps
+   * always send it, null for no date.
+   */
+  due_date: IsoDateTime.nullable().optional(),
   ...Audit,
 })
 
@@ -211,6 +229,11 @@ export const SettingsWire = z.object({
   rate: PositiveDecimalString,
   payment_reminder_days_before: z.number().int().min(0).max(60),
   has_completed_onboarding: z.boolean(),
+  /**
+   * Optional, not only nullable: a row from an app older than the column lacks the key, and the
+   * server then keeps the stored zone instead of clearing it (`decide` in keepwell-api).
+   */
+  time_zone: TimeZoneId.nullable().optional(),
   ...Audit,
 })
 

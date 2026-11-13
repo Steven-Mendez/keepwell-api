@@ -50,6 +50,15 @@ export const IsoDateTime = z.iso
   .transform((text) => new Date(text).toISOString())
 export type IsoDateTime = z.infer<typeof IsoDateTime>
 
+/**
+ * An IANA time zone name ("America/Managua", "Europe/Madrid", "UTC"). Only its shape is checked: the
+ * zone databases of iOS, browsers and Node differ by version, and a zone one of them doesn't know must
+ * not get a whole settings row rejected. The domain falls back when it can't use one
+ * (`resolveTimeZone`).
+ */
+export const TimeZoneId = z.string().regex(/^[A-Za-z][A-Za-z0-9_+\-]*(\/[A-Za-z0-9_+\-]+)*$/, "Not a time zone").max(64)
+export type TimeZoneId = z.infer<typeof TimeZoneId>
+
 export function nowIso(): IsoDateTime {
   return new Date().toISOString()
 }

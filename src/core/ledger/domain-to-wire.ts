@@ -40,6 +40,8 @@ export function accountColumns(account: Account): Columns<"account"> {
     limit_currency: orNull(account.creditTerms?.limit?.currency),
     cutoff_day: orNull(account.creditTerms?.cutoffDay),
     due_day: orNull(account.creditTerms?.dueDay),
+    // Always written, null while open: reopening clears it on every device.
+    closed_at: orNull(account.closedAt),
   }
 }
 
@@ -133,6 +135,8 @@ export function personalDebtColumns(debt: PersonalDebt): Columns<"personalDebt">
     note: orNull(debt.note),
     settled_at: orNull(debt.settledAt),
     transaction_id: orNull(debt.transactionId),
+    // Always written, null for none: removing the date clears it on every device.
+    due_date: orNull(debt.dueDate),
   }
 }
 
@@ -154,6 +158,8 @@ export function settingsColumns(settings: Settings): Columns<"settings"> {
     rate: settings.currencies.rate,
     payment_reminder_days_before: settings.paymentReminderDaysBefore,
     has_completed_onboarding: settings.hasCompletedOnboarding,
+    // Left out while there is none: the stored zone is kept rather than cleared (`decide`).
+    ...(settings.timeZone ? { time_zone: settings.timeZone } : {}),
   }
 }
 

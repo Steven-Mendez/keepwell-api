@@ -8,6 +8,7 @@ import {
   IsoDateTime,
   PositiveDecimalString,
   RecordSource,
+  TimeZoneId,
   TransactionKind,
   TransactionStatus,
   isPositiveDecimal,
@@ -59,6 +60,11 @@ export const Account = z.object({
   /** Movements dated before this day are already part of `openingBalances`. */
   openingDate: IsoDateTime,
   creditTerms: CreditTerms.optional(),
+  /**
+   * When it was closed (`closeAccount`); absent while open. A closed account keeps its movements and
+   * still counts in totals, but leaves lists and pickers until it is reopened.
+   */
+  closedAt: IsoDateTime.optional(),
 })
 export type Account = z.infer<typeof Account>
 
@@ -105,6 +111,10 @@ export const Card = z.object({
 })
 export type Card = z.infer<typeof Card>
 
+/** A statement line's id: the bank's (FITID, reference) or `kw1:` and a hash (`importedLineIds`). */
+export const MAX_IMPORTED_ID_LENGTH = 128
+export const ImportedId = z.string().min(1).max(MAX_IMPORTED_ID_LENGTH)
+
 /**
  * A movement. `amount` is always positive and `kind` carries the direction, so a mis-signed value
  * can't flip an expense into income (iOS `Transaction.checkAmounts`).
@@ -138,6 +148,12 @@ export const Transaction = z.object({
   tags: z.array(z.string()).optional(),
   /** `mcp` when Claude (or another MCP client) recorded it; absent means `app`. Kept on confirm. */
   source: RecordSource.optional(),
+  /**
+   * The bank's id for the statement line it came from (or one `matchIncoming` derived), so importing
+   * the same statement again finds it instead of duplicating it. Set by an import, never typed; an
+   * edit keeps it.
+   */
+  importedId: ImportedId.optional(),
 })
 export type Transaction = z.infer<typeof Transaction>
 
@@ -324,6 +340,11 @@ export const PersonalDebtShape = z.object({
   settledAt: IsoDateTime.optional(),
   /** The expense it was split from. */
   transactionId: Id.optional(),
+  /**
+   * When it should be paid back, the start of that day; absent for a debt without one. Never
+   * before `date` (`savePersonalDebt`).
+   */
+  dueDate: IsoDateTime.optional(),
 })
 
 /** Repayments never add up past the amount (iOS `PersonalDebt.checkAmounts`). */
@@ -371,6 +392,13 @@ export const Settings = z.object({
   isICloudBackupEnabled: z.boolean(),
   paymentReminderDaysBefore: z.number().int().nonnegative(),
   hasCompletedOnboarding: z.boolean(),
+  /**
+   * The person's home time zone: the one the server uses for "today", month boundaries and recurring
+   * occurrences. Set once from the device when missing and changed by hand in Settings, never
+   * updated on its own, so two devices in different zones don't keep flipping it. The apps still
+   * show days in the device's zone.
+   */
+  timeZone: TimeZoneId.optional(),
 })
 export type Settings = z.infer<typeof Settings>
 

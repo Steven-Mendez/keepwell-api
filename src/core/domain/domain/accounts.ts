@@ -7,13 +7,16 @@ import type {
   CardNetwork,
   CreditTerms,
   DebtMode,
+  RecurringRule,
   Transaction,
 } from "../schema"
 
+import type { TimeZone } from "./calendar"
 import type { Decimal } from "./decimal"
 import { DomainError } from "./errors"
 import { INITIAL_CURRENCIES, toStored, type Money } from "./money"
-import { checkDayOfMonth, checkLastFour, scopeIncludes } from "./rules"
+import { getTransactionContext, validatedTransaction, type PaymentSource } from "./movements"
+import { accountCurrencies, balanceOf, checkDayOfMonth, checkLastFour, isOpen, openAccounts, scopeIncludes } from "./rules"
 import type { LedgerStore } from "./store"
 
 // Ports of BankAccounts.swift, CardActions.swift, AddCardUseCases.swift and CreditCardUseCases.swift.
@@ -236,6 +239,118 @@ export async function deleteAccount(
     }
     await store.deleteAccount(accountId)
   })
+}
+
+// Closing: the account leaves lists and pickers, its movements stay in every total.
+
+/** Default description of a closing transfer; screens pass their localized "Closing transfer". */
+export const CLOSING_TRANSFER_DESCRIPTION = "Closing transfer"
+
+export interface ClosingPlan {
+  /** Balances that aren't zero, one per currency: what a closing transfer has to move. */
+  balances: Money[]
+  /** Open accounts that hold every one of those currencies, where the balance can go. */
+  destinations: Account[]
+  /** Active recurring rules from or to the account: closing pauses them. */
+  rulesToPause: RecurringRule[]
+  /** Drafts those rules (paused ones too) left waiting: closing deletes them. */
+  draftsToDelete: Transaction[]
+}
+
+const touchesAccount = (rule: Pick<RecurringRule, "accountId" | "destinationAccountId">, accountId: string) =>
+  rule.accountId === accountId || rule.destinationAccountId === accountId
+
+/** What closing the account would do, for the sheet that asks first. */
+export function closingPlan(
+  ledger: { accounts: readonly Account[]; transactions: readonly Transaction[]; recurringRules: readonly RecurringRule[]; timeZone: TimeZone },
+  accountId: string
+): ClosingPlan {
+  const account = ledger.accounts.find((candidate) => candidate.id === accountId)
+  if (!account) throw DomainError.notFound(accountId)
+  const balances = balanceOf(account, ledger.transactions, ledger.timeZone).filter((balance) => !balance.amount.isZero())
+  const destinations = openAccounts(ledger.accounts).filter(
+    (candidate) => candidate.id !== accountId && balances.every((balance) => accountCurrencies(candidate).includes(balance.currency))
+  )
+  const rules = ledger.recurringRules.filter((rule) => touchesAccount(rule, accountId))
+  const ruleIds = new Set(rules.map((rule) => rule.id))
+  return {
+    balances,
+    destinations: balances.length === 0 ? [] : destinations,
+    rulesToPause: rules.filter((rule) => !rule.isPaused),
+    draftsToDelete: ledger.transactions.filter((movement) => movement.status === "planned" && movement.recurringId !== undefined && ruleIds.has(movement.recurringId)),
+  }
+}
+
+/** The channel transfers leave or enter an account through: its transfer card, or the account itself. */
+function transferSource(cards: readonly Card[], accountId: string): PaymentSource {
+  const channel = cards.find((card) => card.accountId === accountId && card.kind === "transfer")
+  return channel ? { type: "card", id: channel.id } : { type: "account", id: accountId }
+}
+
+/**
+ * Closes an account without deleting its history, in one atomic save. Confirmed balances must be zero
+ * or move to `transferTo` (open, another account, holding each currency): one confirmed transfer per
+ * currency dated `now`, out of the account when it holds money, into it when it owes (a card
+ * payment). Recurring rules from or to it are paused and their drafts deleted. Already closed: nothing.
+ */
+export async function closeAccount(
+  store: LedgerStore,
+  accountId: string,
+  options: { transferTo?: string; description?: string } = {},
+  now: Date = new Date()
+): Promise<{ account: Account; transfers: Transaction[] }> {
+  return store.atomically(async () => {
+    const context = await getTransactionContext(store)
+    const account = context.accounts.find((candidate) => candidate.id === accountId)
+    if (!account) throw DomainError.notFound(accountId)
+    if (!isOpen(account)) return { account, transfers: [] }
+    const recurringRules = await store.fetchRecurringRules()
+    const plan = closingPlan({ ...context, recurringRules, timeZone: context.zone }, accountId)
+    const transfers: Transaction[] = []
+    if (plan.balances.length > 0) {
+      if (options.transferTo === undefined) throw DomainError.accountNotEmpty(accountId)
+      const destination = plan.destinations.find((candidate) => candidate.id === options.transferTo)
+      if (!destination) throw DomainError.invalidTransferDestination()
+      for (const balance of plan.balances) {
+        const leaving = balance.amount.gt(0)
+        const from = leaving ? account.id : destination.id
+        const to = leaving ? destination.id : account.id
+        transfers.push(
+          validatedTransaction(
+            {
+              id: newId(),
+              kind: "transfer",
+              amount: balance.amount.abs(),
+              currency: balance.currency,
+              source: transferSource(context.cards, from),
+              destinationAccountId: to,
+              description: options.description ?? CLOSING_TRANSFER_DESCRIPTION,
+              date: now,
+              note: "",
+              isDraft: false,
+            },
+            context
+          )
+        )
+      }
+    }
+    for (const transfer of transfers) await store.saveTransaction(transfer)
+    for (const rule of plan.rulesToPause) await store.saveRecurringRule({ ...rule, isPaused: true })
+    for (const draft of plan.draftsToDelete) await store.deleteTransaction(draft.id)
+    const closed: Account = { ...account, closedAt: now.toISOString() }
+    await store.saveAccount(closed)
+    return { account: closed, transfers }
+  })
+}
+
+/** Opens a closed account again. Paused rules stay paused and closing transfers stay recorded. */
+export async function reopenAccount(store: LedgerStore, accountId: string): Promise<Account> {
+  const account = (await store.fetchAccounts()).find((candidate) => candidate.id === accountId)
+  if (!account) throw DomainError.notFound(accountId)
+  if (isOpen(account)) return account
+  const { closedAt: _closedAt, ...open } = account
+  await store.saveAccount(open)
+  return open
 }
 
 export async function renameAccount(

@@ -81,6 +81,10 @@ without being a full copy. The shared fixtures (`fixtures/entities.json`) run in
 
 ## Deploying
 
+There are three branches: `develop`, `staging` and `main`. Pull requests go to `develop`; `develop`
+is then promoted to `staging`, and `staging` to `main`. Only `main` deploys, and there is no staging
+environment: `staging` is a branch, not a place where the API runs.
+
 Every commit on `main` goes through the pipeline in `.github/workflows/pipeline.yml`: checks, build,
 `terraform apply` and a smoke test. Pull requests get a `terraform plan` as a comment. There are no
 manual applies after the one-time bootstrap in [`BOOTSTRAP.md`](BOOTSTRAP.md).

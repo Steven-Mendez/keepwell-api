@@ -106,7 +106,7 @@ resume qué infraestructura entra durante la fase.
 ### Fuera de alcance
 
 - Compartir datos entre usuarios, hogares o cuentas conjuntas.
-- Importación bancaria, scraping o agregadores.
+- Conexión con bancos: agregadores y scraping. (Aclarado en T28: importar un estado de cuenta que la persona aporta sí entra. Claude lee el archivo que ella sube a la conversación y la herramienta `import_transactions` separa lo nuevo de lo ya registrado; el servidor no guarda credenciales, no habla con terceros y solo ve lo que la persona eligió compartir).
 - Tipos de cambio automáticos: la tasa sigue viajando en cada movimiento, como hoy.
 - Panel de administración.
 - Soporte a ChatGPT como objetivo de primera clase. Se diseña para MCP estándar; ChatGPT entra con lo que su capa soporte (hoy prioriza lectura y búsqueda).

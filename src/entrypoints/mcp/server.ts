@@ -21,6 +21,7 @@ import {
   parseMonth,
   searchTransactions,
 } from "../../core/mcp/read-tools"
+import { decimal } from "./inputs"
 import { VIEWS_URI } from "./ui/resources"
 
 export interface McpContext {
@@ -67,16 +68,16 @@ export function createMcpServer(context: McpContext): McpServer {
     else server.registerTool(name, config, handler)
   }
 
-  tool("get_financial_context", { title: "Financial overview", description: "Start here: currencies, accounts with balances, net worth, this month's income and spending, budgets and the next 14 days of payments.", view: true }, {}, (_, ledger) =>
+  tool("get_financial_context", { title: "Financial overview", description: "Start here: currencies, open accounts with balances, net worth, this month's income and spending, budgets and the next 14 days of payments.", view: true }, {}, (_, ledger) =>
     getFinancialContext(ledger, context.now())
   )
-  tool("list_accounts", { title: "List accounts", description: "Accounts with their balance in each currency, credit terms, and cards (last four digits only)." }, {}, (_, ledger) => ({ accounts: listAccounts(ledger) }))
+  tool("list_accounts", { title: "List accounts", description: "Accounts with their balance in each currency, credit terms, cards (last four digits only) and closed_at: closed accounts are listed too, so their history can be explained, with the day they were closed (null while open)." }, {}, (_, ledger) => ({ accounts: listAccounts(ledger) }))
   tool("get_net_worth", { title: "Net worth", description: "Net worth in the principal currency (and the second, at the settings rate), with each account's share." }, {}, (_, ledger) => getNetWorth(ledger))
   tool(
     "get_monthly_summary",
     { title: "Monthly summary", description: "Income, spending and net for one month, by category, with budgets. Confirmed movements only, in the principal currency.", view: true },
     { month: z.string().regex(/^\d{4}-\d{2}$/).optional().describe("YYYY-MM; this month when left out") },
-    (args, ledger) => getMonthlySummary(ledger, parseMonth(args.month, context.now()))
+    (args, ledger) => getMonthlySummary(ledger, parseMonth(args.month, context.now(), ledger.timeZone))
   )
   tool(
     "get_trends",
@@ -86,13 +87,13 @@ export function createMcpServer(context: McpContext): McpServer {
   )
   tool(
     "get_upcoming_payments",
-    { title: "Upcoming payments", description: "Recurring movements and credit card due dates from today on.", view: true },
+    { title: "Upcoming payments", description: "Drafts to confirm, recurring movements, card payments, loan installments and personal debts with a due date, from today on, overdue first. Closed accounts are left out.", view: true },
     { days: z.number().int().min(1).max(90).default(30) },
     (args, ledger) => getUpcomingPayments(ledger, args.days, context.now())
   )
   tool(
     "search_transactions",
-    { title: "Search movements", description: "Movements, newest first, filtered by date (YYYY-MM-DD), account, category, kind, currency, status or text in the description, note or tags. Paged with cursor." },
+    { title: "Search movements", description: "Movements, newest first, filtered by date (YYYY-MM-DD), account, category, kind, currency, status, amount range (min_amount/max_amount, inclusive, in the principal currency at each movement's own recorded rate), tags (movements carrying all of them), recurring rule (recurring_rule_id, subscriptions_only) or text in the description, note or tags. Paged with cursor." },
     {
       from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
       to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
@@ -102,6 +103,11 @@ export function createMcpServer(context: McpContext): McpServer {
       currency: z.string().length(3).optional(),
       status: z.enum(["confirmed", "planned"]).optional(),
       text: z.string().max(100).optional(),
+      min_amount: decimal.optional().describe("Inclusive, in the principal currency at each movement's own recorded rate"),
+      max_amount: decimal.optional().describe("Inclusive, in the principal currency at each movement's own recorded rate"),
+      tags: z.array(z.string().max(64)).max(10).optional().describe("Movements carrying all of them; \"#Boda\" and \"boda\" are the same tag"),
+      recurring_rule_id: z.string().max(64).optional().describe("From list_recurring_rules: only the movements that rule recorded"),
+      subscriptions_only: z.boolean().optional().describe("Only movements recorded by rules that are subscriptions today"),
       limit: z.number().int().min(1).max(100).default(25),
       cursor: z.number().int().min(0).optional(),
     },
@@ -111,7 +117,12 @@ export function createMcpServer(context: McpContext): McpServer {
   tool("list_recurring_rules", { title: "List recurring payments", description: "Recurring movements and subscriptions with their schedule and whether they are paused." }, {}, (_, ledger) => listRecurringRules(ledger))
   tool("list_savings_goals", { title: "List savings goals", description: "Savings goals with their target and what is set aside." }, {}, (_, ledger) => listSavingsGoals(ledger))
   tool("list_loans", { title: "List loans", description: "Loans with their installments and which are paid." }, {}, (_, ledger) => listLoans(ledger))
-  tool("list_personal_debts", { title: "List personal debts", description: "Money owed to or by people, with repayments and whether settled." }, {}, (_, ledger) => listPersonalDebts(ledger))
+  tool(
+    "list_personal_debts",
+    { title: "List personal debts", description: "Money owed to or by people, with repayments, whether settled, and the due date (YYYY-MM-DD) with its status today: upcoming (days_left), today or overdue (days_late)." },
+    {},
+    (_, ledger) => listPersonalDebts(ledger, context.now())
+  )
   tool("list_categorization_rules", { title: "List categorization rules", description: "Rules that categorize movements by their description, in the order they apply." }, {}, (_, ledger) => listCategorizationRules(ledger))
   context.registerWrites?.(server)
   return server

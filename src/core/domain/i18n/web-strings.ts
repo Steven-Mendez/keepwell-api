@@ -85,6 +85,13 @@ export const WEB_STRINGS_CORE: WebStrings = {
       es: "Tus cuentas, tarjetas y movimientos se borran de este navegador. No se puede deshacer.",
     },
   Back: { es: "Atrás" },
+  /** The error screens (app/error.tsx and app/global-error.tsx). */
+  "Something went wrong": { es: "Algo salió mal" },
+  "Keepwell couldn't show this page. Your data is still on this device: reload to try again, or export a CSV to keep a copy.":
+    {
+      es: "Keepwell no pudo mostrar esta página. Tus datos siguen en este dispositivo: recarga para intentarlo de nuevo o exporta un CSV para guardar una copia.",
+    },
+  Reload: { es: "Recargar" },
   /** iOS takes these from the system; the web needs them spelled out. */
   Cancel: { es: "Cancelar" },
   /** iOS says "on this iPhone"; on the web the name stays in the browser. */

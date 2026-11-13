@@ -1,10 +1,12 @@
-import type { Account, Card, CurrencySettings, ExchangeRate, Transaction, TransactionCategory, TransactionKind } from "../schema"
+import type { Account, Card, CategorizationRule, CurrencySettings, ExchangeRate, Transaction, TransactionCategory, TransactionKind } from "../schema"
+import { OTHER_EXPENSE_ID, OTHER_INCOME_ID } from "../schema"
 
 import { Decimal, ZERO, decimalText } from "./decimal"
-import { yearMonthContaining } from "./calendar"
+import { yearMonthContaining, type TimeZone } from "./calendar"
+import { applyingRule, categorizingRule, usableRules } from "./categorization"
 import { DomainError } from "./errors"
 import { INITIAL_CURRENCIES, settingsRate, type Money } from "./money"
-import { balanceOf, checkAmounts, isConfirmed, monthlySummary } from "./rules"
+import { balanceOf, checkAmounts, isConfirmed, isOpen, monthlySummary } from "./rules"
 import type { LedgerStore } from "./store"
 import { tagsField } from "./tags"
 
@@ -91,6 +93,8 @@ export interface TransactionDraft {
   recurringId?: string
   /** Normalized when saved; absent or empty means none. */
   tags?: string[]
+  /** The statement line a new movement is imported from (`importTransactions`); an edit keeps the one it had. */
+  importedId?: string
 }
 
 export interface TransactionContext {
@@ -103,6 +107,10 @@ export interface TransactionContext {
   lastUsed: Map<string, Date>
   categoryUsage: Map<string, number>
   transactions: Transaction[]
+  /** The store's zone, for the days and months its rules read. */
+  zone: TimeZone
+  /** Categorization rules in the person's order, only those whose category exists with their kind. */
+  rules: CategorizationRule[]
 }
 
 export function accountIdFor(context: Pick<TransactionContext, "cards">, source: PaymentSource): string | undefined {
@@ -119,8 +127,15 @@ export function lastUsedSource(context: TransactionContext): PaymentSource | und
 
 export async function getTransactionContext(store: LedgerStore): Promise<TransactionContext> {
   const currencies = (await store.loadSettings())?.currencies ?? INITIAL_CURRENCIES
-  const [accounts, cards, transactions, categories] = await Promise.all([store.fetchAccounts(), store.fetchCards(), store.fetchTransactions(), store.fetchCategories()])
-  const balances = new Map(accounts.map((account) => [account.id, balanceOf(account, transactions)]))
+  const [accounts, cards, transactions, categories, allRules] = await Promise.all([
+    store.fetchAccounts(),
+    store.fetchCards(),
+    store.fetchTransactions(),
+    store.fetchCategories(),
+    store.fetchCategorizationRules(),
+  ])
+  const zone = store.timeZone
+  const balances = new Map(accounts.map((account) => [account.id, balanceOf(account, transactions, zone)]))
   const lastUsed = new Map<string, Date>()
   const categoryUsage = new Map<string, number>()
   for (const movement of transactions) {
@@ -130,40 +145,67 @@ export async function getTransactionContext(store: LedgerStore): Promise<Transac
     if (!previous || date > previous) lastUsed.set(key, date)
     if (movement.categoryId) categoryUsage.set(movement.categoryId, (categoryUsage.get(movement.categoryId) ?? 0) + 1)
   }
-  return { currencies, categories, accounts, cards, balances, lastUsed, categoryUsage, transactions }
+  return { currencies, categories, accounts, cards, balances, lastUsed, categoryUsage, transactions, zone, rules: usableRules(allRules, categories) }
+}
+
+/**
+ * The context editors pick from: open accounts and their methods, plus the closed ones in `keep` (the
+ * accounts of the movement or rule being edited, which still show, labelled closed).
+ */
+export function pickerContext(context: TransactionContext, keep: readonly (string | undefined)[] = []): TransactionContext {
+  const shown = context.accounts.filter((account) => isOpen(account) || keep.includes(account.id))
+  if (shown.length === context.accounts.length) return context
+  const ids = new Set(shown.map((account) => account.id))
+  return { ...context, accounts: shown, cards: context.cards.filter((card) => ids.has(card.accountId)) }
 }
 
 /** Checks a draft against the iOS rules and builds the movement to store. */
 export function validatedTransaction(draft: TransactionDraft, context: TransactionContext, existing?: Transaction): Transaction {
+  return categorizedTransaction(draft, context, existing).transaction
+}
+
+/**
+ * `validatedTransaction`, plus the categorization rule that chose its category. Only a new movement
+ * goes through the rules: one without a category, or in "Other" of its kind, takes the first rule
+ * that matches; a new one without a category and no matching rule goes to "Other". An edit never.
+ */
+export function categorizedTransaction(
+  draft: TransactionDraft,
+  context: TransactionContext,
+  existing?: Transaction,
+): { transaction: Transaction; rule?: CategorizationRule } {
   checkAmounts(draft.amount, draft.actualDebitedPrincipal)
   // An edit keeps the rate it was recorded with (rule 2), so its currencies are the allowed ones.
   const rate: ExchangeRate = existing?.exchangeRate ?? settingsRate(context.currencies)
   if (draft.currency !== rate.principal && draft.currency !== rate.second) throw DomainError.invalidCurrency(draft.currency)
   const accountId = draft.source ? accountIdFor(context, draft.source) : undefined
   if (!draft.source || !accountId) throw DomainError.notFound("source")
-  let category: TransactionCategory | undefined
+  const isNew = existing === undefined
+  const categoryId =
+    draft.kind === "transfer" || draft.categoryId !== undefined || !isNew ? draft.categoryId : draft.kind === "income" ? OTHER_INCOME_ID : OTHER_EXPENSE_ID
   if (draft.kind === "transfer") {
     const destination = draft.destinationAccountId
     if (!destination || destination === accountId || !context.accounts.some((account) => account.id === destination)) {
       throw DomainError.invalidTransferDestination()
     }
   } else {
-    category = context.categories.find((candidate) => candidate.id === draft.categoryId)
-    if (!category) throw DomainError.notFound(draft.categoryId ?? "category")
+    const category = context.categories.find((candidate) => candidate.id === categoryId)
+    if (!category) throw DomainError.notFound(categoryId ?? "category")
     if (category.kind !== draft.kind) throw DomainError.categoryKindMismatch(draft.kind, category.kind)
   }
   const description = draft.description.trim()
   const note = draft.note.trim()
   const debited = draft.currency === rate.principal ? undefined : draft.actualDebitedPrincipal
   const recurringId = draft.recurringId ?? existing?.recurringId
-  return {
+  // Nobody types it: an edit from any editor keeps the statement line the movement came from.
+  const importedId = existing?.importedId ?? draft.importedId
+  const built: Transaction = {
     id: draft.id,
     date: draft.date.toISOString(),
     status: draft.isDraft ? "planned" : "confirmed",
-    // Safety net only: the flow fills a localized description before saving.
-    description: description === "" ? (category?.name ?? "Transfer") : description,
+    description,
     kind: draft.kind,
-    ...(draft.kind === "transfer" || draft.categoryId === undefined ? {} : { categoryId: draft.categoryId }),
+    ...(draft.kind === "transfer" || categoryId === undefined ? {} : { categoryId }),
     amount: decimalText(draft.amount),
     currency: draft.currency,
     accountId,
@@ -175,7 +217,46 @@ export function validatedTransaction(draft: TransactionDraft, context: Transacti
     ...(note === "" ? {} : { note }),
     ...(recurringId === undefined ? {} : { recurringId }),
     ...tagsField(draft.tags),
+    ...(importedId === undefined ? {} : { importedId }),
   }
+  // The rule reads the text as typed, before the safety net below fills in a category's name.
+  const rule = isNew ? categorizingRule(built, context.rules) : undefined
+  const transaction = rule ? applyingRule(rule, built) : built
+  if (description === "") {
+    const category = context.categories.find((candidate) => candidate.id === transaction.categoryId)
+    // Safety net only: the flow fills a localized description before saving.
+    transaction.description = category?.name ?? "Transfer"
+  }
+  checkClosedAccounts(transaction, context.accounts, existing)
+  return rule ? { transaction, rule } : { transaction }
+}
+
+/** Whether two versions of a movement move the same money: same accounts, amounts, day and status. */
+function sameBalanceEffect(a: Transaction, b: Transaction): boolean {
+  return (
+    a.kind === b.kind &&
+    a.status === b.status &&
+    new Date(a.date).getTime() === new Date(b.date).getTime() &&
+    a.accountId === b.accountId &&
+    a.cardId === b.cardId &&
+    a.destinationAccountId === b.destinationAccountId &&
+    a.currency === b.currency &&
+    new Decimal(a.amount).eq(b.amount) &&
+    (a.actualDebitedPrincipal === undefined) === (b.actualDebitedPrincipal === undefined) &&
+    (a.actualDebitedPrincipal === undefined || new Decimal(a.actualDebitedPrincipal).eq(b.actualDebitedPrincipal as string))
+  )
+}
+
+/**
+ * A closed account keeps the balance it was closed with: no new movement touches it, and an edit of
+ * one that does (or would) may change its description, category, note and tags, never what it moves.
+ */
+export function checkClosedAccounts(transaction: Transaction, accounts: readonly Account[], existing?: Transaction): void {
+  const touched = [transaction.accountId, transaction.destinationAccountId, existing?.accountId, existing?.destinationAccountId]
+  const closed = touched.find((id) => id !== undefined && accounts.some((account) => account.id === id && !isOpen(account)))
+  if (closed === undefined) return
+  if (existing && sameBalanceEffect(existing, transaction)) return
+  throw DomainError.accountClosed(closed)
 }
 
 export interface SavedTransaction {
@@ -185,15 +266,18 @@ export interface SavedTransaction {
   newBalances: Money[]
   /** Spending in the movement's category that month, in the principal currency. */
   categoryMonthTotal?: Money
+  /** The categorization rule that chose a new movement's category. */
+  rule?: CategorizationRule
 }
 
 /** Saves a new movement, or replaces the one with the draft's id (edit). */
 export async function saveTransaction(store: LedgerStore, draft: TransactionDraft): Promise<SavedTransaction> {
   const context = await getTransactionContext(store)
   const existing = context.transactions.find((transaction) => transaction.id === draft.id)
-  const transaction = validatedTransaction(draft, context, existing)
+  const { transaction, rule } = categorizedTransaction(draft, context, existing)
   await store.saveTransaction(transaction)
-  return savedTransactionOf(transaction, context.accounts, await store.fetchTransactions(), context.currencies.principal)
+  const saved = savedTransactionOf(transaction, context.accounts, await store.fetchTransactions(), context.currencies.principal, context.zone)
+  return rule ? { ...saved, rule } : saved
 }
 
 /**
@@ -205,13 +289,14 @@ export function savedTransactionOf(
   accounts: readonly Account[],
   movements: readonly Transaction[],
   principal: string,
+  zone: TimeZone,
 ): SavedTransaction {
   const account = accounts.find((candidate) => candidate.id === transaction.accountId)
   if (!account) throw DomainError.notFound(transaction.accountId)
-  const newBalances = balanceOf(account, movements)
+  const newBalances = balanceOf(account, movements, zone)
   let categoryMonthTotal: Money | undefined
   if (transaction.kind === "expense") {
-    const summary = monthlySummary(yearMonthContaining(new Date(transaction.date)), movements, principal)
+    const summary = monthlySummary(yearMonthContaining(new Date(transaction.date), zone), movements, principal, zone)
     const total = summary.categories.find((entry) => entry.categoryId === transaction.categoryId)?.amount ?? ZERO
     categoryMonthTotal = { amount: total, currency: principal }
   }
@@ -268,12 +353,12 @@ export function previewMovement(context: TransactionContext, draft: TransactionD
     isShared: false,
   }
   const balancesOf = (account: Account) =>
-    excluding ? balanceOf(account, context.transactions.filter((transaction) => transaction.id !== excluding.id)) : (context.balances.get(account.id) ?? balanceOf(account, []))
+    excluding ? balanceOf(account, context.transactions.filter((transaction) => transaction.id !== excluding.id), context.zone) : (context.balances.get(account.id) ?? balanceOf(account, [], context.zone))
   const side = (account: Account) => {
     const before = balancesOf(account)
     // Today's balance with an opening date in the far past applies just this one movement on top.
     const current: Account = { ...account, openingBalances: before.map((m) => ({ amount: decimalText(m.amount), currency: m.currency })), openingDate: new Date(0).toISOString() }
-    return { before, after: balanceOf(current, [movement]) }
+    return { before, after: balanceOf(current, [movement], context.zone) }
   }
   const source = side(sourceAccount)
   const destination = destinationAccount ? side(destinationAccount) : undefined
@@ -295,7 +380,22 @@ export async function confirmPlannedTransaction(store: LedgerStore, id: string, 
   if (!planned) throw DomainError.notFound(id)
   if (isConfirmed(planned)) return
   const date = new Date(planned.date) > now ? now.toISOString() : planned.date
-  await store.saveTransaction({ ...planned, status: "confirmed", date })
+  const confirmed: Transaction = { ...planned, status: "confirmed", date }
+  checkClosedAccounts(confirmed, await store.fetchAccounts(), planned)
+  await store.saveTransaction(confirmed)
+}
+
+/**
+ * Undoes `confirmPlannedTransaction`: the movement is a draft again, back on the date it was planned
+ * for (`plannedDate`, since confirming may have moved it to today), so it stops counting toward balances.
+ */
+export async function unconfirmTransaction(store: LedgerStore, id: string, plannedDate: string): Promise<void> {
+  const confirmed = (await store.fetchTransactions()).find((transaction) => transaction.id === id)
+  if (!confirmed) throw DomainError.notFound(id)
+  if (!isConfirmed(confirmed)) return
+  const planned: Transaction = { ...confirmed, status: "planned", date: plannedDate }
+  checkClosedAccounts(planned, await store.fetchAccounts(), confirmed)
+  await store.saveTransaction(planned)
 }
 
 export async function deleteTransaction(store: LedgerStore, id: string): Promise<void> {

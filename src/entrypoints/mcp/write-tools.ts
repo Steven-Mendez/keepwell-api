@@ -5,10 +5,10 @@ import { z } from "zod"
 
 import type { Logger } from "../../adapters/observability/logger"
 import { CreatePending, McpWriteError } from "../../core/use-cases/create-pending"
+import { decimal } from "./inputs"
 import { VIEWS_URI } from "./ui/resources"
 
-const decimal = z.string().regex(/^[0-9]+(\.[0-9]+)?$/, "a positive exact decimal such as 12.50")
-const instant = z.string().refine((text) => !Number.isNaN(Date.parse(text)), "an ISO 8601 date or date-time")
+const instant = z.string().refine((text) => !Number.isNaN(Date.parse(text)), "an ISO 8601 date or date-time").describe("YYYY-MM-DD is that day in the person's time zone (get_financial_context); a date-time is that instant")
 
 const common = {
   id: z.string().uuid().describe("A new UUID you generate once and reuse if you retry, so the call is never recorded twice"),
@@ -50,7 +50,15 @@ export function registerWriteTools(server: McpServer, options: { create: CreateP
       _meta: pendingView,
       description:
         "Record a movement. It is saved as pending: it doesn't count toward balances until the person confirms it in Keepwell, and it shows as recorded by you.",
-      inputSchema: { ...common, description: z.string().min(1).max(200), date: instant.describe("When it happened") },
+      inputSchema: {
+        ...common,
+        category_id: z
+          .string()
+          .optional()
+          .describe("From get_monthly_summary; left out for transfers. Leave it out to let the person's categorization rules choose; Other if none matches."),
+        description: z.string().min(1).max(200),
+        date: instant.describe("When it happened"),
+      },
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     },
     async (args) => run("create_transaction", () => options.create.transaction(options.userId, options.clientId, args))
