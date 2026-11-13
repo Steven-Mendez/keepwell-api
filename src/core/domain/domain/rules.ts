@@ -55,6 +55,39 @@ export function amountIn(transaction: Transaction, currency: string): Decimal {
     : principalAmount(transaction)
 }
 
+/**
+ * The movement in `currency`, converted with the rate it stored; `undefined` when that rate doesn't
+ * reach `currency`. Each movement keeps the currencies in force when it was recorded, so after the
+ * main currency changes (say USD to EUR) its amount is no longer in the main currency: totals use
+ * this to convert it, or leave it out and say so, but never add dollars and call them euros.
+ */
+export function storedAmountIn(transaction: Transaction, currency: string): Decimal | undefined {
+  const rate = transaction.exchangeRate
+  if (rate.principal === currency) return principalAmount(transaction)
+  if (rateHasSecondCurrency(rate) && rate.second === currency) return secondAmount(transaction)
+  return undefined
+}
+
+/** Movements in one currency whose stored rate doesn't reach the summary's, so no total counts them. */
+export interface UnconvertedMovements {
+  currency: string
+  count: number
+}
+
+/** A tally of what a total left out, by currency code. */
+export class UnconvertedTally {
+  private readonly counts = new Map<string, number>()
+
+  add(transaction: Transaction): void {
+    this.counts.set(transaction.currency, (this.counts.get(transaction.currency) ?? 0) + 1)
+  }
+
+  /** Sorted by currency code; empty when every movement was counted. */
+  get entries(): UnconvertedMovements[] {
+    return [...this.counts].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)).map(([currency, count]) => ({ currency, count }))
+  }
+}
+
 /** The rate the bank effectively applied (second per principal), when it reported a real debit. */
 export function bankRate(transaction: Transaction): Decimal | undefined {
   if (transaction.actualDebitedPrincipal === undefined || !isInSecondCurrency(transaction)) return undefined
@@ -178,6 +211,11 @@ export interface MonthlySummary {
   categories: CategoryTotal[]
   /** Income per category, largest first. */
   incomeCategories: CategoryTotal[]
+  /**
+   * Income and expenses of the month the totals leave out: their stored rate doesn't reach
+   * `currency` (recorded before the main currency changed). Empty when every movement counts.
+   */
+  excluded: UnconvertedMovements[]
 }
 
 function ranked(totals: Map<string, Decimal>, total: Decimal): CategoryTotal[] {
@@ -191,9 +229,14 @@ export function monthlySummary(month: YearMonth, transactions: readonly Transact
   let expense = ZERO
   const perCategory = new Map<string, Decimal>()
   const perIncome = new Map<string, Decimal>()
+  const excluded = new UnconvertedTally()
   for (const transaction of transactions) {
-    if (!isConfirmed(transaction) || !sameMonth(yearMonthContaining(dateOf(transaction), zone), month)) continue
-    const amount = principalAmount(transaction)
+    if (!isConfirmed(transaction) || transaction.kind === "transfer" || !sameMonth(yearMonthContaining(dateOf(transaction), zone), month)) continue
+    const amount = storedAmountIn(transaction, currency)
+    if (amount === undefined) {
+      excluded.add(transaction)
+      continue
+    }
     if (transaction.kind === "income") {
       income = income.plus(amount)
       const id = transaction.categoryId ?? OTHER_INCOME_ID
@@ -204,7 +247,15 @@ export function monthlySummary(month: YearMonth, transactions: readonly Transact
       perCategory.set(id, (perCategory.get(id) ?? ZERO).plus(amount))
     }
   }
-  return { month, currency, income, expense, categories: ranked(perCategory, expense), incomeCategories: ranked(perIncome, income) }
+  return {
+    month,
+    currency,
+    income,
+    expense,
+    categories: ranked(perCategory, expense),
+    incomeCategories: ranked(perIncome, income),
+    excluded: excluded.entries,
+  }
 }
 
 export const savings = (summary: { income: Decimal; expense: Decimal }) => summary.income.minus(summary.expense)
@@ -214,19 +265,22 @@ export function savingsRate(summary: { income: Decimal; expense: Decimal }): Dec
   return summary.income.gt(0) ? savings(summary).div(summary.income) : undefined
 }
 
-function totalsByMonth(kind: TransactionKind, transactions: readonly Transaction[], zone: TimeZone): Map<string, Decimal> {
+/** Totals in `currency`, leaving out what `storedAmountIn` can't convert, as `monthlySummary` does. */
+function totalsByMonth(kind: TransactionKind, transactions: readonly Transaction[], currency: string, zone: TimeZone): Map<string, Decimal> {
   const totals = new Map<string, Decimal>()
   for (const transaction of transactions) {
     if (!isConfirmed(transaction) || transaction.kind !== kind) continue
+    const amount = storedAmountIn(transaction, currency)
+    if (amount === undefined) continue
     const key = monthKey(yearMonthContaining(dateOf(transaction), zone))
-    totals.set(key, (totals.get(key) ?? ZERO).plus(principalAmount(transaction)))
+    totals.set(key, (totals.get(key) ?? ZERO).plus(amount))
   }
   return totals
 }
 
-/** Monthly totals of one kind for `count` months ending at `last`, oldest first. */
-export function monthlyTotals(kind: TransactionKind, last: YearMonth, count: number, transactions: readonly Transaction[], zone: TimeZone) {
-  const totals = totalsByMonth(kind, transactions, zone)
+/** Monthly totals of one kind in `currency` for `count` months ending at `last`, oldest first. */
+export function monthlyTotals(kind: TransactionKind, last: YearMonth, count: number, transactions: readonly Transaction[], currency: string, zone: TimeZone) {
+  const totals = totalsByMonth(kind, transactions, currency, zone)
   return Array.from({ length: count }, (_, index) => {
     const month = addMonths(last, index - (count - 1))
     return { month, total: totals.get(monthKey(month)) ?? ZERO }
@@ -234,8 +288,8 @@ export function monthlyTotals(kind: TransactionKind, last: YearMonth, count: num
 }
 
 /** Average over the months that have any movement of that kind; `undefined` when there are none. */
-export function averageMonthlyTotal(kind: TransactionKind, transactions: readonly Transaction[], zone: TimeZone): Decimal | undefined {
-  const totals = [...totalsByMonth(kind, transactions, zone).values()].filter((total) => total.gt(0))
+export function averageMonthlyTotal(kind: TransactionKind, transactions: readonly Transaction[], currency: string, zone: TimeZone): Decimal | undefined {
+  const totals = [...totalsByMonth(kind, transactions, currency, zone).values()].filter((total) => total.gt(0))
   return totals.length === 0 ? undefined : sum(totals).div(totals.length)
 }
 

@@ -1790,6 +1790,16 @@
     "one": "Atrasado · %lld día",
     "other": "Atrasado · %lld días"
    }
+  },
+  "Not including %lld movements in %@": {
+   "en": {
+    "one": "Not including %lld movement in %@",
+    "other": "Not including %lld movements in %@"
+   },
+   "es": {
+    "one": "Sin incluir %lld movimiento en %@",
+    "other": "Sin incluir %lld movimientos en %@"
+   }
   }
  },
  "lock": {
@@ -3476,6 +3486,16 @@
   "No spending": {
    "es": "Sin gastos"
   },
+  "Not including %lld movements in %@": {
+   "en": {
+    "one": "Not including %lld movement in %@",
+    "other": "Not including %lld movements in %@"
+   },
+   "es": {
+    "one": "Sin incluir %lld movimiento en %@",
+    "other": "Sin incluir %lld movimientos en %@"
+   }
+  },
   "Nothing came in during %@.": {
    "es": "No entró nada en %@."
   },
@@ -3747,6 +3767,16 @@
   },
   "No transactions yet": {
    "es": "Todavía no hay movimientos"
+  },
+  "Not including %lld movements in %@": {
+   "en": {
+    "one": "Not including %lld movement in %@",
+    "other": "Not including %lld movements in %@"
+   },
+   "es": {
+    "one": "Sin incluir %lld movimiento en %@",
+    "other": "Sin incluir %lld movimientos en %@"
+   }
   },
   "Note": {
    "es": "Nota"
