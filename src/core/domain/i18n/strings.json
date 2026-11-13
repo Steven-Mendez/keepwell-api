@@ -4246,6 +4246,9 @@
   "Next: %@ · %@": {
    "es": "Próximo: %@ · %@"
   },
+  "Not including %lld in %@": {
+   "es": "Sin incluir %lld en %@"
+  },
   "Per month · %lld subscriptions": {
    "en": {
     "one": "Per month · %lld subscription",
