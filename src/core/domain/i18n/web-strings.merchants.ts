@@ -22,6 +22,7 @@ export const WEB_STRINGS_MERCHANTS: WebStrings = {
   Name: { es: "Nombre" },
   "Default category": { es: "Categoría predeterminada" },
   None: { es: "Ninguna" },
+  "A business not on this device yet": { es: "Un negocio que aún no está en este dispositivo" },
   "Suggested when you log a new movement with this business.": {
     es: "Se sugiere al registrar un movimiento nuevo con este negocio.",
   },

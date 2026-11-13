@@ -102,9 +102,13 @@ export async function fetchCategorizationRules(store: LedgerStore): Promise<Cate
 }
 
 export async function saveCategorizationRule(store: LedgerStore, draft: CategorizationRuleDraft): Promise<CategorizationRule> {
-  if (draft.id !== undefined && !(await store.fetchCategorizationRules()).some((rule) => rule.id === draft.id)) throw DomainError.notFound(draft.id)
+  const existing = draft.id === undefined ? undefined : (await store.fetchCategorizationRules()).find((rule) => rule.id === draft.id)
+  if (draft.id !== undefined && !existing) throw DomainError.notFound(draft.id)
   const rule = validatedRule({ ...draft, id: draft.id ?? newID() }, await store.fetchCategories())
-  if (rule.merchantId !== undefined && !(await store.fetchMerchants()).some((merchant) => merchant.id === rule.merchantId)) throw DomainError.notFound(rule.merchantId)
+  // A newly chosen business has to exist; the one the edited rule already names stays even when this
+  // device hasn't pulled it yet (as on a movement, `merchantLinks`): the person didn't change it.
+  const unchanged = rule.merchantId !== undefined && rule.merchantId === existing?.merchantId
+  if (rule.merchantId !== undefined && !unchanged && !(await store.fetchMerchants()).some((merchant) => merchant.id === rule.merchantId)) throw DomainError.notFound(rule.merchantId)
   await store.saveCategorizationRule(rule)
   return rule
 }
