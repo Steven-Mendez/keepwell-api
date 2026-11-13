@@ -1,5 +1,5 @@
-import { InMemoryStore, isTimeZone, loadLedger, materializeRecurring, resolveTimeZone, type Ledger, type TimeZone } from "../domain/domain"
-import { uuidV5 } from "../domain/schema"
+import { fetchMerchants, InMemoryStore, isTimeZone, loadLedger, materializeRecurring, resolveTimeZone, type Ledger, type TimeZone } from "../domain/domain"
+import { uuidV5, type Merchant } from "../domain/schema"
 import { recurringRuleToWire, toDomain, transactionToWire, type LedgerRows } from "../ledger/wire-to-domain"
 import type { LedgerReader } from "../ports/ledger-reader"
 import type { ApplySyncBatch } from "./apply-sync-batch"
@@ -11,6 +11,12 @@ import type { ApplySyncBatch } from "./apply-sync-batch"
 export function defaultTimeZone(env: Record<string, string | undefined>): TimeZone {
   return resolveTimeZone(env.KEEPWELL_TIME_ZONE ?? "America/Managua")
 }
+
+/**
+ * The domain's `Ledger` plus the person's merchants (by name), which the MCP read tools name movements
+ * with; the domain's `loadLedger` leaves them out, as the apps' screens fetch them on their own.
+ */
+export type ServerLedger = Ledger & { merchants: Merchant[] }
 
 /** The client id the server writes under when it changes data itself. */
 export const SERVER_CLIENT_ID = "00000000-0000-5000-8000-000000000000"
@@ -47,7 +53,7 @@ export class ReadLedger {
     return resolveTimeZone(await this.reader.latestDeviceTimeZone(userId), this.defaultTimeZone)
   }
 
-  async execute(userId: string): Promise<Ledger> {
+  async execute(userId: string): Promise<ServerLedger> {
     return (await this.load(userId)).ledger
   }
 
@@ -55,7 +61,7 @@ export class ReadLedger {
    * The ledger and the rows it came from. `fresh` is false when recording due occurrences changed
    * the rows, so a caller that needs the stored rows reads them again.
    */
-  async load(userId: string): Promise<{ ledger: Ledger; rows: Awaited<ReturnType<LedgerReader["load"]>>; fresh: boolean }> {
+  async load(userId: string): Promise<{ ledger: ServerLedger; rows: Awaited<ReturnType<LedgerReader["load"]>>; fresh: boolean }> {
     const now = this.clock()
     const rows = await this.reader.load(userId)
     const store = new InMemoryStore(await this.timeZone(userId, rows), toDomain(rows))
@@ -90,6 +96,6 @@ export class ReadLedger {
       ]
       await this.writer.execute({ userId, clientId: SERVER_CLIENT_ID, platform: "other", events, deadline: Date.now() + 10_000 })
     }
-    return { ledger: await loadLedger(store), rows, fresh: created.length === 0 && advanced.length === 0 }
+    return { ledger: { ...(await loadLedger(store)), merchants: await fetchMerchants(store) }, rows, fresh: created.length === 0 && advanced.length === 0 }
   }
 }

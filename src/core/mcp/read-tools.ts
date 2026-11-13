@@ -24,7 +24,7 @@ import {
   type TransactionOrigin,
   type YearMonth,
 } from "../domain/domain"
-import type { Transaction } from "../domain/schema"
+import type { Merchant, Transaction } from "../domain/schema"
 import { actualDebitedOf } from "./actual-debited"
 
 // The MCP read tools as pure functions over the domain's Ledger (ADR 0007 covers the transport).
@@ -51,6 +51,15 @@ export function parseMonth(text: string | undefined, now: Date, zone: string): Y
   const parsed = match ? yearMonth(Number(match[1]), Number(match[2])) : undefined
   if (!parsed) throw new Error("month must be YYYY-MM")
   return parsed
+}
+
+/** The ledger with the person's merchants, when the caller loaded them (`ServerLedger`). */
+type WithMerchants = Ledger & { merchants?: readonly Merchant[] }
+
+/** `{ id, name }` of the merchant a movement or rule names, or null (also for one since deleted). */
+function merchantRef(ledger: WithMerchants, id: string | undefined) {
+  const merchant = id === undefined ? undefined : ledger.merchants?.find((candidate) => candidate.id === id)
+  return merchant ? { id: merchant.id, name: merchant.name } : null
 }
 
 function categoryName(ledger: Ledger, id: string) {
@@ -188,6 +197,8 @@ export interface TransactionSearch {
   recurring_rule_id?: string
   /** Movements of rules that are subscriptions today. */
   subscriptions_only?: boolean
+  /** Movements with this business, or that went through it as the platform. */
+  merchant_id?: string
   limit: number
   cursor?: number
 }
@@ -217,7 +228,7 @@ function searchedOrigin(query: TransactionSearch): TransactionOrigin[] {
   ]
 }
 
-export function searchTransactions(ledger: Ledger, query: TransactionSearch) {
+export function searchTransactions(ledger: WithMerchants, query: TransactionSearch) {
   const text = query.text?.toLocaleLowerCase()
   const tags = searchedTags(query.tags)
   const range = searchedRange(query)
@@ -232,7 +243,8 @@ export function searchTransactions(ledger: Ledger, query: TransactionSearch) {
     if (query.kind && transaction.kind !== query.kind) return false
     if (query.currency && transaction.currency !== query.currency.toUpperCase()) return false
     if (query.status && transaction.status !== query.status) return false
-    if (text && !`${transaction.description} ${transaction.note ?? ""} ${(transaction.tags ?? []).join(" ")}`.toLocaleLowerCase().includes(text)) return false
+    if (query.merchant_id && transaction.merchantId !== query.merchant_id && transaction.viaMerchantId !== query.merchant_id) return false
+    if (text && !searchedText(ledger, transaction).includes(text)) return false
     if (range && !amountInRange(transaction, range, principal)) return false
     if (tags && !tags.every((tag) => (transaction.tags ?? []).includes(tag))) return false
     if (!origins.every((origin) => originMatches(transaction, origin, ledger.recurringRules))) return false
@@ -261,9 +273,17 @@ export function searchTransactions(ledger: Ledger, query: TransactionSearch) {
       destination_account_id: transaction.destinationAccountId ?? null,
       tags: transaction.tags ?? [],
       recurring_rule_id: transaction.recurringId ?? null,
+      merchant: merchantRef(ledger, transaction.merchantId),
+      via: merchantRef(ledger, transaction.viaMerchantId),
       recorded_by: transaction.source === "mcp" ? "mcp" : "app",
     })),
   }
+}
+
+/** What `text` searches: description, note, tags and the names of its business and platform. */
+function searchedText(ledger: WithMerchants, transaction: Transaction) {
+  const names = [merchantRef(ledger, transaction.merchantId)?.name, merchantRef(ledger, transaction.viaMerchantId)?.name].filter((name) => name !== undefined)
+  return `${transaction.description} ${transaction.note ?? ""} ${(transaction.tags ?? []).join(" ")} ${names.join(" ")}`.toLocaleLowerCase()
 }
 
 /** One call instead of five: what a model needs to start a conversation about money. */
@@ -300,7 +320,7 @@ export function listCategories(ledger: Ledger) {
   }
 }
 
-export function listRecurringRules(ledger: Ledger) {
+export function listRecurringRules(ledger: WithMerchants) {
   return {
     rules: ledger.recurringRules.map((rule) => ({
       id: rule.id,
@@ -321,6 +341,8 @@ export function listRecurringRules(ledger: Ledger) {
       is_paused: rule.isPaused,
       note: rule.note ?? null,
       tags: rule.tags ?? [],
+      merchant_id: rule.merchantId ?? null,
+      via_merchant_id: rule.viaMerchantId ?? null,
       recorded_by: rule.source === "mcp" ? "mcp" : "app",
     })),
   }
@@ -381,6 +403,28 @@ export function listPersonalDebts(ledger: Ledger, now: Date) {
 
 export function listCategorizationRules(ledger: Ledger) {
   return {
-    rules: ledger.categorizationRules.map((rule) => ({ id: rule.id, match: rule.match, kind: rule.kind, category_id: rule.categoryId, category: categoryName(ledger, rule.categoryId), tags: rule.tags ?? [] })),
+    rules: ledger.categorizationRules.map((rule) => ({ id: rule.id, match: rule.match, kind: rule.kind, category_id: rule.categoryId, category: categoryName(ledger, rule.categoryId), tags: rule.tags ?? [], merchant_id: rule.merchantId ?? null })),
+  }
+}
+
+/**
+ * The person's businesses and platforms, by name, with how many movements name each (as business or
+ * as platform). The ids are what merchant_id and via_merchant_id take.
+ */
+export function listMerchants(ledger: WithMerchants) {
+  const uses = new Map<string, number>()
+  for (const transaction of ledger.transactions) {
+    for (const id of new Set([transaction.merchantId, transaction.viaMerchantId])) if (id !== undefined) uses.set(id, (uses.get(id) ?? 0) + 1)
+  }
+  return {
+    merchants: (ledger.merchants ?? []).map((merchant) => ({
+      id: merchant.id,
+      name: merchant.name,
+      domain: merchant.domain ?? null,
+      is_platform: merchant.isPlatform,
+      default_category_id: merchant.defaultCategoryId ?? null,
+      default_category: merchant.defaultCategoryId ? categoryName(ledger, merchant.defaultCategoryId) : null,
+      movements: uses.get(merchant.id) ?? 0,
+    })),
   }
 }

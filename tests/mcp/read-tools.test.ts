@@ -60,7 +60,7 @@ describe("MCP read tools", () => {
     expect((init.body as { result: { serverInfo: { name: string } } }).result.serverInfo.name).toBe("keepwell")
     const list = await mcp.call("tools/list")
     const tools = (list.body as { result: { tools: { name: string; annotations?: { readOnlyHint?: boolean } }[] } }).result.tools
-    expect(tools.map((t) => t.name).sort()).toEqual(["get_financial_context", "get_monthly_summary", "get_net_worth", "get_trends", "get_upcoming_payments", "list_accounts", "list_categories", "list_categorization_rules", "list_loans", "list_personal_debts", "list_recurring_rules", "list_savings_goals", "search_transactions"])
+    expect(tools.map((t) => t.name).sort()).toEqual(["get_financial_context", "get_monthly_summary", "get_net_worth", "get_trends", "get_upcoming_payments", "list_accounts", "list_categories", "list_categorization_rules", "list_loans", "list_merchants", "list_personal_debts", "list_recurring_rules", "list_savings_goals", "search_transactions"])
     expect(tools.every((t) => t.annotations?.readOnlyHint)).toBe(true)
   })
 

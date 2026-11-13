@@ -1,8 +1,8 @@
 import { InMemoryStore, type LedgerStore } from "../domain/domain"
-import type { Account, Card, CategorizationRule, Loan, PersonalDebt, RecurringRule, SavingsGoal, Settings, Transaction, TransactionCategory } from "../domain/schema"
+import type { Account, Card, CategorizationRule, Loan, Merchant, PersonalDebt, RecurringRule, SavingsGoal, Settings, Transaction, TransactionCategory } from "../domain/schema"
 
 /** The entities a domain use case writes through `LedgerStore` (children travel with their parent). */
-export type TouchedKind = "account" | "card" | "transaction" | "recurringRule" | "savingsGoal" | "loan" | "personalDebt" | "categorizationRule" | "category" | "settings"
+export type TouchedKind = "account" | "card" | "transaction" | "recurringRule" | "savingsGoal" | "loan" | "personalDebt" | "categorizationRule" | "category" | "settings" | "merchant"
 
 /**
  * An in-memory ledger that remembers which records a use case saved, deleted or reordered, so only
@@ -104,6 +104,14 @@ export class RecordingStore extends InMemoryStore implements LedgerStore {
     for (const category of this.categories) this.touch("category", category.id)
     for (const id of before) this.touch("category", id)
   }
+  override async saveMerchant(merchant: Merchant) {
+    await super.saveMerchant(merchant)
+    this.touch("merchant", merchant.id)
+  }
+  override async deleteMerchant(id: string) {
+    await super.deleteMerchant(id)
+    this.touch("merchant", id)
+  }
   /**
    * Gives a record the use case just created the id the client chose (`create_account`'s `id`), and
    * repoints every reference to it, so later steps of a batch can use that id. Ids are only ever
@@ -129,6 +137,7 @@ export class RecordingStore extends InMemoryStore implements LedgerStore {
     this.personalDebts = swap(this.personalDebts)
     this.categorizationRules = swap(this.categorizationRules)
     this.categories = swap(this.categories)
+    this.merchants = swap(this.merchants)
     for (const ids of this.touched.values()) {
       if (ids.has(from)) {
         ids.delete(from)

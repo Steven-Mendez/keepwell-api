@@ -4,7 +4,6 @@ import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js"
 import { z } from "zod"
 
 import type { Logger } from "../../adapters/observability/logger"
-import type { Ledger } from "../../core/domain/domain"
 import {
   getFinancialContext,
   getMonthlySummary,
@@ -15,12 +14,14 @@ import {
   listCategories,
   listCategorizationRules,
   listLoans,
+  listMerchants,
   listPersonalDebts,
   listRecurringRules,
   listSavingsGoals,
   parseMonth,
   searchTransactions,
 } from "../../core/mcp/read-tools"
+import type { ServerLedger as Ledger } from "../../core/use-cases/read-ledger"
 import { decimal } from "./inputs"
 import { VIEWS_URI } from "./ui/resources"
 
@@ -93,7 +94,7 @@ export function createMcpServer(context: McpContext): McpServer {
   )
   tool(
     "search_transactions",
-    { title: "Search movements", description: "Movements, newest first, filtered by date (YYYY-MM-DD), account, category, kind, currency, status, amount range (min_amount/max_amount, inclusive, in the principal currency at each movement's own recorded rate), tags (movements carrying all of them), recurring rule (recurring_rule_id, subscriptions_only) or text in the description, note or tags. Paged with cursor. actual_debited, when not null, is what the bank charged in the principal currency for a movement in the second currency, and is what balances count." },
+    { title: "Search movements", description: "Movements, newest first, filtered by date (YYYY-MM-DD), account, category, kind, currency, status, amount range (min_amount/max_amount, inclusive, in the principal currency at each movement's own recorded rate), tags (movements carrying all of them), recurring rule (recurring_rule_id, subscriptions_only), merchant (merchant_id) or text in the description, note, tags or merchant names. merchant is the business it was with and via the platform it went through (Uber Eats, Apple), each {id, name} or null. Paged with cursor. actual_debited, when not null, is what the bank charged in the principal currency for a movement in the second currency, and is what balances count." },
     {
       from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
       to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
@@ -108,6 +109,7 @@ export function createMcpServer(context: McpContext): McpServer {
       tags: z.array(z.string().max(64)).max(10).optional().describe("Movements carrying all of them; \"#Boda\" and \"boda\" are the same tag"),
       recurring_rule_id: z.string().max(64).optional().describe("From list_recurring_rules: only the movements that rule recorded"),
       subscriptions_only: z.boolean().optional().describe("Only movements recorded by rules that are subscriptions today"),
+      merchant_id: z.string().max(64).optional().describe("From list_merchants: movements with that business, or that went through it as the platform"),
       limit: z.number().int().min(1).max(100).default(25),
       cursor: z.number().int().min(0).optional(),
     },
@@ -124,6 +126,12 @@ export function createMcpServer(context: McpContext): McpServer {
     (_, ledger) => listPersonalDebts(ledger, context.now())
   )
   tool("list_categorization_rules", { title: "List categorization rules", description: "Rules that categorize movements by their description, in the order they apply." }, {}, (_, ledger) => listCategorizationRules(ledger))
+  tool(
+    "list_merchants",
+    { title: "List merchants", description: "The person's businesses and platforms (merchants), by name: domain, whether it is a platform (a delivery app or app store movements go through), default category, and how many movements name it. Ids for merchant_id and via_merchant_id." },
+    {},
+    (_, ledger) => listMerchants(ledger)
+  )
   context.registerWrites?.(server)
   return server
 }

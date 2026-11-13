@@ -8,6 +8,7 @@ import {
   categoryColumns,
   loanColumns,
   loanPaymentColumns,
+  merchantColumns,
   NO_AUDIT,
   personalDebtColumns,
   recurringRuleColumns,
@@ -270,6 +271,11 @@ export class ManageLedger {
     for (const id of touched("categorizationRule")) {
       if (store.categorizationRules.some((rule) => rule.id === id)) continue
       tombstone("categorizationRule", id)
+    }
+    for (const id of touched("merchant")) {
+      const merchant = store.merchants.find((candidate) => candidate.id === id)
+      if (merchant) upsert("merchant", merchantColumns(merchant))
+      else tombstone("merchant", id)
     }
     if (store.touched.has("settings") && store.settings) upsert("settings", settingsColumns(store.settings))
     return { events, created }
