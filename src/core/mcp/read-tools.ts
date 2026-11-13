@@ -8,6 +8,7 @@ import {
   debtDueStatus,
   debtLinks,
   inSecondCurrency,
+  ledgerDebtLinks,
   isSplit,
   lastMonths,
   monthlySummary,
@@ -106,11 +107,12 @@ export function getNetWorth(ledger: Ledger) {
 
 /**
  * As the apps' Summary: an expense split with others counts only the person's part, and a debt
- * repayment deposited into an account isn't income (the personal debts say which).
+ * repayment deposited into an account isn't income (`ledgerDebtLinks`: the debts' links plus the
+ * deposits deleted debts and repayments left behind).
  */
 export function getMonthlySummary(ledger: Ledger, month: YearMonth) {
   const currency = ledger.settings.currencies.principal
-  const summary = monthlySummary(month, ledger.transactions, currency, ledger.timeZone, ledger.personalDebts)
+  const summary = monthlySummary(month, ledger.transactions, currency, ledger.timeZone, ledgerDebtLinks(ledger))
   return {
     month: monthText(month),
     currency,
@@ -138,7 +140,7 @@ export function getMonthlySummary(ledger: Ledger, month: YearMonth) {
 
 export function getTrends(ledger: Ledger, months: number, now: Date) {
   const currency = ledger.settings.currencies.principal
-  const report = trendReport(ledger.transactions, currency, lastMonths(months, now, ledger.timeZone), ledger.timeZone, now, ledger.personalDebts)
+  const report = trendReport(ledger.transactions, currency, lastMonths(months, now, ledger.timeZone), ledger.timeZone, now, ledgerDebtLinks(ledger))
   return {
     currency,
     months: report.months.map((month) => ({
@@ -241,7 +243,7 @@ export function searchTransactions(ledger: WithMerchants, query: TransactionSear
   const range = searchedRange(query)
   const origins = searchedOrigin(query)
   const principal = ledger.settings.currencies.principal
-  const links = debtLinks(ledger.personalDebts)
+  const links = ledgerDebtLinks(ledger)
   const matches = ledger.transactions.filter((transaction: Transaction) => {
     const date = dayKey(new Date(transaction.date), ledger.timeZone)
     if (query.from && date < query.from) return false

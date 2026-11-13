@@ -55,6 +55,7 @@ import {
   setCardNumber,
   setRecurringRulePaused,
   settlePersonalDebt,
+  splitRemaining,
   splitTransaction,
   unpayLoanInstallment,
   updateCreditTerms,
@@ -930,7 +931,7 @@ export function registerManageTools(server: McpServer, options: { manage: Manage
     {
       title: "Repay, settle or reopen a personal debt",
       description:
-        "Use when someone pays back part of a debt (repay, never more than what remains; with deposit_account_id the money also enters that account as an income movement that isn't counted as income, only for debts they owe the person), or to mark one settled (settle) or open again (reopen).",
+        "Use when someone pays back part of a debt (repay, never more than what remains; with deposit_account_id the money also enters that account as an income movement that isn't counted as income, only for debts they owe the person, in the ledger's principal or second currency), or to mark one settled (settle) or open again (reopen).",
       annotations: WRITE,
     },
     {
@@ -980,7 +981,7 @@ export function registerManageTools(server: McpServer, options: { manage: Manage
     {
       title: "Split an expense with others",
       description:
-        "Use when the person paid an expense shared with others: records a debt each person owes the person, linked to the movement, so summaries and budgets count only the person's share. Give each person's amount, or leave every amount out to split equally between the person and everyone listed.",
+        "Use when the person paid an expense shared with others: records a debt each person owes the person, linked to the movement, so summaries and budgets count only the person's share. Give each person's amount, or leave every amount out to split equally between the person and everyone listed. An expense already split shares only what is left of it.",
       annotations: WRITE,
     },
     {
@@ -996,12 +997,19 @@ export function registerManageTools(server: McpServer, options: { manage: Manage
       const expense = find(store.transactions, args.transaction_id, "Movement")
       const given = args.shares.filter((share) => share.amount !== undefined).length
       if (given !== 0 && given !== args.shares.length) throw new ManageError("invalid", "Give every person's amount, or none to split equally")
-      const equal = equalShare(dec(expense.amount), args.shares.length)
-      const created = await splitTransaction(
-        store,
-        args.transaction_id,
-        args.shares.map((share) => ({ person: share.person, amount: share.amount === undefined ? equal : dec(share.amount) }))
-      )
+      // A second split shares only what earlier ones left (`splitRemaining`), as the apps' Split does.
+      const remaining = splitRemaining(expense, store.personalDebts)
+      const equal = equalShare(remaining, args.shares.length)
+      const shares = args.shares.map((share) => ({ person: share.person, amount: share.amount === undefined ? equal : dec(share.amount) }))
+      if (expense.kind === "expense") {
+        const left = `${remaining.toString()} ${expense.currency}`
+        const already = remaining.lt(dec(expense.amount))
+        if (remaining.lte(0)) throw new ManageError("invalid", "This expense is already split in full: nothing is left to split")
+        if (shares.some((share) => share.amount.lte(0))) throw new ManageError("invalid", already ? `Every share must be more than zero (only ${left} left to split)` : "Every share must be more than zero")
+        if (shares.reduce((sum, share) => sum.plus(share.amount), dec(0)).gt(remaining))
+          throw new ManageError("invalid", already ? `The shares add up to more than what is left: only ${left} left to split` : `The shares add up to more than the expense (${left})`)
+      }
+      const created = await splitTransaction(store, args.transaction_id, shares)
       return { transaction_id: args.transaction_id, debts: created.map((debt) => ({ debt_id: debt.id, person: debt.person, amount: debt.amount })) }
     }
   )

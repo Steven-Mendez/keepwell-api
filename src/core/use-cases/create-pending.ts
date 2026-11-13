@@ -211,5 +211,5 @@ function checkReferences(ledger: Ledger, input: { account_id: string; card_id?: 
 }
 
 function ledgerSeed(ledger: Ledger) {
-  return { ...ledger }
+  return { ...ledger, deletedRepaymentDepositIds: ledger.repaymentDepositIds ?? [] }
 }

@@ -148,6 +148,67 @@ describe("MCP shared expenses and debt repayments", () => {
     expect((await debts())[0]!.repayments).toEqual([])
   })
 
+  it("a second split shares only what the first left, and says how much is left when the shares go past it", async () => {
+    const { tool, data, accountId } = await setup()
+    const dinner = randomUUID()
+    await tool("create_transaction", { id: dinner, kind: "expense", amount: "90", currency: "USD", account_id: accountId, category_id: "restaurants", description: "Cena", date: now() })
+    expect((await tool("split_transaction", { transaction_id: dinner, shares: [{ person: "Ana", amount: "30" }] })).isError).toBeFalsy()
+
+    const zero = await tool("split_transaction", { transaction_id: dinner, shares: [{ person: "Luis", amount: "0" }] })
+    expect(zero.isError).toBe(true)
+    expect(zero.content[0]!.text).toContain("more than zero")
+    const past = await tool("split_transaction", { transaction_id: dinner, shares: [{ person: "Luis", amount: "61" }] })
+    expect(past.isError).toBe(true)
+    expect(past.content[0]!.text).toContain("only 60 USD left to split")
+    expect(await admin.db.execute(sql`select count(*)::int as n from personal_debts where transaction_id = ${dinner}`)).toMatchObject({ rows: [{ n: 1 }] })
+
+    // Equal, on what is left: 60 between the person and Luis.
+    const equal = await tool("split_transaction", { transaction_id: dinner, shares: [{ person: "Luis" }] })
+    expect(equal.isError, equal.content[0]?.text).toBeFalsy()
+    expect(data<{ result: { debts: { amount: { amount: string } }[] } }>(equal).result.debts.map((debt) => debt.amount.amount)).toEqual(["30"])
+    expect(data<{ expense: string }>(await tool("get_monthly_summary")).expense).toBe("30")
+    // Split in full: nothing is left.
+    expect((await tool("split_transaction", { transaction_id: dinner, shares: [{ person: "Eva", amount: "30" }] })).isError).toBeFalsy()
+    const full = await tool("split_transaction", { transaction_id: dinner, shares: [{ person: "Juan" }] })
+    expect(full.isError).toBe(true)
+    expect(full.content[0]!.text).toContain("nothing is left to split")
+  })
+
+  it("refuses a deposit for a debt in a currency outside the ledger's, and saves nothing", async () => {
+    const { phone, tool, accountId, debts } = await setup()
+    // A debt in a currency the ledger no longer uses (an app synced it, or the currencies changed since).
+    const debtId = randomUUID()
+    const stamp = new Date().toISOString()
+    const pushed = await phone.push([event("personalDebt", { id: debtId, person: "Ana", direction: "theyOweMe", amount: "40", currency: "EUR", date: stamp, note: null, settled_at: null, transaction_id: null, due_date: null, created_at: stamp, updated_at: stamp, deleted_at: null }, "create")])
+    expect(pushed.body.results.map((result) => result.status)).toEqual(["applied"])
+    const refused = await tool("update_personal_debt_status", { debt_id: debtId, action: "repay", amount: "10", deposit_account_id: accountId })
+    expect(refused.isError).toBe(true)
+    expect(refused.content[0]!.text).toContain("invalidCurrency")
+    expect(refused.content[0]!.text).toContain("EUR")
+    expect((await debts())[0]!.repayments).toEqual([])
+    expect(await admin.db.execute(sql`select count(*)::int as n from transactions where kind = 'income'`)).toMatchObject({ rows: [{ n: 0 }] })
+    // Without a deposit it is only recorded.
+    expect((await tool("update_personal_debt_status", { debt_id: debtId, action: "repay", amount: "10" })).isError).toBeFalsy()
+  })
+
+  it("deleting a debt keeps the movement its repayment deposited out of income", async () => {
+    const { tool, data, accountId } = await setup()
+    const debtId = data<{ result: { debt_id: string } }>(await tool("create_personal_debt", { id: randomUUID(), person: "Ana", direction: "theyOweMe", amount: "50", currency: "USD", date: now() })).result.debt_id
+    const deposit = data<{ result: { transaction_id: string } }>(await tool("update_personal_debt_status", { debt_id: debtId, action: "repay", amount: "50", deposit_account_id: accountId })).result.transaction_id
+    expect(data<{ income: string }>(await tool("get_monthly_summary")).income).toBe("0")
+
+    const deleted = await tool("delete_personal_debt", { debt_id: debtId })
+    expect(deleted.isError, deleted.content[0]?.text).toBeFalsy()
+    // The debt and its repayment are tombstones; the movement stays, still linked from the tombstone.
+    expect((await admin.db.execute(sql`select deleted_at is not null as gone, transaction_id from personal_debt_repayments`)).rows).toEqual([{ gone: true, transaction_id: deposit }])
+    expect((await admin.db.execute(sql`select deleted_at from transactions where id = ${deposit}`)).rows).toEqual([{ deleted_at: null }])
+
+    expect(data<{ income: string }>(await tool("get_monthly_summary")).income).toBe("0")
+    expect(data<{ this_month: { income: string } }>(await tool("get_financial_context")).this_month.income).toBe("0")
+    expect(data<{ months: { income: string }[] }>(await tool("get_trends", { months: 1 })).months.at(-1)!.income).toBe("0")
+    expect(data<{ by_account: { total: { amount: string } }[] }>(await tool("get_net_worth")).by_account[0]!.total.amount).toBe("1050")
+  })
+
   it("an MCP edit of a debt keeps the deposit link an app set on its repayment", async () => {
     const { phone, tool, data, accountId } = await setup()
     const debtId = data<{ result: { debt_id: string } }>(await tool("create_personal_debt", { id: randomUUID(), person: "Ana", direction: "theyOweMe", amount: "50", currency: "USD", date: "2026-11-01T12:00:00.000Z" })).result.debt_id

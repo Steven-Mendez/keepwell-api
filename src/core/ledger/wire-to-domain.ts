@@ -198,7 +198,11 @@ export function toDomain(rows: LedgerRows) {
     ...present("defaultCategoryId", row.default_category_id),
     isPlatform: row.is_platform,
   }))
-  return { accounts, cards, categories, transactions, recurringRules, savingsGoals, loans, personalDebts, categorizationRules, settings, merchants }
+  // What `SELECT DISTINCT transaction_id FROM personal_debt_repayments` gives, tombstones included:
+  // a deleted debt or repayment keeps its link, so the movement it deposited still isn't income
+  // (`LedgerStore.fetchRepaymentDepositIds`, `ledgerDebtLinks`).
+  const deletedRepaymentDepositIds = [...new Set(rows.personalDebtRepayment.flatMap((row) => (row.transaction_id ? [row.transaction_id] : [])))]
+  return { accounts, cards, categories, transactions, recurringRules, savingsGoals, loans, personalDebts, categorizationRules, settings, merchants, deletedRepaymentDepositIds }
 }
 
 /** Domain → wire, for rows the server itself writes (materialized occurrences, MCP writes). */
