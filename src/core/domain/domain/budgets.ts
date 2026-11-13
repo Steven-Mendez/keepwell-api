@@ -49,3 +49,29 @@ export function budgetStatuses(
     a.ratio.eq(b.ratio) ? (a.categoryId < b.categoryId ? -1 : 1) : b.ratio.cmp(a.ratio),
   )
 }
+
+/** How many budgets `budgetStatuses` left out for being in one other currency. */
+export interface OtherCurrencyBudgets {
+  currency: string
+  count: number
+}
+
+/**
+ * The expense budgets `budgetStatuses` skips because they are in another currency than the summary's,
+ * counted per currency (by code), so the person learns they exist instead of seeing them vanish.
+ */
+export function otherCurrencyBudgets(
+  summary: Pick<MonthlySummary, "currency">,
+  categories: readonly TransactionCategory[],
+): OtherCurrencyBudgets[] {
+  const counts = new Map<string, number>()
+  for (const category of categories) {
+    const budget = category.monthlyBudget
+    if (category.kind !== "expense" || !budget || budget.currency === summary.currency) continue
+    if (dec(budget.amount).lte(0)) continue
+    counts.set(budget.currency, (counts.get(budget.currency) ?? 0) + 1)
+  }
+  return [...counts]
+    .map(([currency, count]) => ({ currency, count }))
+    .sort((a, b) => (a.currency < b.currency ? -1 : a.currency > b.currency ? 1 : 0))
+}

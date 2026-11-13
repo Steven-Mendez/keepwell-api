@@ -103,6 +103,8 @@ export async function completeOnboarding(store: LedgerStore, profile: ProfileSto
     hidesAmountsInAppSwitcher: draft.hidesAmountsInAppSwitcher,
     isICloudBackupEnabled: draft.backsUpToICloud,
     hasCompletedOnboarding: true,
+    // The home zone starts as the one onboarding ran in; Settings changes it.
+    timeZone: store.timeZone,
   }
   await store.atomically(async () => {
     for (const { account, cards } of made) {

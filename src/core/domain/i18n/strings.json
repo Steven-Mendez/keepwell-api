@@ -1071,6 +1071,15 @@
   "Due": {
    "es": "Pendiente"
   },
+  "Due %@": {
+   "es": "Vence el %@"
+  },
+  "Due date": {
+   "es": "Fecha de pago"
+  },
+  "Due today": {
+   "es": "Vence hoy"
+  },
   "Each person gets a debt that owes you their share. Your movement doesn't change.": {
    "es": "A cada persona se le anota una deuda por su parte. Tu movimiento no cambia."
   },
@@ -1164,6 +1173,16 @@
   "Optional": {
    "es": "Opcional"
   },
+  "Overdue · %lld days": {
+   "en": {
+    "one": "Overdue · %lld day",
+    "other": "Overdue · %lld days"
+   },
+   "es": {
+    "one": "Atrasada · %lld día",
+    "other": "Atrasada · %lld días"
+   }
+  },
   "Overdue: %@ on %@ · %@": {
    "es": "Atrasada: %1$@ el %2$@ · %3$@"
   },
@@ -1218,6 +1237,9 @@
   "Schedule": {
    "es": "Calendario de cuotas"
   },
+  "Set a due date": {
+   "es": "Poner fecha de pago"
+  },
   "Settled": {
    "es": "Saldada"
   },
@@ -1238,6 +1260,9 @@
   },
   "That's more than what's left.": {
    "es": "Es más de lo que falta."
+  },
+  "The due date can't be before the debt's date.": {
+   "es": "La fecha de pago no puede ser anterior a la de la deuda."
   },
   "The expense it recorded is deleted, so balances go back to before you paid it.": {
    "es": "Se elimina el gasto que registró, así que los saldos vuelven a como estaban antes de pagarla."
@@ -1414,6 +1439,9 @@
   "%@ is close to its budget": {
    "es": "%@ está cerca de su presupuesto"
   },
+  "%@ is due tomorrow": {
+   "es": "%@ vence mañana"
+  },
   "%@ of %@": {
    "es": "%@ de %@"
   },
@@ -1440,6 +1468,16 @@
   },
   "%@%% saved": {
    "es": "%@%% ahorrado"
+  },
+  "%@: due in %lld days": {
+   "en": {
+    "one": "%@: due in %lld day",
+    "other": "%@: due in %lld days"
+   },
+   "es": {
+    "one": "%@: vence en %lld día",
+    "other": "%@: vence en %lld días"
+   }
   },
   "%@: installment in %lld days": {
    "en": {
@@ -1486,6 +1524,59 @@
     "one": "%lld tarjeta",
     "other": "%lld tarjetas"
    }
+  },
+  "%lld debts overdue": {
+   "en": {
+    "one": "%lld debt overdue",
+    "other": "%lld debts overdue"
+   },
+   "es": {
+    "one": "%lld deuda atrasada",
+    "other": "%lld deudas atrasadas"
+   }
+  },
+  "%lld due today": {
+   "en": {
+    "one": "%lld due today",
+    "other": "%lld due today"
+   },
+   "es": {
+    "one": "%lld vence hoy",
+    "other": "%lld vencen hoy"
+   }
+  },
+  "%lld due tomorrow": {
+   "en": {
+    "one": "%lld due tomorrow",
+    "other": "%lld due tomorrow"
+   },
+   "es": {
+    "one": "%lld vence mañana",
+    "other": "%lld vencen mañana"
+   }
+  },
+  "%lld installments overdue": {
+   "en": {
+    "one": "%lld installment overdue",
+    "other": "%lld installments overdue"
+   },
+   "es": {
+    "one": "%lld cuota atrasada",
+    "other": "%lld cuotas atrasadas"
+   }
+  },
+  "%lld payments to confirm": {
+   "en": {
+    "one": "%lld payment to confirm",
+    "other": "%lld payments to confirm"
+   },
+   "es": {
+    "one": "%lld pago por confirmar",
+    "other": "%lld pagos por confirmar"
+   }
+  },
+  "All caught up": {
+   "es": "Todo al día"
   },
   "Available today": {
    "es": "Disponible hoy"
@@ -1631,6 +1722,9 @@
   "They don't count toward balances until you confirm them · %@": {
    "es": "No cuentan en saldos hasta que los confirmes · %@"
   },
+  "They owe you %@.": {
+   "es": "Te debe %@."
+  },
   "Upcoming": {
    "es": "Próximos"
   },
@@ -1672,11 +1766,30 @@
     "other": "gastado · %lld borradores"
    }
   },
+  "You owe %@.": {
+   "es": "Le debes %@."
+  },
   "≈ %@": {
    "es": "≈ %@"
   },
   "≈ %@ · rate %@": {
    "es": "≈ %@ · tasa %@"
+  },
+  "Card payment": {
+   "es": "Pago de tarjeta"
+  },
+  "Installment %lld of %lld": {
+   "es": "Cuota %1$lld de %2$lld"
+  },
+  "Overdue · %lld days": {
+   "en": {
+    "one": "Overdue · %lld day",
+    "other": "Overdue · %lld days"
+   },
+   "es": {
+    "one": "Atrasado · %lld día",
+    "other": "Atrasado · %lld días"
+   }
   }
  },
  "lock": {
@@ -2051,6 +2164,9 @@
   "Amount": {
    "es": "Monto"
   },
+  "Billing day": {
+   "es": "Día de cobro"
+  },
   "Bills and other expenses": {
    "es": "Facturas y otros gastos"
   },
@@ -2065,6 +2181,12 @@
   },
   "Choose a different destination account.": {
    "es": "Elige otra cuenta de destino."
+  },
+  "Confirm": {
+   "es": "Confirmar"
+  },
+  "Confirm %@": {
+   "es": "Confirmar %@"
   },
   "Currency": {
    "es": "Moneda"
@@ -2099,6 +2221,9 @@
   "Give it a name.": {
    "es": "Ponle un nombre."
   },
+  "Half-yearly": {
+   "es": "Semestral"
+  },
   "Hide amounts": {
    "es": "Ocultar montos"
   },
@@ -2120,17 +2245,36 @@
   "Monthly": {
    "es": "Mensual"
   },
+  "More options": {
+   "es": "Más opciones"
+  },
   "Name": {
    "es": "Nombre"
   },
   "New recurring": {
    "es": "Nuevo recurrente"
   },
+  "New subscription": {
+   "es": "Nueva suscripción"
+  },
+  "Next charge": {
+   "es": "Próximo cobro"
+  },
   "Next dates": {
    "es": "Próximas fechas"
   },
   "Note": {
    "es": "Nota"
+  },
+  "Not including %lld subscriptions in %@": {
+   "en": {
+    "one": "Not including %lld subscription in %@",
+    "other": "Not including %lld subscriptions in %@"
+   },
+   "es": {
+    "one": "Sin incluir %lld suscripción en %@",
+    "other": "Sin incluir %lld suscripciones en %@"
+   }
   },
   "Nothing recurring yet": {
    "es": "Aún no hay recurrentes"
@@ -2140,6 +2284,16 @@
   },
   "Optional": {
    "es": "Opcional"
+  },
+  "Overdue · %lld days": {
+   "en": {
+    "one": "Overdue · %lld day",
+    "other": "Overdue · %lld days"
+   },
+   "es": {
+    "one": "Atrasado · %lld día",
+    "other": "Atrasado · %lld días"
+   }
   },
   "Pause": {
    "es": "Pausar"
@@ -2152,6 +2306,9 @@
   },
   "Proposed by Claude · resume to confirm": {
    "es": "Propuesto por Claude · reanúdalo para confirmar"
+  },
+  "Quarterly": {
+   "es": "Trimestral"
   },
   "Record automatically": {
    "es": "Registrar automáticamente"
@@ -2174,6 +2331,9 @@
   "Save": {
    "es": "Guardar"
   },
+  "See all": {
+   "es": "Ver todos"
+  },
   "Show amounts": {
    "es": "Mostrar montos"
   },
@@ -2192,11 +2352,17 @@
   "To": {
    "es": "Hacia"
   },
+  "To confirm · %@": {
+   "es": "Por confirmar · %@"
+  },
   "Transfer": {
    "es": "Transferencia"
   },
   "Transfers": {
    "es": "Transferencias"
+  },
+  "We couldn't confirm it. Try again.": {
+   "es": "No pudimos confirmarlo. Inténtalo de nuevo."
   },
   "We couldn't delete it. Try again.": {
    "es": "No pudimos eliminarlo. Inténtalo de nuevo."
@@ -2247,6 +2413,9 @@
     "other": "%lld movimientos actualizados."
    }
   },
+  "A backup can only be restored when there's no data yet. Delete all your data first.": {
+   "es": "Una copia solo se puede restaurar cuando aún no hay datos. Primero elimina todos tus datos."
+  },
   "A copy of every movement": {
    "es": "Una copia de todos tus movimientos"
   },
@@ -2267,6 +2436,9 @@
   },
   "Ask again after": {
    "es": "Pedirlo al volver después de"
+  },
+  "Backup restored": {
+   "es": "Copia restaurada"
   },
   "Bank transfer": {
    "es": "Transferencia bancaria"
@@ -2349,6 +2521,9 @@
   "Edit rule": {
    "es": "Editar regla"
   },
+  "Everything, in a file you can restore": {
+   "es": "Todo, en un archivo que puedes restaurar"
+  },
   "Expense categories": {
    "es": "Categorías de gasto"
   },
@@ -2357,6 +2532,9 @@
   },
   "Export CSV": {
    "es": "Exportar CSV"
+  },
+  "Export backup": {
+   "es": "Exportar copia de seguridad"
   },
   "Face ID /\nTouch ID": {
    "es": "Face ID /\nTouch ID"
@@ -2464,6 +2642,9 @@
   "Only movements without a category or in “Other” that match change.": {
    "es": "Solo cambian los movimientos que coinciden y no tienen categoría o están en “Otros”."
   },
+  "Only when there's no data yet": {
+   "es": "Solo si aún no hay datos"
+  },
   "Organization": {
    "es": "Organización"
   },
@@ -2493,6 +2674,9 @@
   },
   "Restore": {
    "es": "Restaurar"
+  },
+  "Restore backup": {
+   "es": "Restaurar copia de seguridad"
   },
   "Restore default categories": {
    "es": "Restaurar categorías predeterminadas"
@@ -2551,6 +2735,12 @@
   "The rate has to be a number greater than zero.": {
    "es": "La tasa tiene que ser un número mayor que cero."
   },
+  "This backup is from a newer version of Keepwell. Update the app and try again.": {
+   "es": "Esta copia es de una versión más nueva de Keepwell. Actualiza la app e inténtalo de nuevo."
+  },
+  "This file isn't a Keepwell backup, or it's damaged. Nothing was restored.": {
+   "es": "Este archivo no es una copia de Keepwell o está dañado. No se restauró nada."
+  },
   "Turn off passcode": {
    "es": "Desactivar código"
   },
@@ -2590,6 +2780,9 @@
   "We couldn't look at your movements. Try again.": {
    "es": "No pudimos revisar tus movimientos. Inténtalo de nuevo."
   },
+  "We couldn't restore the backup. Try again.": {
+   "es": "No pudimos restaurar la copia. Inténtalo de nuevo."
+  },
   "We couldn't restore the default categories. Try again.": {
    "es": "No pudimos restaurar las categorías predeterminadas. Inténtalo de nuevo."
   },
@@ -2625,6 +2818,15 @@
   },
   "“%@” → %@": {
    "es": "“%1$@” → %2$@"
+  },
+  "Time zone": {
+   "es": "Zona horaria"
+  },
+  "Reminders and your assistant use it for today and for month ends.": {
+   "es": "Los recordatorios y tu asistente la usan para saber qué día es hoy y cuándo cierra el mes."
+  },
+  "Search time zone": {
+   "es": "Buscar zona horaria"
   }
  },
  "sharedpresentation": {
@@ -2661,6 +2863,9 @@
   "As printed on the card. We remind you a month before it expires, with what's charged to it.": {
    "es": "Como viene impreso en la tarjeta. Te avisamos un mes antes de que venza, con lo que tiene cargado."
   },
+  "Balance isn't zero": {
+   "es": "El saldo no es cero"
+  },
   "Bank transfer": {
    "es": "Transferencia bancaria"
   },
@@ -2685,11 +2890,35 @@
   "Close": {
    "es": "Cerrar"
   },
+  "Close %@?": {
+   "es": "¿Cerrar %@?"
+  },
+  "Close account": {
+   "es": "Cerrar cuenta"
+  },
+  "Close instead": {
+   "es": "Cerrar en su lugar"
+  },
+  "Closed": {
+   "es": "Cerrada"
+  },
+  "Closed (%lld)": {
+   "es": "Cerradas (%lld)"
+  },
+  "Closed on %@": {
+   "es": "Cerrada el %@"
+  },
+  "Closing transfer": {
+   "es": "Transferencia de cierre"
+  },
   "Color": {
    "es": "Color"
   },
   "Command palette": {
    "es": "Paleta de comandos"
+  },
+  "Confirmed": {
+   "es": "Confirmado"
   },
   "Create category": {
    "es": "Crear categoría"
@@ -2723,6 +2952,9 @@
   },
   "Donations": {
    "es": "Donaciones"
+  },
+  "Drafts deleted: %lld": {
+   "es": "Borradores que se borran: %lld"
   },
   "Edit category": {
    "es": "Editar categoría"
@@ -2841,6 +3073,9 @@
   "Investments": {
    "es": "Inversiones"
   },
+  "It disappears from your lists and pickers. Its movements stay in your summaries and net worth. You can reopen it.": {
+   "es": "Desaparece de tus listas y selectores. Sus movimientos siguen en tus resúmenes y tu patrimonio. Puedes reabrirla."
+  },
   "Its movements move to “%@”.": {
    "es": "Sus movimientos pasan a “%@”."
   },
@@ -2864,6 +3099,15 @@
   },
   "Monthly budget": {
    "es": "Presupuesto mensual"
+  },
+  "Move and close": {
+   "es": "Mover y cerrar"
+  },
+  "Move or record the balance first": {
+   "es": "Primero mueve o registra el saldo"
+  },
+  "Move the balance to": {
+   "es": "Mover el saldo a"
   },
   "Movements from deleted categories land here, so this one can be renamed but not deleted.": {
    "es": "Aquí llegan los movimientos de las categorías eliminadas, así que puedes renombrarla pero no eliminarla."
@@ -2925,6 +3169,9 @@
   "Recurring": {
    "es": "Recurrentes"
   },
+  "Recurring rules paused: %lld": {
+   "es": "Reglas recurrentes que se pausan: %lld"
+  },
   "Recurring · %@": {
    "es": "Recurrente · %@"
   },
@@ -2936,6 +3183,9 @@
   },
   "Rental": {
    "es": "Alquiler"
+  },
+  "Reopen": {
+   "es": "Reabrir"
   },
   "Restaurants": {
    "es": "Restaurantes"
@@ -2979,6 +3229,12 @@
   "Taxes": {
    "es": "Impuestos"
   },
+  "This account is closed. Reopen it first.": {
+   "es": "Esta cuenta está cerrada. Reábrela primero."
+  },
+  "To keep its history, close it instead.": {
+   "es": "Para conservar su historia, ciérrala en su lugar."
+  },
   "Today": {
    "es": "Hoy"
   },
@@ -2987,6 +3243,9 @@
   },
   "Tools": {
    "es": "Herramientas"
+  },
+  "Transaction deleted": {
+   "es": "Movimiento eliminado"
   },
   "Transactions": {
    "es": "Movimientos"
@@ -2997,8 +3256,14 @@
   "Travel": {
    "es": "Viajes"
   },
+  "Undo": {
+   "es": "Deshacer"
+  },
   "Utilities": {
    "es": "Servicios"
+  },
+  "We couldn't close the account. Try again.": {
+   "es": "No pudimos cerrar la cuenta. Inténtalo de nuevo."
   },
   "We couldn't delete the category. Try again.": {
    "es": "No pudimos eliminar la categoría. Inténtalo de nuevo."
@@ -3056,6 +3321,16 @@
   },
   "%@, went out": {
    "es": "%@, salió"
+  },
+  "%lld budgets are in %@ and aren't compared": {
+   "en": {
+    "one": "%lld budget is in %@ and isn't compared",
+    "other": "%lld budgets are in %@ and aren't compared"
+   },
+   "es": {
+    "one": "%lld presupuesto está en %@ y no se compara",
+    "other": "%lld presupuestos están en %@ y no se comparan"
+   }
   },
   "%lld categories": {
    "en": {
@@ -3133,6 +3408,9 @@
   },
   "Dropped the most": {
    "es": "Lo que más bajó"
+  },
+  "Edit budgets": {
+   "es": "Editar presupuestos"
   },
   "Every year you've logged, whatever range is picked above": {
    "es": "Todos los años que registraste, sin importar el rango elegido arriba"
@@ -3350,6 +3628,12 @@
   "All accounts": {
    "es": "Todas las cuentas"
   },
+  "Amount": {
+   "es": "Monto"
+  },
+  "Apply": {
+   "es": "Aplicar"
+  },
   "Available balance": {
    "es": "Saldo disponible"
   },
@@ -3380,6 +3664,9 @@
   "Confirmed": {
    "es": "Confirmado"
   },
+  "Converted to %@ at each movement's rate": {
+   "es": "Convertido a %@ con la tasa de cada movimiento"
+  },
   "Credit card": {
    "es": "Tarjeta de crédito"
   },
@@ -3394,6 +3681,9 @@
   },
   "Delete this transaction?": {
    "es": "¿Eliminar este movimiento?"
+  },
+  "Deleted rule": {
+   "es": "Regla borrada"
   },
   "Draft": {
    "es": "Borrador"
@@ -3410,6 +3700,9 @@
   "Expenses": {
    "es": "Gastos"
   },
+  "Filters": {
+   "es": "Filtros"
+  },
   "From": {
    "es": "Desde"
   },
@@ -3424,6 +3717,15 @@
   },
   "Log your first expense, income or transfer and it shows up here.": {
    "es": "Anota tu primer gasto, ingreso o transferencia y aparecerá aquí."
+  },
+  "Maximum": {
+   "es": "Máximo"
+  },
+  "Minimum": {
+   "es": "Mínimo"
+  },
+  "Minimum is above maximum": {
+   "es": "El mínimo es mayor que el máximo"
   },
   "Money in": {
    "es": "Entradas"
@@ -3452,6 +3754,9 @@
   "Nothing matches. Try another word or filter.": {
    "es": "Nada coincide. Prueba otra palabra u otro filtro."
   },
+  "Origin": {
+   "es": "Origen"
+  },
   "Paid with": {
    "es": "Pagado con"
   },
@@ -3463,6 +3768,9 @@
   },
   "Reference": {
    "es": "Referencia"
+  },
+  "Remove filter %@": {
+   "es": "Quitar el filtro %@"
   },
   "Repeats": {
    "es": "Se repite"
@@ -3487,6 +3795,12 @@
   },
   "Status": {
    "es": "Estado"
+  },
+  "Subscriptions": {
+   "es": "Suscripciones"
+  },
+  "Subscriptions only": {
+   "es": "Solo suscripciones"
   },
   "Tags": {
    "es": "Etiquetas"
@@ -3899,6 +4213,16 @@
   }
  },
  "plan": {
+  "%lld debts to pay": {
+   "en": {
+    "one": "%lld debt to pay",
+    "other": "%lld debts to pay"
+   },
+   "es": {
+    "one": "%lld deuda por pagar",
+    "other": "%lld deudas por pagar"
+   }
+  },
   "%lld goals": {
    "en": {
     "one": "%lld goal",
@@ -3909,8 +4233,31 @@
     "other": "%lld metas"
    }
   },
+  "%lld people owe you": {
+   "en": {
+    "one": "%lld person owes you",
+    "other": "%lld people owe you"
+   },
+   "es": {
+    "one": "%lld persona te debe",
+    "other": "%lld personas te deben"
+   }
+  },
   "Next: %@ · %@": {
    "es": "Próximo: %@ · %@"
+  },
+  "Not including %lld in %@": {
+   "es": "Sin incluir %lld en %@"
+  },
+  "Per month · %lld subscriptions": {
+   "en": {
+    "one": "Per month · %lld subscription",
+    "other": "Per month · %lld subscriptions"
+   },
+   "es": {
+    "one": "Al mes · %lld suscripción",
+    "other": "Al mes · %lld suscripciones"
+   }
   },
   "Plan": {
    "es": "Planificar"

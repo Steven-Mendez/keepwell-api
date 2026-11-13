@@ -1,4 +1,5 @@
 import { DomainError } from "../domain/domain"
+import { domainRefusal } from "./domain-refusal"
 import { loanPaymentId, uuidV5, type SyncEntity, type TransactionCategory } from "../domain/schema"
 import {
   accountColumns,
@@ -119,7 +120,7 @@ export class ManageLedger {
     // only when that wrote something.
     const loaded = await this.deps.ledger.load(userId)
     const rows = loaded.fresh ? loaded.rows : await this.deps.reader.load(userId)
-    const store = new RecordingStore(toDomain(rows))
+    const store = new RecordingStore(loaded.ledger.timeZone, toDomain(rows))
     for (const row of rows.category) if (row.deleted_at !== null) store.deletedCategoryIds.add(row.id)
     // The defaults every app shows even before it stored them.
     await store.fetchCategories()
@@ -141,7 +142,7 @@ export class ManageLedger {
       label = request.trashLabel?.(store)
       result = await operation(store, now)
     } catch (error) {
-      if (error instanceof DomainError) throw new ManageError(error.code === "notFound" ? "not_found" : "invalid", error.message)
+      if (error instanceof DomainError) throw new ManageError(error.code === "notFound" ? "not_found" : "invalid", domainRefusal(error))
       throw error
     }
     const at = now.toISOString()

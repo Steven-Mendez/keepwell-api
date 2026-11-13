@@ -89,6 +89,25 @@ describe("MCP manage tools", () => {
     expect(data(await tool("get_net_worth"))).toMatchObject({ net_worth: { amount: "981.5" } })
   })
 
+  it("reads a date without a time as that day in the person's home zone, which update_settings changes (T21)", async () => {
+    const { tool, data } = await setup()
+    const accountId = data<{ result: { account_id: string } }>(await tool("create_account", { id: randomUUID(), kind: "cash", name: "Efectivo", balance: "0", currency: "USD" })).result.account_id
+    const stored = async (id: string) => ((await admin.db.execute(sql`select date from transactions where id = ${id}`)).rows[0] as { date: string }).date
+    // No zone in the settings and no device: the deployment's default (America/Managua, UTC-6).
+    const managua = randomUUID()
+    await tool("create_transaction", { id: managua, kind: "expense", amount: "1", currency: "USD", account_id: accountId, category_id: "groceries", description: "Uno", date: "2026-11-12" })
+    expect(await stored(managua)).toBe("2026-11-12T18:00:00.000Z")
+    expect(data(await tool("get_financial_context"))).toMatchObject({ time_zone: "America/Managua" })
+
+    expect(data(await tool("update_settings", { time_zone: "Asia/Tokyo" }))).toMatchObject({ ok: true, result: { time_zone: "Asia/Tokyo" } })
+    expect((await admin.db.execute(sql`select time_zone from settings`)).rows).toEqual([{ time_zone: "Asia/Tokyo" }])
+    const tokyo = randomUUID()
+    await tool("create_transaction", { id: tokyo, kind: "expense", amount: "1", currency: "USD", account_id: accountId, category_id: "groceries", description: "Dos", date: "2026-11-12" })
+    expect(await stored(tokyo)).toBe("2026-11-12T03:00:00.000Z")
+    expect(data(await tool("get_financial_context"))).toMatchObject({ time_zone: "Asia/Tokyo" })
+    expect((await tool("update_settings", { time_zone: "Mars/Olympus" })).isError).toBe(true)
+  })
+
   it("deletes an account with its cascade, and restore_deleted brings it all back under new ids", async () => {
     const { tool, data } = await setup()
     const accountId = data<{ result: { account_id: string } }>(await tool("create_account", { id: randomUUID(), kind: "cash", name: "Efectivo", balance: "200", currency: "USD" })).result.account_id
@@ -170,6 +189,28 @@ describe("MCP manage tools", () => {
     expect(data<{ rules: unknown[] }>(await tool("list_categorization_rules")).rules).toHaveLength(1)
   })
 
+  it("gives a personal debt a due date, keeps it when an update leaves it out and removes it with null", async () => {
+    const { tool, data } = await setup()
+    type Listed = { debts: { id: string; due_date: string | null; due_status: string | null; days_left?: number }[] }
+    const listed = async (id: string) => data<Listed>(await tool("list_personal_debts")).debts.find((debt) => debt.id === id)
+    const fields = { person: "Ana", direction: "theyOweMe", amount: "12", currency: "USD", date: "2026-09-01" }
+    const debtId = data<{ result: { debt_id: string } }>(await tool("create_personal_debt", { id: randomUUID(), ...fields, due_date: "2099-12-15" })).result.debt_id
+    const created = await listed(debtId)
+    expect(created).toMatchObject({ due_date: "2099-12-15", due_status: "upcoming" })
+    expect(created?.days_left).toBeGreaterThan(0)
+
+    expect((await tool("update_personal_debt", { debt_id: debtId, ...fields, note: "Dinner" })).isError).toBeFalsy()
+    expect(await listed(debtId)).toMatchObject({ due_date: "2099-12-15", due_status: "upcoming" })
+
+    const before = await tool("update_personal_debt", { debt_id: debtId, ...fields, due_date: "2026-08-31" })
+    expect(before.isError).toBe(true)
+    expect(await listed(debtId)).toMatchObject({ due_date: "2099-12-15" })
+
+    expect((await tool("update_personal_debt", { debt_id: debtId, ...fields, due_date: null })).isError).toBeFalsy()
+    expect(await listed(debtId)).toMatchObject({ due_date: null, due_status: null })
+    expect((await admin.db.execute(sql`select due_date from personal_debts where id = ${debtId}`)).rows).toEqual([{ due_date: null }])
+  })
+
   it("applies a batch in one call: an account and its movements, all or nothing, never twice", async () => {
     const { tool, data } = await setup()
     const accountId = randomUUID()
@@ -207,5 +248,40 @@ describe("MCP manage tools", () => {
 
     // Deletes are not batchable: each asks on its own.
     expect((await tool("apply_changes", { changes: [{ tool: "delete_account", arguments: { account_id: accountId } }] })).isError).toBe(true)
+  })
+
+  it("closes an account keeping its history, moving what is left, and reopens it", async () => {
+    const { tool, data } = await setup()
+    const account = (name: string, balance: string) => tool("create_account", { id: randomUUID(), kind: "cash", name, balance, currency: "USD" })
+    const oldId = data<{ result: { account_id: string } }>(await account("Old wallet", "200")).result.account_id
+    const newId = data<{ result: { account_id: string } }>(await account("New wallet", "0")).result.account_id
+    const emptyId = data<{ result: { account_id: string } }>(await account("Empty", "0")).result.account_id
+    await tool("create_transaction", { id: randomUUID(), kind: "expense", amount: "20", currency: "USD", account_id: oldId, category_id: "groceries", description: "Súper", date: today() })
+
+    const refused = await tool("close_account", { account_id: oldId })
+    expect(refused.isError).toBe(true)
+    expect(refused.content[0]!.text).toContain("accountNotEmpty")
+
+    const closed = await tool("close_account", { account_id: oldId, transfer_to_account_id: newId })
+    expect(closed.isError).toBeFalsy()
+    expect(data(closed)).toMatchObject({ ok: true, result: { account_id: oldId, transfers: [{ amount: { amount: "180", currency: "USD" }, from_account_id: oldId, to_account_id: newId }] } })
+    expect((await tool("close_account", { account_id: emptyId })).isError).toBeFalsy()
+    // History stays: the expense is still there and the net worth didn't move.
+    expect(await count(sql`select count(*) as n from transactions where deleted_at is null and account_id = ${oldId}`)).toBe(2)
+    expect(data(await tool("get_net_worth"))).toMatchObject({ net_worth: { amount: "180" } })
+
+    const listed = data<{ accounts: { id: string; closed_at: string | null; balances: { amount: string }[] }[] }>(await tool("list_accounts")).accounts
+    expect(listed.find((entry) => entry.id === oldId)).toMatchObject({ closed_at: expect.any(String), balances: [{ amount: "0" }] })
+    expect(listed.find((entry) => entry.id === newId)?.closed_at).toBeNull()
+    const context = data<{ accounts: { id: string }[] }>(await tool("get_financial_context"))
+    expect(context.accounts.map((entry) => entry.id)).toEqual([newId])
+
+    const movement = await tool("create_transaction", { id: randomUUID(), kind: "expense", amount: "5", currency: "USD", account_id: oldId, category_id: "groceries", description: "Café", date: today() })
+    expect(movement.isError).toBe(true)
+    expect(JSON.parse(movement.content[0]!.text)).toMatchObject({ error: "invalid", message: `Account ${oldId} is closed; reopen it first.` })
+
+    expect(data(await tool("reopen_account", { account_id: oldId }))).toMatchObject({ ok: true, result: { account_id: oldId, closed_at: null } })
+    expect((await admin.db.execute(sql`select closed_at from ledger_accounts where id = ${oldId}`)).rows).toEqual([{ closed_at: null }])
+    expect((await tool("create_transaction", { id: randomUUID(), kind: "expense", amount: "5", currency: "USD", account_id: oldId, category_id: "groceries", description: "Café", date: today() })).isError).toBeFalsy()
   })
 })

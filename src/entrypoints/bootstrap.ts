@@ -16,7 +16,7 @@ import { ChangeLogWriteCounter } from "../adapters/database/repositories/mcp-wri
 import { CreatePending } from "../core/use-cases/create-pending"
 import { ManageLedger } from "../core/use-cases/manage-ledger"
 import { ScopedMcpTrash } from "../adapters/database/repositories/mcp-trash"
-import { ReadLedger } from "../core/use-cases/read-ledger"
+import { defaultTimeZone, ReadLedger } from "../core/use-cases/read-ledger"
 import { CachedPlansSource, CachedSwitchesSource, filePlansLoader, ssmPlansLoader } from "../adapters/config/plans-source"
 import { ResolveCapabilities } from "../core/use-cases/resolve-capabilities"
 import { createDatabase, type Database, type DatabaseConfig } from "../adapters/database/client"
@@ -124,7 +124,7 @@ export function bootstrap(options: { logger: Logger; version: string; database: 
   const sync = createSyncRepository(db, logger)
   const writer = new ApplySyncBatch(sync)
   const ledgerReader = new ScopedLedgerReader((userId) => scopedDb(db, userId))
-  const readLedger = new ReadLedger(ledgerReader, writer)
+  const readLedger = new ReadLedger(ledgerReader, writer, defaultTimeZone(env))
   const writeCounter = new ChangeLogWriteCounter((userId) => scopedDb(db, userId))
   const mcp = {
     readLedger,

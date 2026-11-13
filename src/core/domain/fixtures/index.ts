@@ -42,3 +42,24 @@ export interface EntityFixtures {
   version: number
   entities: Record<FixtureEntity, { valid: FixtureCase[]; invalid: FixtureCase[] }>
 }
+
+/** `upcoming.json`: a small ledger, a moment and the `upcomingPayments` each window must return. */
+export interface UpcomingFixtures {
+  version: number
+  cases: {
+    name: string
+    now: string
+    timeZone: string
+    /** Entities in their sync shape; settings are the defaults with these currencies. */
+    ledger: {
+      currencies: unknown
+      accounts: unknown[]
+      transactions: unknown[]
+      recurringRules: unknown[]
+      loans: unknown[]
+      /** Absent in the cases written before personal debts had a due date: none. */
+      personalDebts?: unknown[]
+    }
+    windows: { days: number; expected: { id: string; status: "overdue" | "today" | "upcoming" }[] }[]
+  }[]
+}

@@ -2,7 +2,7 @@ import { newID, occurrenceId } from "../schema/id"
 import type { CurrencySettings, RecurringFrequency, RecurringRule, Transaction } from "../schema"
 import { MAX_RECURRING_INTERVAL } from "../schema"
 
-import { addDays, dayKey, startOfDay } from "./calendar"
+import { addDays, dayKey, daysInMonth, startOfDay, zonedDate, zonedParts, type TimeZone } from "./calendar"
 import { Decimal, ZERO, dec, decimalText } from "./decimal"
 import { DomainError } from "./errors"
 import { convert, settingsRate, type Money } from "./money"
@@ -20,28 +20,29 @@ export const MAX_MATERIALIZED_PER_RULE = 12
 type Schedule = Pick<RecurringRule, "frequency" | "interval" | "startDate">
 
 /** Foundation `Calendar.date(byAdding: .month)`: the day clamps to the target month's last day, time kept. */
-function addCalendarMonths(date: Date, months: number): Date {
-  const index = date.getFullYear() * 12 + date.getMonth() + months
+function addCalendarMonths(date: Date, months: number, zone: TimeZone): Date {
+  const parts = zonedParts(date, zone)
+  const index = parts.year * 12 + (parts.month - 1) + months
   const year = Math.floor(index / 12)
-  const month = index - year * 12
-  const day = Math.min(date.getDate(), new Date(year, month + 1, 0).getDate())
-  return new Date(year, month, day, date.getHours(), date.getMinutes(), date.getSeconds(), date.getMilliseconds())
+  const month = index - year * 12 + 1
+  const day = Math.min(parts.day, daysInMonth({ year, month }))
+  return zonedDate(zone, year, month, day, parts.hour, parts.minute, parts.second, parts.millisecond)
 }
 
 /**
  * The `n`-th occurrence (0 is `startDate`), always computed from the anchor: Jan 31 + 1 month is
  * Feb 28/29 and + 2 months is Mar 31, never chained from a clamped date. Weekly is 7 calendar days.
  */
-export function occurrence(rule: Schedule, n: number): Date {
+export function occurrence(rule: Schedule, n: number, zone: TimeZone): Date {
   const start = new Date(rule.startDate)
   const steps = n * rule.interval
   switch (rule.frequency) {
     case "weekly":
-      return addDays(start, 7 * steps)
+      return addDays(start, 7 * steps, zone)
     case "monthly":
-      return addCalendarMonths(start, steps)
+      return addCalendarMonths(start, steps, zone)
     case "yearly":
-      return addCalendarMonths(start, 12 * steps)
+      return addCalendarMonths(start, 12 * steps, zone)
   }
 }
 
@@ -49,46 +50,47 @@ function checkInterval(interval: number): void {
   if (!Number.isInteger(interval) || interval < 1 || interval > MAX_RECURRING_INTERVAL) throw DomainError.invalidInterval(interval)
 }
 
-const isBeforeDay = (a: Date, b: Date) => dayKey(a) < dayKey(b)
-const isAfterDay = (a: Date, b: Date) => dayKey(a) > dayKey(b)
+const isBeforeDay = (a: Date, b: Date, zone: TimeZone) => dayKey(a, zone) < dayKey(b, zone)
+const isAfterDay = (a: Date, b: Date, zone: TimeZone) => dayKey(a, zone) > dayKey(b, zone)
 
 /** The index of the smallest occurrence whose calendar day is on or after `day`'s. */
-function firstIndexOnOrAfter(rule: Schedule, day: Date): number {
+function firstIndexOnOrAfter(rule: Schedule, day: Date, zone: TimeZone): number {
   checkInterval(rule.interval)
   const start = new Date(rule.startDate)
   if (Number.isNaN(start.getTime()) || Number.isNaN(day.getTime())) throw DomainError.corruptedData("date")
   // A guess known to fall before `day`, so only a few steps are left to walk.
   let n: number
   if (rule.frequency === "weekly") {
-    const days = Math.round((startOfDay(day).getTime() - startOfDay(start).getTime()) / 86_400_000)
+    const days = Math.round((startOfDay(day, zone).getTime() - startOfDay(start, zone).getTime()) / 86_400_000)
     n = Math.floor(days / (7 * rule.interval)) - 1
   } else {
-    const months = day.getFullYear() * 12 + day.getMonth() - (start.getFullYear() * 12 + start.getMonth())
+    const [to, from] = [zonedParts(day, zone), zonedParts(start, zone)]
+    const months = to.year * 12 + to.month - (from.year * 12 + from.month)
     n = Math.floor(months / (rule.interval * (rule.frequency === "yearly" ? 12 : 1))) - 1
   }
   n = Math.max(0, n)
-  while (isBeforeDay(occurrence(rule, n), day)) n++
+  while (isBeforeDay(occurrence(rule, n, zone), day, zone)) n++
   return n
 }
 
 /** The smallest occurrence whose calendar day is on or after `day`'s. */
-export function firstOccurrence(rule: Schedule, onOrAfter: Date): Date {
-  return occurrence(rule, firstIndexOnOrAfter(rule, onOrAfter))
+export function firstOccurrence(rule: Schedule, onOrAfter: Date, zone: TimeZone): Date {
+  return occurrence(rule, firstIndexOnOrAfter(rule, onOrAfter, zone), zone)
 }
 
 /** Whether `date` falls after the rule's last day. */
-function isPastEnd(rule: Pick<RecurringRule, "endDate">, date: Date): boolean {
-  return rule.endDate !== undefined && isAfterDay(date, new Date(rule.endDate))
+function isPastEnd(rule: Pick<RecurringRule, "endDate">, date: Date, zone: TimeZone): boolean {
+  return rule.endDate !== undefined && isAfterDay(date, new Date(rule.endDate), zone)
 }
 
 /** A rule whose next occurrence is past its end: it will never produce anything again. */
-export function isFinished(rule: RecurringRule): boolean {
-  return isPastEnd(rule, new Date(rule.nextDate))
+export function isFinished(rule: RecurringRule, zone: TimeZone): boolean {
+  return isPastEnd(rule, new Date(rule.nextDate), zone)
 }
 
 /** Producing movements: not paused and not past its end. */
-export function isActive(rule: RecurringRule): boolean {
-  return !rule.isPaused && !isFinished(rule)
+export function isActive(rule: RecurringRule, zone: TimeZone): boolean {
+  return !rule.isPaused && !isFinished(rule, zone)
 }
 
 interface Occurrence {
@@ -96,20 +98,20 @@ interface Occurrence {
   date: Date
 }
 
-function dueOccurrences(rule: RecurringRule, today: Date): Occurrence[] {
+function dueOccurrences(rule: RecurringRule, today: Date, zone: TimeZone): Occurrence[] {
   if (rule.isPaused) return []
   const due: Occurrence[] = []
-  for (let index = firstIndexOnOrAfter(rule, new Date(rule.nextDate)); ; index++) {
-    const date = occurrence(rule, index)
-    if (isAfterDay(date, today) || isPastEnd(rule, date)) break
+  for (let index = firstIndexOnOrAfter(rule, new Date(rule.nextDate), zone); ; index++) {
+    const date = occurrence(rule, index, zone)
+    if (isAfterDay(date, today, zone) || isPastEnd(rule, date, zone)) break
     due.push({ index, date })
   }
   return due
 }
 
 /** Occurrences from `nextDate` on whose day is today or earlier, not after `endDate`. Empty when paused. */
-export function due(rule: RecurringRule, today: Date): Date[] {
-  return dueOccurrences(rule, today).map((entry) => entry.date)
+export function due(rule: RecurringRule, today: Date, zone: TimeZone): Date[] {
+  return dueOccurrences(rule, today, zone).map((entry) => entry.date)
 }
 
 /** The movement an occurrence produces, through the same validation as a movement typed by hand. */
@@ -147,39 +149,96 @@ export function occurrenceTransaction(rule: RecurringRule, date: Date, context: 
   }
 }
 
-const occurrenceKey = (ruleId: string, date: Date) => `${ruleId} ${dayKey(date)}`
+const occurrenceKey = (ruleId: string, date: Date, zone: TimeZone) => `${ruleId} ${dayKey(date, zone)}`
+
+/** How far a manual payment's amount may be from the rule's: 7.5 % either way. */
+const MANUAL_PAYMENT_TOLERANCE = dec("0.075")
+/** How many calendar days before the occurrence a manual payment still counts for it. */
+const MANUAL_PAYMENT_DAYS_BEFORE = 2
+
+/**
+ * The movement that already pays this occurrence, if any: typed by hand (or linked to this rule)
+ * with the rule's kind, account, currency, card (when the rule has one) and destination (transfers),
+ * an amount within 7.5 % of the rule's, dated from two calendar days before the occurrence through
+ * its day, and not in `taken` (a movement pays one occurrence only). A movement linked to another
+ * rule never counts. Among several, the closest amount wins, then the closest date, then the lowest
+ * id, so iOS, web and the server pick the same one.
+ */
+export function manualPaymentFor(rule: RecurringRule, occurrenceDate: Date, transactions: readonly Transaction[], taken: ReadonlySet<string>, zone: TimeZone): Transaction | undefined {
+  const ruleAmount = dec(rule.amount)
+  const tolerance = ruleAmount.abs().times(MANUAL_PAYMENT_TOLERANCE)
+  const lastDay = dayKey(occurrenceDate, zone)
+  const firstDay = dayKey(addDays(occurrenceDate, -MANUAL_PAYMENT_DAYS_BEFORE, zone), zone)
+  let best: { transaction: Transaction; amountGap: Decimal; dateGap: number } | undefined
+  for (const transaction of transactions) {
+    if (taken.has(transaction.id)) continue
+    if (transaction.recurringId !== undefined && transaction.recurringId !== rule.id) continue
+    if (transaction.kind !== rule.kind || transaction.accountId !== rule.accountId || transaction.currency !== rule.currency) continue
+    if (rule.cardId !== undefined && transaction.cardId !== rule.cardId) continue
+    if (rule.kind === "transfer" && transaction.destinationAccountId !== rule.destinationAccountId) continue
+    const date = new Date(transaction.date)
+    const day = dayKey(date, zone)
+    if (day < firstDay || day > lastDay) continue
+    const amountGap = dec(transaction.amount).minus(ruleAmount).abs()
+    if (amountGap.greaterThan(tolerance)) continue
+    const dateGap = Math.abs(occurrenceDate.getTime() - date.getTime())
+    if (
+      !best ||
+      amountGap.lessThan(best.amountGap) ||
+      (amountGap.equals(best.amountGap) && (dateGap < best.dateGap || (dateGap === best.dateGap && transaction.id < best.transaction.id)))
+    ) {
+      best = { transaction, amountGap, dateGap }
+    }
+  }
+  return best?.transaction
+}
+
+const byId = (a: { id: string }, b: { id: string }) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)
 
 /**
  * Saves the movements every active rule owes up to today (at most the latest 12 per rule), skipping
- * an occurrence that already has a movement from the rule that day, and moves each rule's `nextDate`
- * past what it produced. One atomic save; reads happen inside it so two runs (two tabs, load and
+ * an occurrence that already has a movement from the rule that day or that a manual payment already
+ * covers (`manualPaymentFor`; rules claim payments in id order), and moves each rule's `nextDate`
+ * past what it owed. One atomic save; reads happen inside it so two runs (two tabs, load and
  * focus) can't both create the same movement. A rule that no longer validates (its category or
  * currency is gone) is left as it was. Returns the movements created.
  */
 export async function materializeRecurring(store: LedgerStore, today: Date = new Date()): Promise<Transaction[]> {
   return store.atomically(async () => {
+    const zone = store.timeZone
     const rules = await store.fetchRecurringRules()
-    if (!rules.some((rule) => dueOccurrences(rule, today).length > 0)) return []
+    if (!rules.some((rule) => dueOccurrences(rule, today, zone).length > 0)) return []
     const context = await getTransactionContext(store)
-    const existing = new Set(context.transactions.flatMap((transaction) => (transaction.recurringId ? [occurrenceKey(transaction.recurringId, new Date(transaction.date))] : [])))
+    const existing = new Set(context.transactions.flatMap((transaction) => (transaction.recurringId ? [occurrenceKey(transaction.recurringId, new Date(transaction.date), zone)] : [])))
     const knownIds = new Set(context.transactions.map((transaction) => transaction.id))
+    const paid = new Set<string>()
     const created: Transaction[] = []
     const advanced: RecurringRule[] = []
-    for (const rule of rules) {
-      const owed = dueOccurrences(rule, today)
+    for (const rule of [...rules].sort(byId)) {
+      const owed = dueOccurrences(rule, today, zone)
       const last = owed.at(-1)
       if (!last) continue
+      const claimed: string[] = []
       try {
         const movements = owed
           .slice(-MAX_MATERIALIZED_PER_RULE)
-          .filter((entry) => !existing.has(occurrenceKey(rule.id, entry.date)) && !knownIds.has(occurrenceId(rule, entry.index)))
+          .filter((entry) => !existing.has(occurrenceKey(rule.id, entry.date, zone)) && !knownIds.has(occurrenceId(rule, entry.index)))
+          .filter((entry) => {
+            const payment = manualPaymentFor(rule, entry.date, context.transactions, paid, zone)
+            if (!payment) return true
+            paid.add(payment.id)
+            claimed.push(payment.id)
+            return false
+          })
           .map((entry) => occurrenceTransaction(rule, entry.date, context, entry.index))
-        for (const movement of movements) existing.add(occurrenceKey(rule.id, new Date(movement.date)))
+        for (const movement of movements) existing.add(occurrenceKey(rule.id, new Date(movement.date), zone))
         created.push(...movements)
       } catch {
+        // The rule stays as it was, so the payments it matched are free for the next rule.
+        for (const id of claimed) paid.delete(id)
         continue
       }
-      advanced.push({ ...rule, nextDate: occurrence(rule, last.index + 1).toISOString() })
+      advanced.push({ ...rule, nextDate: occurrence(rule, last.index + 1, zone).toISOString() })
     }
     for (const movement of created) await store.saveTransaction(movement)
     for (const rule of advanced) await store.saveRecurringRule(rule)
@@ -218,7 +277,9 @@ export function checkRecurringRule(rule: RecurringRule, context: TransactionCont
   if (rule.name.trim() === "") throw DomainError.missingName()
   checkAmounts(dec(rule.amount))
   checkInterval(rule.interval)
-  if (rule.endDate !== undefined && isBeforeDay(new Date(rule.endDate), new Date(rule.startDate))) throw DomainError.invalidEndDate()
+  if (rule.endDate !== undefined && isBeforeDay(new Date(rule.endDate), new Date(rule.startDate), context.zone)) throw DomainError.invalidEndDate()
+  // A rule always has its own category; only a movement saved without one falls back to "Other".
+  if (rule.kind !== "transfer" && rule.categoryId === undefined) throw DomainError.notFound("category")
   validatedTransaction(occurrenceDraft(rule, new Date(rule.startDate)), context)
 }
 
@@ -240,7 +301,7 @@ export async function saveRecurringRule(store: LedgerStore, draft: RecurringRule
   if (!draft.source || !accountId) throw DomainError.notFound("source")
   const note = draft.note.trim()
   const schedule: Schedule = { frequency: draft.frequency, interval: draft.interval, startDate: draft.startDate.toISOString() }
-  const nextDate = existing && sameSchedule(existing, schedule) ? existing.nextDate : firstNextDate(schedule, today).toISOString()
+  const nextDate = existing && sameSchedule(existing, schedule) ? existing.nextDate : firstNextDate(schedule, context.zone, today).toISOString()
   const rule: RecurringRule = {
     id: existing?.id ?? newID(),
     name: draft.name.trim(),
@@ -273,7 +334,7 @@ export async function setRecurringRulePaused(store: LedgerStore, id: string, pau
   const rule = (await store.fetchRecurringRules()).find((candidate) => candidate.id === id)
   if (!rule) throw DomainError.notFound(id)
   if (rule.isPaused === paused) return
-  await store.saveRecurringRule(paused ? { ...rule, isPaused: true } : { ...rule, isPaused: false, nextDate: firstOccurrence(rule, today).toISOString() })
+  await store.saveRecurringRule(paused ? { ...rule, isPaused: true } : { ...rule, isPaused: false, nextDate: firstOccurrence(rule, today, store.timeZone).toISOString() })
   if (!paused) await materializeRecurring(store, today)
 }
 
@@ -292,7 +353,7 @@ export async function deleteRecurringRule(store: LedgerStore, id: string): Promi
  * "Repeat" on a new movement: the rule it starts, anchored on its date, its next occurrence the one
  * after it. A subscription when its category is Subscriptions; occurrences wait as drafts.
  */
-export function ruleRepeating(transaction: Transaction, frequency: RecurringFrequency, id: string = newID()): RecurringRule {
+export function ruleRepeating(transaction: Transaction, frequency: RecurringFrequency, zone: TimeZone, id: string = newID()): RecurringRule {
   const schedule: Schedule = { frequency, interval: 1, startDate: transaction.date }
   return {
     id,
@@ -305,7 +366,7 @@ export function ruleRepeating(transaction: Transaction, frequency: RecurringFreq
     ...(transaction.cardId === undefined ? {} : { cardId: transaction.cardId }),
     ...(transaction.destinationAccountId === undefined ? {} : { destinationAccountId: transaction.destinationAccountId }),
     ...schedule,
-    nextDate: occurrence(schedule, 1).toISOString(),
+    nextDate: occurrence(schedule, 1, zone).toISOString(),
     isSubscription: transaction.categoryId === SUBSCRIPTIONS_CATEGORY_ID,
     autoConfirm: false,
     isPaused: false,
@@ -319,7 +380,7 @@ export async function saveRepeatingTransaction(store: LedgerStore, draft: Transa
   const ruleId = newID()
   const saved = await store.atomically(async () => {
     const result = await saveTransaction(store, { ...draft, recurringId: ruleId })
-    await store.saveRecurringRule(ruleRepeating(result.transaction, frequency, ruleId))
+    await store.saveRecurringRule(ruleRepeating(result.transaction, frequency, store.timeZone, ruleId))
     return result
   })
   await materializeRecurring(store, today)
@@ -341,22 +402,44 @@ export function monthlyEquivalent(rule: Pick<RecurringRule, "amount" | "frequenc
   }
 }
 
+/** Active expense subscriptions in one currency the settings can't convert, so no total counts them. */
+export interface UnconvertedSubscriptions {
+  currency: string
+  count: number
+}
+
+export interface SubscriptionsTotal {
+  perMonth: Money
+  /** By currency code; empty when every active subscription is counted. */
+  excluded: UnconvertedSubscriptions[]
+}
+
 /**
  * Active expense subscriptions per month, in the principal currency at today's settings rate. A rule
- * in a currency the settings no longer convert is left out rather than mixed in.
+ * in a currency the settings no longer convert is left out rather than mixed in, and reported in
+ * `excluded` so the screen can say the total is incomplete.
  */
-export function subscriptionsPerMonth(rules: readonly RecurringRule[], currencies: CurrencySettings): Money {
+export function subscriptionsTotal(rules: readonly RecurringRule[], currencies: CurrencySettings, zone: TimeZone): SubscriptionsTotal {
   const rate = settingsRate(currencies)
   let total = ZERO
+  const excluded = new Map<string, number>()
   for (const rule of rules) {
-    if (!rule.isSubscription || rule.kind !== "expense" || !isActive(rule)) continue
+    if (!rule.isSubscription || rule.kind !== "expense" || !isActive(rule, zone)) continue
     try {
       total = total.plus(convert({ amount: monthlyEquivalent(rule), currency: rule.currency }, rate, currencies.principal).amount)
     } catch {
-      continue
+      excluded.set(rule.currency, (excluded.get(rule.currency) ?? 0) + 1)
     }
   }
-  return { amount: total, currency: currencies.principal }
+  return {
+    perMonth: { amount: total, currency: currencies.principal },
+    excluded: [...excluded].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)).map(([currency, count]) => ({ currency, count })),
+  }
+}
+
+/** `subscriptionsTotal` without the subscriptions it left out. */
+export function subscriptionsPerMonth(rules: readonly RecurringRule[], currencies: CurrencySettings, zone: TimeZone): Money {
+  return subscriptionsTotal(rules, currencies, zone).perMonth
 }
 
 export interface UpcomingOccurrence {
@@ -365,15 +448,15 @@ export interface UpcomingOccurrence {
 }
 
 /** Occurrences not produced yet from today through `days` days ahead, soonest first. */
-export function upcoming(rules: readonly RecurringRule[], from: Date, days: number): UpcomingOccurrence[] {
-  const last = addDays(startOfDay(from), days)
+export function upcoming(rules: readonly RecurringRule[], from: Date, days: number, zone: TimeZone): UpcomingOccurrence[] {
+  const last = addDays(startOfDay(from, zone), days, zone)
   const found: UpcomingOccurrence[] = []
   for (const rule of rules) {
     if (rule.isPaused) continue
     const next = new Date(rule.nextDate)
-    for (let index = firstIndexOnOrAfter(rule, laterOf(next, from)); ; index++) {
-      const date = occurrence(rule, index)
-      if (isAfterDay(date, last) || isPastEnd(rule, date)) break
+    for (let index = firstIndexOnOrAfter(rule, laterOf(next, from), zone); ; index++) {
+      const date = occurrence(rule, index, zone)
+      if (isAfterDay(date, last, zone) || isPastEnd(rule, date, zone)) break
       found.push({ rule, date })
     }
   }
@@ -385,41 +468,41 @@ export function upcoming(rules: readonly RecurringRule[], from: Date, days: numb
  * (iOS `RecurringSchedule.pending`). Paused rules have none. The balance forecast counts these on
  * top of the drafts already recorded, so nothing is counted twice.
  */
-export function pendingOccurrences(rule: RecurringRule, lastDay: Date): Date[] {
+export function pendingOccurrences(rule: RecurringRule, lastDay: Date, zone: TimeZone): Date[] {
   if (rule.isPaused) return []
   const dates: Date[] = []
-  for (let index = firstIndexOnOrAfter(rule, new Date(rule.nextDate)); ; index++) {
-    const date = occurrence(rule, index)
-    if (isAfterDay(date, lastDay) || isPastEnd(rule, date)) break
+  for (let index = firstIndexOnOrAfter(rule, new Date(rule.nextDate), zone); ; index++) {
+    const date = occurrence(rule, index, zone)
+    if (isAfterDay(date, lastDay, zone) || isPastEnd(rule, date, zone)) break
     dates.push(date)
   }
   return dates
 }
 
 /** The next occurrence a rule will produce, if it ever will. */
-export function nextOccurrenceOf(rule: RecurringRule): Date | undefined {
-  return isFinished(rule) ? undefined : new Date(rule.nextDate)
+export function nextOccurrenceOf(rule: RecurringRule, zone: TimeZone): Date | undefined {
+  return isFinished(rule, zone) ? undefined : new Date(rule.nextDate)
 }
 
 /** The first `count` occurrences on or after `from`, within the rule's end. */
-export function occurrencesFrom(rule: Schedule & Pick<RecurringRule, "endDate">, from: Date, count: number): Date[] {
+export function occurrencesFrom(rule: Schedule & Pick<RecurringRule, "endDate">, from: Date, count: number, zone: TimeZone): Date[] {
   const dates: Date[] = []
-  for (let index = firstIndexOnOrAfter(rule, from); dates.length < count; index++) {
-    const date = occurrence(rule, index)
-    if (isPastEnd(rule, date)) break
+  for (let index = firstIndexOnOrAfter(rule, from, zone); dates.length < count; index++) {
+    const date = occurrence(rule, index, zone)
+    if (isPastEnd(rule, date, zone)) break
     dates.push(date)
   }
   return dates
 }
 
 /** The next `count` occurrences the rule will produce, from `nextDate`. */
-export function nextOccurrences(rule: RecurringRule, count: number): Date[] {
-  return occurrencesFrom(rule, new Date(rule.nextDate), count)
+export function nextOccurrences(rule: RecurringRule, count: number, zone: TimeZone): Date[] {
+  return occurrencesFrom(rule, new Date(rule.nextDate), count, zone)
 }
 
 /** Where a new rule (or one whose schedule changed) starts producing: the later of today and its start. */
-export function firstNextDate(rule: Schedule, today: Date = new Date()): Date {
-  return firstOccurrence(rule, laterOf(today, new Date(rule.startDate)))
+export function firstNextDate(rule: Schedule, zone: TimeZone, today: Date = new Date()): Date {
+  return firstOccurrence(rule, laterOf(today, new Date(rule.startDate)), zone)
 }
 
 export type RecurringSectionKind = "subscriptions" | "bills" | "income" | "transfers"
@@ -435,16 +518,19 @@ export interface RecurringOverview {
   /** Expense subscriptions per month, principal currency. */
   subscriptionsPerMonth: Money
   subscriptionsPerYear: Money
+  /** Active subscriptions neither total counts, because their currency can't be converted. */
+  excludedSubscriptions: UnconvertedSubscriptions[]
   /** Non-empty sections in screen order; active rules by next date, then paused and finished ones. */
   sections: { kind: RecurringSectionKind; rules: RecurringRule[] }[]
 }
 
-export function recurringOverview(rules: readonly RecurringRule[], currencies: CurrencySettings): RecurringOverview {
-  const perMonth = subscriptionsPerMonth(rules, currencies)
-  const ordered = [...rules].sort((a, b) => Number(!isActive(a)) - Number(!isActive(b)) || (a.nextDate < b.nextDate ? -1 : a.nextDate > b.nextDate ? 1 : a.name.localeCompare(b.name)))
+export function recurringOverview(rules: readonly RecurringRule[], currencies: CurrencySettings, zone: TimeZone): RecurringOverview {
+  const { perMonth, excluded } = subscriptionsTotal(rules, currencies, zone)
+  const ordered = [...rules].sort((a, b) => Number(!isActive(a, zone)) - Number(!isActive(b, zone)) || (a.nextDate < b.nextDate ? -1 : a.nextDate > b.nextDate ? 1 : a.name.localeCompare(b.name)))
   return {
     subscriptionsPerMonth: perMonth,
     subscriptionsPerYear: { amount: perMonth.amount.times(12), currency: perMonth.currency },
+    excludedSubscriptions: excluded,
     sections: RECURRING_SECTIONS.map((kind) => ({ kind, rules: ordered.filter((rule) => recurringSectionOf(rule) === kind) })).filter((section) => section.rules.length > 0),
   }
 }

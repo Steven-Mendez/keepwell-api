@@ -35,8 +35,10 @@ function trends(months: number) {
 
 function upcoming(days: number) {
   const all = [
+    { type: "loan_installment", date: "2026-11-05", status: "overdue", days_from_today: -5, name: "Moto", loan_id: "l1", number: 4, count: 12, amount: { amount: "120", currency: "USD" } },
+    { type: "draft", date: "2026-11-08", status: "overdue", days_from_today: -2, name: "Agua", kind: "expense", transaction_id: "t1", rule_id: null, amount: { amount: "350", currency: "NIO" } },
     { type: "recurring", date: "2026-11-12", name: "Netflix", kind: "expense", amount: { amount: "15.49", currency: "USD" }, is_subscription: true, rule_id: "r1" },
-    { type: "card_due", date: "2026-11-14", name: "BAC Visa", account_id: "a2", cutoff_day: 28, due_day: 14 },
+    { type: "card_due", date: "2026-11-14", name: "BAC Visa", account_id: "a2", cutoff_day: 28, due_day: 14, amount: { amount: "312.40", currency: "USD" } },
     { type: "recurring", date: "2026-11-15", name: "Salario", kind: "income", amount: { amount: "2000", currency: "USD" }, is_subscription: false, rule_id: "r2" },
     { type: "recurring", date: "2026-11-15", name: "Internet Claro", kind: "expense", amount: { amount: "1200", currency: "NIO" }, is_subscription: false, rule_id: "r3" },
     { type: "recurring", date: "2026-12-01", name: "Alquiler", kind: "expense", amount: { amount: "450", currency: "USD" }, is_subscription: false, rule_id: "r4" },

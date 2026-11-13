@@ -10,7 +10,9 @@ import {
   sameMonth,
   startOfDay,
   yearMonthContaining,
+  zonedDate,
   type DateInterval,
+  type TimeZone,
   type YearMonth,
 } from "./calendar"
 import { Decimal, ZERO, dec, sum } from "./decimal"
@@ -62,6 +64,17 @@ export function bankRate(transaction: Transaction): Decimal | undefined {
 
 // Rules 1, 3, 4, 5: balances.
 
+/** Open until `closeAccount` stamps `closedAt`; `reopenAccount` clears it. */
+export const isOpen = (account: Pick<Account, "closedAt">) => account.closedAt === undefined
+
+/**
+ * The accounts lists and pickers offer. Totals (net worth, summaries) still read every account: a
+ * closed one keeps the history it had.
+ */
+export function openAccounts<A extends Pick<Account, "closedAt">>(accounts: readonly A[]): A[] {
+  return accounts.filter(isOpen)
+}
+
 export function accountCurrencies(account: Account): string[] {
   return account.openingBalances.map((balance) => balance.currency)
 }
@@ -92,8 +105,8 @@ export function share(transaction: Transaction, account: Account): { currency: s
 }
 
 /** Opening balance plus confirmed inflows minus outflows since the opening day, one per currency. */
-export function balanceOf(account: Account, transactions: readonly Transaction[]): Money[] {
-  const openingDay = startOfDay(new Date(account.openingDate)).getTime()
+export function balanceOf(account: Account, transactions: readonly Transaction[], zone: TimeZone): Money[] {
+  const openingDay = startOfDay(new Date(account.openingDate), zone).getTime()
   const totals = new Map<string, Decimal>(account.openingBalances.map((balance) => [balance.currency, dec(balance.amount)]))
   for (const transaction of transactions) {
     if (!isConfirmed(transaction) || dateOf(transaction).getTime() < openingDay) continue
@@ -173,13 +186,13 @@ function ranked(totals: Map<string, Decimal>, total: Decimal): CategoryTotal[] {
     .sort((a, b) => (a.amount.eq(b.amount) ? (a.categoryId < b.categoryId ? -1 : 1) : b.amount.cmp(a.amount)))
 }
 
-export function monthlySummary(month: YearMonth, transactions: readonly Transaction[], currency: string): MonthlySummary {
+export function monthlySummary(month: YearMonth, transactions: readonly Transaction[], currency: string, zone: TimeZone): MonthlySummary {
   let income = ZERO
   let expense = ZERO
   const perCategory = new Map<string, Decimal>()
   const perIncome = new Map<string, Decimal>()
   for (const transaction of transactions) {
-    if (!isConfirmed(transaction) || !sameMonth(yearMonthContaining(dateOf(transaction)), month)) continue
+    if (!isConfirmed(transaction) || !sameMonth(yearMonthContaining(dateOf(transaction), zone), month)) continue
     const amount = principalAmount(transaction)
     if (transaction.kind === "income") {
       income = income.plus(amount)
@@ -201,19 +214,19 @@ export function savingsRate(summary: { income: Decimal; expense: Decimal }): Dec
   return summary.income.gt(0) ? savings(summary).div(summary.income) : undefined
 }
 
-function totalsByMonth(kind: TransactionKind, transactions: readonly Transaction[]): Map<string, Decimal> {
+function totalsByMonth(kind: TransactionKind, transactions: readonly Transaction[], zone: TimeZone): Map<string, Decimal> {
   const totals = new Map<string, Decimal>()
   for (const transaction of transactions) {
     if (!isConfirmed(transaction) || transaction.kind !== kind) continue
-    const key = monthKey(yearMonthContaining(dateOf(transaction)))
+    const key = monthKey(yearMonthContaining(dateOf(transaction), zone))
     totals.set(key, (totals.get(key) ?? ZERO).plus(principalAmount(transaction)))
   }
   return totals
 }
 
 /** Monthly totals of one kind for `count` months ending at `last`, oldest first. */
-export function monthlyTotals(kind: TransactionKind, last: YearMonth, count: number, transactions: readonly Transaction[]) {
-  const totals = totalsByMonth(kind, transactions)
+export function monthlyTotals(kind: TransactionKind, last: YearMonth, count: number, transactions: readonly Transaction[], zone: TimeZone) {
+  const totals = totalsByMonth(kind, transactions, zone)
   return Array.from({ length: count }, (_, index) => {
     const month = addMonths(last, index - (count - 1))
     return { month, total: totals.get(monthKey(month)) ?? ZERO }
@@ -221,8 +234,8 @@ export function monthlyTotals(kind: TransactionKind, last: YearMonth, count: num
 }
 
 /** Average over the months that have any movement of that kind; `undefined` when there are none. */
-export function averageMonthlyTotal(kind: TransactionKind, transactions: readonly Transaction[]): Decimal | undefined {
-  const totals = [...totalsByMonth(kind, transactions).values()].filter((total) => total.gt(0))
+export function averageMonthlyTotal(kind: TransactionKind, transactions: readonly Transaction[], zone: TimeZone): Decimal | undefined {
+  const totals = [...totalsByMonth(kind, transactions, zone).values()].filter((total) => total.gt(0))
   return totals.length === 0 ? undefined : sum(totals).div(totals.length)
 }
 
@@ -245,38 +258,38 @@ export function plannedSummary(transactions: readonly Transaction[]): PlannedSum
 // Billing cycle: from the day after the previous cutoff through the cutoff day; days past a
 // month's end clamp to its last day.
 
-function cutoffIn(month: YearMonth, day: number): Date {
-  return new Date(month.year, month.month - 1, Math.min(day, daysInMonth(month)))
+function cutoffIn(month: YearMonth, day: number, zone: TimeZone): Date {
+  return zonedDate(zone, month.year, month.month, Math.min(day, daysInMonth(month)))
 }
 
-export function billingCycle(date: Date, cutoffDay: number | undefined): DateInterval {
-  const month = yearMonthContaining(date)
-  if (cutoffDay === undefined) return monthInterval(month)
-  const thisCutoff = cutoffIn(month, cutoffDay)
-  const day = startOfDay(date)
+export function billingCycle(date: Date, cutoffDay: number | undefined, zone: TimeZone): DateInterval {
+  const month = yearMonthContaining(date, zone)
+  if (cutoffDay === undefined) return monthInterval(month, zone)
+  const thisCutoff = cutoffIn(month, cutoffDay, zone)
+  const day = startOfDay(date, zone)
   const [startCutoff, endCutoff] =
     day.getTime() <= thisCutoff.getTime()
-      ? [cutoffIn(addMonths(month, -1), cutoffDay), thisCutoff]
-      : [thisCutoff, cutoffIn(addMonths(month, 1), cutoffDay)]
-  return { start: addDays(startCutoff, 1), end: addDays(endCutoff, 1) }
+      ? [cutoffIn(addMonths(month, -1), cutoffDay, zone), thisCutoff]
+      : [thisCutoff, cutoffIn(addMonths(month, 1), cutoffDay, zone)]
+  return { start: addDays(startCutoff, 1, zone), end: addDays(endCutoff, 1, zone) }
 }
 
 /**
  * The last cutoff before `due`'s day: the statement a payment due that day settles (iOS
  * `BillingCycle.statementCutoff`). Cutoff 20 and due day 10 pay on Nov 10 what closed on Oct 20.
  */
-export function statementCutoff(due: Date, cutoffDay: number): Date {
-  const month = yearMonthContaining(due)
-  const candidate = cutoffIn(month, cutoffDay)
-  return candidate.getTime() < startOfDay(due).getTime() ? candidate : cutoffIn(addMonths(month, -1), cutoffDay)
+export function statementCutoff(due: Date, cutoffDay: number, zone: TimeZone): Date {
+  const month = yearMonthContaining(due, zone)
+  const candidate = cutoffIn(month, cutoffDay, zone)
+  return candidate.getTime() < startOfDay(due, zone).getTime() ? candidate : cutoffIn(addMonths(month, -1), cutoffDay, zone)
 }
 
 /** The next date (today included) that falls on `day` of a month, clamped like cutoffs. */
-export function nextOccurrence(day: number, onOrAfter: Date): Date {
-  const today = startOfDay(onOrAfter)
-  const month = yearMonthContaining(onOrAfter)
-  const candidate = cutoffIn(month, day)
-  return candidate.getTime() >= today.getTime() ? candidate : cutoffIn(addMonths(month, 1), day)
+export function nextOccurrence(day: number, onOrAfter: Date, zone: TimeZone): Date {
+  const today = startOfDay(onOrAfter, zone)
+  const month = yearMonthContaining(onOrAfter, zone)
+  const candidate = cutoffIn(month, day, zone)
+  return candidate.getTime() >= today.getTime() ? candidate : cutoffIn(addMonths(month, 1), day, zone)
 }
 
 // Subscriptions: a charge in the "Subscriptions" category, or the same description in two months.
@@ -297,14 +310,14 @@ const serviceKey = (description: string) => folded(description.trim())
  * Of one card's charges, the folded descriptions that look like a service: in the Subscriptions
  * category, or charged in two different months.
  */
-function serviceKeys(charges: readonly Transaction[]): Set<string> {
+function serviceKeys(charges: readonly Transaction[], zone: TimeZone): Set<string> {
   const months = new Map<string, Set<string>>()
   const inCategory = new Set<string>()
   for (const transaction of charges) {
     const key = serviceKey(transaction.description)
     if (key === "") continue
     const set = months.get(key) ?? new Set<string>()
-    set.add(monthKey(yearMonthContaining(dateOf(transaction))))
+    set.add(monthKey(yearMonthContaining(dateOf(transaction), zone)))
     months.set(key, set)
     if (transaction.categoryId === SUBSCRIPTIONS_CATEGORY_ID) inCategory.add(key)
   }
@@ -315,9 +328,9 @@ function serviceKeys(charges: readonly Transaction[]): Set<string> {
  * The services charged to a card: the heuristic over its movements, then the subscription rules paid
  * with it, each name once (folded).
  */
-export function subscriptionsCharged(cardId: string, transactions: readonly Transaction[], rules: readonly RecurringRule[] = []): string[] {
+export function subscriptionsCharged(cardId: string, transactions: readonly Transaction[], zone: TimeZone, rules: readonly RecurringRule[] = []): string[] {
   const charges = transactions.filter((transaction) => transaction.cardId === cardId && isCharge(transaction))
-  const services = serviceKeys(charges)
+  const services = serviceKeys(charges, zone)
   const latest = new Map<string, { date: number; description: string }>()
   for (const transaction of charges) {
     const key = serviceKey(transaction.description)
@@ -351,7 +364,7 @@ function newerFirst(a: Transaction, b: Transaction): number {
  * recorded grouped by that rule, and the rest grouped by card and description when
  * `subscriptionsCharged` would recognize them as a service. Planned movements don't count.
  */
-export function chargeHistories(transactions: readonly Transaction[]): Transaction[][] {
+export function chargeHistories(transactions: readonly Transaction[], zone: TimeZone): Transaction[][] {
   const groups = new Map<string, Transaction[]>()
   const byCard = new Map<string, Transaction[]>()
   const add = (map: Map<string, Transaction[]>, key: string, transaction: Transaction) => map.set(key, [...(map.get(key) ?? []), transaction])
@@ -361,7 +374,7 @@ export function chargeHistories(transactions: readonly Transaction[]): Transacti
     else if (transaction.cardId) add(byCard, transaction.cardId, transaction)
   }
   for (const [cardId, charges] of byCard) {
-    const services = serviceKeys(charges)
+    const services = serviceKeys(charges, zone)
     for (const transaction of charges) {
       const key = serviceKey(transaction.description)
       if (services.has(key)) add(groups, `card-${cardId}-${key}`, transaction)
@@ -388,13 +401,13 @@ export interface PriceIncrease {
  * Each service (`chargeHistories`) whose newest charge costs more than the one before it, in the
  * same currency, and happened within `PRICE_INCREASE_RECENT_DAYS` of `now`. Newest first.
  */
-export function priceIncreases(transactions: readonly Transaction[], now: Date = new Date()): PriceIncrease[] {
-  const since = addDays(startOfDay(now), -PRICE_INCREASE_RECENT_DAYS).getTime()
+export function priceIncreases(transactions: readonly Transaction[], zone: TimeZone, now: Date = new Date()): PriceIncrease[] {
+  const since = addDays(startOfDay(now, zone), -PRICE_INCREASE_RECENT_DAYS, zone).getTime()
   const found: PriceIncrease[] = []
-  for (const history of chargeHistories(transactions)) {
+  for (const history of chargeHistories(transactions, zone)) {
     const [newest, previous] = history
     if (!newest || !previous || newest.currency !== previous.currency) continue
-    if (!dec(newest.amount).gt(dec(previous.amount)) || startOfDay(dateOf(newest)).getTime() < since) continue
+    if (!dec(newest.amount).gt(dec(previous.amount)) || startOfDay(dateOf(newest), zone).getTime() < since) continue
     found.push({
       transactionId: newest.id,
       name: newest.description,
@@ -416,8 +429,8 @@ export function scopeIncludes(scope: TransactionScope, transaction: Transaction)
 
 // Card expiry: works through the last day of its month; reminder on the first of that month.
 
-export function expiryReminderDay(expiry: { month: number; year: number }): Date {
-  return new Date(expiry.year, expiry.month - 1, 1)
+export function expiryReminderDay(expiry: { month: number; year: number }, zone: TimeZone): Date {
+  return zonedDate(zone, expiry.year, expiry.month, 1)
 }
 
 export function compareExpiry(a: { month: number; year: number }, b: { month: number; year: number }): number {

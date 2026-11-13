@@ -1,17 +1,27 @@
 import {
+  amountInRange,
+  amountRangeError,
   balanceOf,
   budgetStatuses,
+  dayKey,
+  dec,
+  debtDueStatus,
   inSecondCurrency,
   lastMonths,
   monthlySummary,
   netWorth,
+  normalizedTag,
+  normalizedTags,
+  originMatches,
   savings,
   trendReport,
-  upcoming,
+  upcomingPayments,
   yearMonth,
   yearMonthContaining,
+  type AmountRange,
   type Ledger,
   type Money,
+  type TransactionOrigin,
   type YearMonth,
 } from "../domain/domain"
 import type { Transaction } from "../domain/schema"
@@ -31,10 +41,11 @@ export interface MoneyJSON {
 const amountText = (value: Money["amount"]) => value.toDecimalPlaces(2).toString()
 const money = (value: Money): MoneyJSON => ({ amount: amountText(value.amount), currency: value.currency })
 const monthText = (value: YearMonth) => `${value.year}-${String(value.month).padStart(2, "0")}`
-const day = (date: Date) => date.toISOString().slice(0, 10)
+// Days are the person's calendar day in their home zone (`ledger.timeZone`), the same one the
+// monthly summary groups by, never the UTC day of `toISOString`.
 
-export function parseMonth(text: string | undefined, now: Date): YearMonth {
-  if (!text) return yearMonthContaining(now)
+export function parseMonth(text: string | undefined, now: Date, zone: string): YearMonth {
+  if (!text) return yearMonthContaining(now, zone)
   const match = /^(\d{4})-(\d{2})$/.exec(text)
   const parsed = match ? yearMonth(Number(match[1]), Number(match[2])) : undefined
   if (!parsed) throw new Error("month must be YYYY-MM")
@@ -51,7 +62,9 @@ export function listAccounts(ledger: Ledger) {
     name: account.name,
     bank: account.bank ?? null,
     kind: account.kind,
-    balances: balanceOf(account, ledger.transactions).map(money),
+    balances: balanceOf(account, ledger.transactions, ledger.timeZone).map(money),
+    /** When it was closed, null while open: a closed account keeps its history (close_account). */
+    closed_at: account.closedAt ?? null,
     credit: account.creditTerms
       ? { limit: account.creditTerms.limit ?? null, cutoff_day: account.creditTerms.cutoffDay ?? null, due_day: account.creditTerms.dueDay ?? null }
       : null,
@@ -64,10 +77,10 @@ export function listAccounts(ledger: Ledger) {
 export function getNetWorth(ledger: Ledger) {
   const currencies = ledger.settings.currencies
   const perAccount = ledger.accounts.map((account) => {
-    const balances = balanceOf(account, ledger.transactions)
+    const balances = balanceOf(account, ledger.transactions, ledger.timeZone)
     return { account_id: account.id, name: account.name, kind: account.kind, total: money(netWorth(balances, currencies)) }
   })
-  const total = netWorth(ledger.accounts.flatMap((account) => balanceOf(account, ledger.transactions)), currencies)
+  const total = netWorth(ledger.accounts.flatMap((account) => balanceOf(account, ledger.transactions, ledger.timeZone)), currencies)
   const second = inSecondCurrency(total, currencies)
   return {
     currency: currencies.principal,
@@ -80,7 +93,7 @@ export function getNetWorth(ledger: Ledger) {
 
 export function getMonthlySummary(ledger: Ledger, month: YearMonth) {
   const currency = ledger.settings.currencies.principal
-  const summary = monthlySummary(month, ledger.transactions, currency)
+  const summary = monthlySummary(month, ledger.transactions, currency, ledger.timeZone)
   return {
     month: monthText(month),
     currency,
@@ -106,7 +119,7 @@ export function getMonthlySummary(ledger: Ledger, month: YearMonth) {
 
 export function getTrends(ledger: Ledger, months: number, now: Date) {
   const currency = ledger.settings.currencies.principal
-  const report = trendReport(ledger.transactions, currency, lastMonths(months, now), now)
+  const report = trendReport(ledger.transactions, currency, lastMonths(months, now, ledger.timeZone), ledger.timeZone, now)
   return {
     currency,
     months: report.months.map((month) => ({
@@ -118,36 +131,39 @@ export function getTrends(ledger: Ledger, months: number, now: Date) {
   }
 }
 
+/**
+ * What's pending from the domain's `upcomingPayments`, the list the apps' Home reads: drafts to
+ * confirm, recurring movements, card payments and loan installments, overdue first. Every entry
+ * has its `id` (the same on every platform), `status` and `days_from_today`; amounts stay in their
+ * own currency (a card's is in the principal one) and are never added up.
+ */
 export function getUpcomingPayments(ledger: Ledger, days: number, now: Date) {
-  const recurring = upcoming(ledger.recurringRules, now, days).map((entry) => ({
-    type: "recurring" as const,
-    date: day(entry.date),
-    name: entry.rule.name,
-    kind: entry.rule.kind,
-    amount: { amount: entry.rule.amount, currency: entry.rule.currency },
-    is_subscription: entry.rule.isSubscription,
-    rule_id: entry.rule.id,
-  }))
-  const until = new Date(now.getTime() + days * 86_400_000)
-  const cards = ledger.accounts.flatMap((account) => {
-    const terms = account.creditTerms
-    if (!terms?.dueDay) return []
-    const due = nextDay(now, terms.dueDay)
-    if (due > until) return []
-    return [{ type: "card_due" as const, date: day(due), name: account.name, account_id: account.id, cutoff_day: terms.cutoffDay ?? null, due_day: terms.dueDay }]
+  const zone = ledger.timeZone
+  const day = (date: Date) => dayKey(date, zone)
+  const payments = upcomingPayments(ledger, now, days).map((payment) => {
+    const base = { id: payment.id, date: day(payment.date), status: payment.status, days_from_today: payment.daysFromToday, amount: money(payment.amount) }
+    switch (payment.kind) {
+      case "draft": {
+        const { transaction } = payment
+        return { ...base, type: "draft" as const, name: transaction.description, kind: transaction.kind, transaction_id: transaction.id, rule_id: transaction.recurringId ?? null }
+      }
+      case "recurring": {
+        const { rule } = payment
+        return { ...base, type: "recurring" as const, name: rule.name, kind: rule.kind, is_subscription: rule.isSubscription, rule_id: rule.id }
+      }
+      case "card": {
+        const account = ledger.accounts.find((candidate) => candidate.id === payment.accountId)
+        return { ...base, type: "card_due" as const, name: account?.name ?? "", account_id: payment.accountId, cutoff_day: account?.creditTerms?.cutoffDay ?? null, due_day: payment.dueDay }
+      }
+      case "installment": {
+        const loan = ledger.loans.find((candidate) => candidate.id === payment.loanId)
+        return { ...base, type: "loan_installment" as const, name: loan?.name ?? "", loan_id: payment.loanId, number: payment.number, count: payment.count }
+      }
+      case "debt":
+        return { ...base, type: "personal_debt" as const, name: payment.person, debt_id: payment.debtId, direction: payment.direction }
+    }
   })
-  return { from: day(now), days, payments: [...recurring, ...cards].sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0)) }
-}
-
-function nextDay(now: Date, dayOfMonth: number): Date {
-  for (let offset = 0; offset < 2; offset++) {
-    const year = now.getFullYear()
-    const month = now.getMonth() + offset
-    const last = new Date(year, month + 1, 0).getDate()
-    const candidate = new Date(year, month, Math.min(dayOfMonth, last), 12)
-    if (candidate >= new Date(now.getFullYear(), now.getMonth(), now.getDate())) return candidate
-  }
-  return new Date(now.getFullYear(), now.getMonth() + 1, dayOfMonth, 12)
+  return { from: day(now), days, payments }
 }
 
 export interface TransactionSearch {
@@ -159,14 +175,52 @@ export interface TransactionSearch {
   currency?: string
   text?: string
   status?: "confirmed" | "planned"
+  /** Positive decimal text, inclusive, in the principal currency at each movement's own rate. */
+  min_amount?: string
+  max_amount?: string
+  /** Movements carrying all of them, compared normalized ("#Boda" is "boda"). */
+  tags?: string[]
+  /** Movements a recurring rule recorded; kept even once the rule is deleted. */
+  recurring_rule_id?: string
+  /** Movements of rules that are subscriptions today. */
+  subscriptions_only?: boolean
   limit: number
   cursor?: number
 }
 
+/** The tags asked for, normalized as stored; one that normalizes to nothing is an error. */
+function searchedTags(tags: readonly string[] | undefined): string[] | undefined {
+  if (tags === undefined) return undefined
+  const normalized = tags.map(normalizedTag)
+  if (normalized.length === 0 || normalized.some((tag) => tag === undefined)) throw new Error("tags must not be empty")
+  return normalizedTags(normalized as string[])
+}
+
+function searchedRange(query: TransactionSearch): AmountRange | undefined {
+  if (query.min_amount === undefined && query.max_amount === undefined) return undefined
+  const range: AmountRange = {
+    ...(query.min_amount !== undefined ? { min: dec(query.min_amount) } : {}),
+    ...(query.max_amount !== undefined ? { max: dec(query.max_amount) } : {}),
+  }
+  if (amountRangeError(range)) throw new Error("min_amount must not exceed max_amount")
+  return range
+}
+
+function searchedOrigin(query: TransactionSearch): TransactionOrigin[] {
+  return [
+    ...(query.recurring_rule_id !== undefined ? [{ kind: "rule" as const, id: query.recurring_rule_id }] : []),
+    ...(query.subscriptions_only ? [{ kind: "subscriptions" as const }] : []),
+  ]
+}
+
 export function searchTransactions(ledger: Ledger, query: TransactionSearch) {
   const text = query.text?.toLocaleLowerCase()
+  const tags = searchedTags(query.tags)
+  const range = searchedRange(query)
+  const origins = searchedOrigin(query)
+  const principal = ledger.settings.currencies.principal
   const matches = ledger.transactions.filter((transaction: Transaction) => {
-    const date = transaction.date.slice(0, 10)
+    const date = dayKey(new Date(transaction.date), ledger.timeZone)
     if (query.from && date < query.from) return false
     if (query.to && date > query.to) return false
     if (query.account_id && transaction.accountId !== query.account_id && transaction.destinationAccountId !== query.account_id) return false
@@ -175,6 +229,9 @@ export function searchTransactions(ledger: Ledger, query: TransactionSearch) {
     if (query.currency && transaction.currency !== query.currency.toUpperCase()) return false
     if (query.status && transaction.status !== query.status) return false
     if (text && !`${transaction.description} ${transaction.note ?? ""} ${(transaction.tags ?? []).join(" ")}`.toLocaleLowerCase().includes(text)) return false
+    if (range && !amountInRange(transaction, range, principal)) return false
+    if (tags && !tags.every((tag) => (transaction.tags ?? []).includes(tag))) return false
+    if (!origins.every((origin) => originMatches(transaction, origin, ledger.recurringRules))) return false
     return true
   })
   const start = query.cursor ?? 0
@@ -182,6 +239,8 @@ export function searchTransactions(ledger: Ledger, query: TransactionSearch) {
   return {
     total_matches: matches.length,
     next_cursor: start + page.length < matches.length ? start + page.length : null,
+    // Echoed only with a range, so the model knows which currency the bounds were read in.
+    ...(range ? { amount_currency: principal } : {}),
     transactions: page.map((transaction) => ({
       id: transaction.id,
       date: transaction.date,
@@ -195,6 +254,7 @@ export function searchTransactions(ledger: Ledger, query: TransactionSearch) {
       account_id: transaction.accountId,
       destination_account_id: transaction.destinationAccountId ?? null,
       tags: transaction.tags ?? [],
+      recurring_rule_id: transaction.recurringId ?? null,
       recorded_by: transaction.source === "mcp" ? "mcp" : "app",
     })),
   }
@@ -203,13 +263,18 @@ export function searchTransactions(ledger: Ledger, query: TransactionSearch) {
 /** One call instead of five: what a model needs to start a conversation about money. */
 export function getFinancialContext(ledger: Ledger, now: Date) {
   const worth = getNetWorth(ledger)
-  const month = getMonthlySummary(ledger, yearMonthContaining(now))
+  const month = getMonthlySummary(ledger, yearMonthContaining(now, ledger.timeZone))
   return {
-    today: day(now),
+    today: dayKey(now, ledger.timeZone),
+    /** The home zone "today" and months are read in (settings, else the latest device, else the default). */
+    time_zone: ledger.timeZone,
     currencies: worth.rate ?? { principal: worth.currency },
     net_worth: worth.net_worth,
     net_worth_in_second_currency: worth.net_worth_in_second_currency,
-    accounts: listAccounts(ledger).map(({ id, name, kind, balances }) => ({ id, name, kind, balances })),
+    // Open accounts only; list_accounts also has the closed ones, for their history.
+    accounts: listAccounts(ledger)
+      .filter((account) => account.closed_at === null)
+      .map(({ id, name, kind, balances }) => ({ id, name, kind, balances })),
     this_month: { month: month.month, income: month.income, expense: month.expense, net: month.net, top_spending: month.spending_by_category.slice(0, 5), budgets: month.budgets },
     upcoming_14_days: getUpcomingPayments(ledger, 14, now).payments,
     pending_confirmation: ledger.transactions.filter((t) => t.status === "planned").length,
@@ -285,18 +350,26 @@ export function listLoans(ledger: Ledger) {
   }
 }
 
-export function listPersonalDebts(ledger: Ledger) {
+/** Where each debt's due date stands today in the person's zone: `null` without one, or once settled or paid. */
+export function listPersonalDebts(ledger: Ledger, now: Date) {
   return {
-    debts: ledger.personalDebts.map((debt) => ({
-      id: debt.id,
-      person: debt.person,
-      direction: debt.direction,
-      amount: debt.amount,
-      date: debt.date,
-      note: debt.note ?? null,
-      repayments: debt.repayments.map((repayment) => ({ amount: repayment.amount, date: repayment.date })),
-      settled_at: debt.settledAt ?? null,
-    })),
+    debts: ledger.personalDebts.map((debt) => {
+      const due = debtDueStatus(debt, now, ledger.timeZone)
+      return {
+        id: debt.id,
+        person: debt.person,
+        direction: debt.direction,
+        amount: debt.amount,
+        date: debt.date,
+        note: debt.note ?? null,
+        repayments: debt.repayments.map((repayment) => ({ amount: repayment.amount, date: repayment.date })),
+        settled_at: debt.settledAt ?? null,
+        due_date: debt.dueDate ? dayKey(new Date(debt.dueDate), ledger.timeZone) : null,
+        due_status: due?.state ?? null,
+        ...(due?.state === "upcoming" ? { days_left: due.daysLeft } : {}),
+        ...(due?.state === "overdue" ? { days_late: due.daysLate } : {}),
+      }
+    }),
   }
 }
 
