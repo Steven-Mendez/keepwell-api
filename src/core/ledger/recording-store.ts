@@ -146,6 +146,21 @@ export class RecordingStore extends InMemoryStore implements LedgerStore {
     }
   }
 
+  private readonly merchantAliases = new Map<string, string>()
+
+  /**
+   * Makes `alias`, an id a client chose for a merchant that turned out to exist already, name that
+   * merchant for the rest of the run, so later steps of a batch can still use it.
+   */
+  aliasMerchant(alias: string, id: string) {
+    if (alias !== id) this.merchantAliases.set(alias, id)
+  }
+
+  /** The merchant id `id` stands for in this run (itself unless it is an alias). */
+  merchantId(id: string): string {
+    return this.merchantAliases.get(id) ?? id
+  }
+
   override async saveSettings(settings: Settings) {
     await super.saveSettings(settings)
     this.touch("settings", "settings")

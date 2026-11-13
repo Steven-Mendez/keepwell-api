@@ -57,7 +57,15 @@ describe("MCP merchants", () => {
     const merchants = async () => (await ok<{ merchants: Merchant[] }>("list_merchants")).merchants
     const search = async (args: Record<string, unknown> = {}) => (await ok<{ transactions: Found[] }>("search_transactions", args)).transactions
     const row = async (table: string, id: string) => (await admin.db.execute(sql.raw(`select * from ${table} where id = '${id}'`))).rows[0] as Record<string, unknown>
-    return { call, tool, ok, accountId: account.result.account_id, merchants, search, row }
+    // Another device deleting a merchant, without relinking what names it.
+    const tombstone = async (merchant: { id: string; name: string }) => {
+      const now = new Date().toISOString()
+      const pushed = await syncClient(harness.app, cookie).push([
+        event("merchant", { id: merchant.id, name: merchant.name, domain: null, brand_id: null, default_category_id: null, is_platform: false, created_at: at, updated_at: now, deleted_at: now }),
+      ])
+      expect(pushed.body.results.map((result) => result.status)).toEqual(["applied"])
+    }
+    return { call, tool, ok, accountId: account.result.account_id, merchants, search, row, tombstone }
   }
 
   it("offers the merchant tools, the destructive ones marked so", async () => {
@@ -144,6 +152,77 @@ describe("MCP merchants", () => {
     expect(await row("categorization_rules", categorization)).toMatchObject({ match: "netflix.com", merchant_id: netflix })
     await ok("update_categorization_rule", { rule_id: categorization, match: "netflix.com", category_id: "subscriptions", kind: "expense", merchant_id: null })
     expect(await row("categorization_rules", categorization)).toMatchObject({ merchant_id: null })
+  })
+
+  it("lets a later step use the id create_merchant was given when the merchant already existed, and fills what it lacked", async () => {
+    const { ok, accountId, row } = await setup()
+    const uber = randomUUID()
+    await ok("create_merchant", { id: uber, name: "Uber Eats", default_category_id: "groceries" })
+    const alias = randomUUID()
+    const movement = randomUUID()
+    const rule = randomUUID()
+    const applied = await ok<{ results: Record<string, unknown>[] }>("apply_changes", {
+      changes: [
+        { tool: "create_merchant", arguments: { id: alias, name: "Uber Eats", domain: "ubereats.com", default_category_id: "restaurants", is_platform: true } },
+        { tool: "create_transaction", arguments: { id: movement, kind: "expense", amount: "12", currency: "USD", account_id: accountId, category_id: "restaurants", description: "Cena", date: "2026-10-02", merchant_id: alias } },
+        { tool: "create_recurring_rule", arguments: { id: rule, kind: "expense", amount: "5", currency: "USD", account_id: accountId, category_id: "restaurants", name: "Uber One", frequency: "monthly", start_date: "2026-12-01", via_merchant_id: alias } },
+      ],
+    })
+    expect(applied.results[0]).toMatchObject({ tool: "create_merchant", merchant_id: uber, already_existed: true })
+    expect(await row("transactions", movement)).toMatchObject({ merchant_id: uber })
+    expect(await row("recurring_rules", rule)).toMatchObject({ via_merchant_id: uber })
+    // The missing domain is filled; the default category it had stays.
+    expect(await row("merchants", uber)).toMatchObject({ name: "Uber Eats", domain: "ubereats.com", default_category_id: "groceries" })
+    expect(await row("merchants", alias)).toBeUndefined()
+  })
+
+  it("refuses merchants on a transfer instead of creating one it would drop", async () => {
+    const { ok, tool, accountId, merchants } = await setup()
+    const savings = (await ok<{ result: { account_id: string } }>("create_account", { id: randomUUID(), kind: "cash", name: "Ahorro", balance: "0", currency: "USD" })).result.account_id
+    const uber = randomUUID()
+    await ok("create_merchant", { id: uber, name: "Uber Eats" })
+    const transfer = { kind: "transfer", amount: "10", currency: "USD", account_id: accountId, destination_account_id: savings, description: "Ahorro", date: "2026-10-02" }
+    for (const links of [{ merchant: "Banco" }, { merchant_id: uber }, { via_merchant_id: uber }]) {
+      const refused = await tool("create_transaction", { id: randomUUID(), ...transfer, ...links })
+      expect(refused.isError, JSON.stringify(links)).toBe(true)
+      expect(JSON.parse(refused.content[0]!.text)).toMatchObject({ error: "invalid" })
+    }
+    expect((await merchants()).map((merchant) => merchant.name)).toEqual(["Uber Eats"])
+    await ok("create_transaction", { id: randomUUID(), ...transfer })
+  })
+
+  it("keeps a categorization rule editable when its merchant was deleted elsewhere", async () => {
+    const { ok, row, tombstone } = await setup()
+    const netflix = randomUUID()
+    const rule = randomUUID()
+    await ok("create_merchant", { id: netflix, name: "Netflix" })
+    await ok("create_categorization_rule", { id: rule, match: "netflix", category_id: "subscriptions", kind: "expense", merchant_id: netflix })
+    await tombstone({ id: netflix, name: "Netflix" })
+    expect(await row("categorization_rules", rule)).toMatchObject({ merchant_id: netflix })
+
+    await ok("update_categorization_rule", { rule_id: rule, match: "netflix.com", category_id: "subscriptions", kind: "expense" })
+    expect(await row("categorization_rules", rule)).toMatchObject({ match: "netflix.com", merchant_id: null })
+  })
+
+  it("restores movements and recurring payments without links to merchants deleted since", async () => {
+    const { ok, accountId, row, tombstone } = await setup()
+    const subway = randomUUID()
+    const uber = randomUUID()
+    await ok("create_merchant", { id: subway, name: "Subway" })
+    await ok("create_merchant", { id: uber, name: "Uber Eats", is_platform: true })
+    const movement = randomUUID()
+    const rule = randomUUID()
+    await ok("create_transaction", { id: movement, kind: "expense", amount: "5", currency: "USD", account_id: accountId, description: "Sub", date: "2026-10-02", merchant_id: subway, via_merchant_id: uber })
+    await ok("create_recurring_rule", { id: rule, kind: "expense", amount: "9", currency: "USD", account_id: accountId, category_id: "restaurants", name: "Sub semanal", frequency: "monthly", start_date: "2026-12-01", merchant_id: subway, via_merchant_id: uber })
+    const movementTrash = await ok<{ changes: { trash_id: string } }>("delete_transaction", { transaction_id: movement })
+    const ruleTrash = await ok<{ changes: { trash_id: string } }>("delete_recurring_rule", { rule_id: rule })
+    // Subway goes for good while they are in the trash (another device, or delete_merchant: neither relinks deleted rows).
+    await tombstone({ id: subway, name: "Subway" })
+
+    const restoredMovement = await ok<{ new_ids: Record<string, string> }>("restore_deleted", { trash_id: movementTrash.changes.trash_id })
+    expect(await row("transactions", restoredMovement.new_ids[movement]!)).toMatchObject({ description: "Sub", deleted_at: null, merchant_id: null, via_merchant_id: uber })
+    const restoredRule = await ok<{ new_ids: Record<string, string> }>("restore_deleted", { trash_id: ruleTrash.changes.trash_id })
+    expect(await row("recurring_rules", restoredRule.new_ids[rule]!)).toMatchObject({ name: "Sub semanal", deleted_at: null, merchant_id: null, via_merchant_id: uber })
   })
 
   it("merges and deletes merchants, relinking what named them, and restore_deleted undoes it", async () => {

@@ -107,17 +107,34 @@ function find<T extends { id: string }>(list: readonly T[], id: string, what: st
   return found
 }
 
+/**
+ * One of the person's merchants by id, or by the id an earlier `create_merchant` of the same batch
+ * chose for a merchant that already existed.
+ */
+function findMerchant(store: RecordingStore, id: string) {
+  return find(store.merchants, store.merchantId(id), "Merchant")
+}
+
 /** A merchant link as given (`null` removes it), once the merchant is known to be the person's. */
 function merchantLink<T extends string | null | undefined>(store: RecordingStore, id: T): T {
-  if (typeof id === "string") find(store.merchants, id, "Merchant")
-  return id
+  return (typeof id === "string" ? findMerchant(store, id).id : id) as T
+}
+
+/** `args` with its merchant links checked and pointing at the merchants they name. */
+function withMerchantLinks<T extends { merchant_id?: string | null | undefined; via_merchant_id?: string | null | undefined }>(store: RecordingStore, args: T): T {
+  return {
+    ...args,
+    ...(args.merchant_id === undefined ? {} : { merchant_id: merchantLink(store, args.merchant_id) }),
+    ...(args.via_merchant_id === undefined ? {} : { via_merchant_id: merchantLink(store, args.via_merchant_id) }),
+  }
 }
 
 /** The draft fields for the links a tool was given; left out, they stay as they are. */
 function merchantDraft(store: RecordingStore, args: { merchant_id?: string | null | undefined; via_merchant_id?: string | null | undefined }) {
+  const links = withMerchantLinks(store, args)
   return {
-    ...(args.merchant_id === undefined ? {} : { merchantId: merchantLink(store, args.merchant_id) }),
-    ...(args.via_merchant_id === undefined ? {} : { viaMerchantId: merchantLink(store, args.via_merchant_id) }),
+    ...(links.merchant_id === undefined ? {} : { merchantId: links.merchant_id }),
+    ...(links.via_merchant_id === undefined ? {} : { viaMerchantId: links.via_merchant_id }),
   }
 }
 
@@ -458,6 +475,8 @@ export function registerManageTools(server: McpServer, options: { manage: Manage
     (args) => args.id,
     async (store, args) => {
       if (args.merchant !== undefined && args.merchant_id !== undefined) throw new ManageError("invalid", "Give merchant or merchant_id, not both")
+      // A transfer names no merchant (the domain drops the links); refused before `merchant` creates one.
+      if (args.kind === "transfer" && (args.merchant !== undefined || args.merchant_id != null || args.via_merchant_id != null)) throw new ManageError("invalid", "A transfer names no merchant: leave out merchant, merchant_id and via_merchant_id")
       const merchantId = args.merchant !== undefined ? (await createMerchant(store, { name: args.merchant })).id : args.merchant_id
       const principal = ((await store.loadSettings())?.currencies ?? INITIAL_CURRENCIES).principal
       const debited = checkedActualDebited(args.actual_debited, args.currency, principal, (message) => new ManageError("invalid", message))
@@ -527,7 +546,9 @@ export function registerManageTools(server: McpServer, options: { manage: Manage
       const currency = args.currency ? args.currency.toUpperCase() : draft.currency
       // The bank's charge was for the old amount, currency and account: a change drops it unless given
       // again, as the domain's applicableDebit does for an edit in the apps.
-      const moved = (args.amount !== undefined && !dec(args.amount).eq(draft.amount)) || currency !== draft.currency || accountId !== existing.accountId
+      // The account it ends up in is the card's when it ends up paid by card.
+      const finalAccountId = cardId ? (store.cards.find((card) => card.id === cardId)?.accountId ?? accountId) : accountId
+      const moved = (args.amount !== undefined && !dec(args.amount).eq(draft.amount)) || currency !== draft.currency || finalAccountId !== existing.accountId
       // An edit keeps the rate it was recorded with, so its principal is the one that counts (as in the domain).
       const debited =
         args.actual_debited === null
@@ -674,8 +695,7 @@ export function registerManageTools(server: McpServer, options: { manage: Manage
     (args) => args.id,
     async (store, args, now) => {
       if (existing(store.recurringRules, args.id)) return { id: args.id, status: "saved", already_existed: true }
-      merchantDraft(store, args)
-      const rule = await saveRecurringRule(store, ruleDraft(args, store.timeZone), now)
+      const rule = await saveRecurringRule(store, ruleDraft(withMerchantLinks(store, args), store.timeZone), now)
       store.renameId(rule.id, args.id)
       return { id: args.id, status: "saved", next_date: rule.nextDate.slice(0, 10), name: rule.name }
     }
@@ -688,8 +708,7 @@ export function registerManageTools(server: McpServer, options: { manage: Manage
     (args) => JSON.stringify(args),
     async (store, args, now) => {
       find(store.recurringRules, args.rule_id, "Recurring payment")
-      merchantDraft(store, args)
-      const rule = await saveRecurringRule(store, ruleDraft(args, store.timeZone, args.rule_id), now)
+      const rule = await saveRecurringRule(store, ruleDraft(withMerchantLinks(store, args), store.timeZone, args.rule_id), now)
       return { id: rule.id, next_date: rule.nextDate.slice(0, 10) }
     }
   )
@@ -966,7 +985,10 @@ export function registerManageTools(server: McpServer, options: { manage: Manage
     (args) => JSON.stringify(args),
     async (store, args) => {
       const current = find(store.categorizationRules, args.rule_id, "Rule")
-      const merchantId = args.merchant_id === undefined ? current.merchantId : (merchantLink(store, args.merchant_id) ?? undefined)
+      // Left out, the stored merchant stays only while it exists: one deleted since is dropped, as the
+      // apps do, instead of refusing to save the rule.
+      const merchantId =
+        args.merchant_id === undefined ? (current.merchantId !== undefined && store.merchants.some((merchant) => merchant.id === current.merchantId) ? current.merchantId : undefined) : (merchantLink(store, args.merchant_id) ?? undefined)
       const rule = await saveCategorizationRule(store, { id: args.rule_id, match: args.match, categoryId: args.category_id, kind: args.kind, ...(args.tags ? { tags: args.tags } : {}), ...(merchantId ? { merchantId } : {}) })
       return { rule_id: rule.id }
     }
@@ -995,7 +1017,7 @@ export function registerManageTools(server: McpServer, options: { manage: Manage
     { id: newId, name: z.string().min(1).max(60), domain: merchantFields.domain.optional(), default_category_id: merchantFields.default_category_id.optional(), is_platform: merchantFields.is_platform.optional() },
     (args) => args.id,
     async (store, args) => {
-      if (existing(store.merchants, args.id)) return { merchant_id: args.id, already_existed: true }
+      if (existing(store.merchants, store.merchantId(args.id))) return { merchant_id: store.merchantId(args.id), already_existed: true }
       const before = new Set(store.merchants.map((merchant) => merchant.id))
       const merchant = await createMerchant(store, {
         name: args.name,
@@ -1003,7 +1025,25 @@ export function registerManageTools(server: McpServer, options: { manage: Manage
         ...(args.default_category_id ? { defaultCategoryId: args.default_category_id } : {}),
         ...(args.is_platform === undefined ? {} : { isPlatform: args.is_platform }),
       })
-      if (before.has(merchant.id)) return { merchant_id: merchant.id, name: merchant.name, already_existed: true }
+      if (before.has(merchant.id)) {
+        // The same merchant already exists: the caller's id names it for the rest of the batch, and
+        // it takes the domain and default category given where it has none (what it has stays).
+        store.aliasMerchant(args.id, merchant.id)
+        const domain = merchant.domain ?? args.domain
+        const category = merchant.defaultCategoryId ?? args.default_category_id
+        const filled =
+          domain === merchant.domain && category === merchant.defaultCategoryId
+            ? merchant
+            : await saveMerchant(store, {
+                id: merchant.id,
+                name: merchant.name,
+                ...(domain ? { domain } : {}),
+                ...(merchant.brandId ? { brandId: merchant.brandId } : {}),
+                ...(category ? { defaultCategoryId: category } : {}),
+                isPlatform: merchant.isPlatform,
+              })
+        return { merchant_id: filled.id, name: filled.name, already_existed: true, ...(filled === merchant ? {} : { domain: filled.domain ?? null, default_category_id: filled.defaultCategoryId ?? null }) }
+      }
       store.renameId(merchant.id, args.id)
       return { merchant_id: args.id, name: merchant.name, domain: merchant.domain ?? null }
     }
@@ -1021,7 +1061,7 @@ export function registerManageTools(server: McpServer, options: { manage: Manage
     },
     (args) => JSON.stringify(args),
     async (store, args) => {
-      const current = find(store.merchants, args.merchant_id, "Merchant")
+      const current = findMerchant(store, args.merchant_id)
       const domain = args.domain === undefined ? current.domain : (args.domain ?? undefined)
       const category = args.default_category_id === undefined ? current.defaultCategoryId : (args.default_category_id ?? undefined)
       const saved = await saveMerchant(store, {
@@ -1046,10 +1086,10 @@ export function registerManageTools(server: McpServer, options: { manage: Manage
     { from_merchant_id: ref("From list_merchants: the duplicate, deleted"), into_merchant_id: ref("From list_merchants: the one that stays") },
     (args) => `${args.from_merchant_id}|${args.into_merchant_id}`,
     async (store, args) => {
-      const merged = await mergeMerchants(store, args.from_merchant_id, args.into_merchant_id)
+      const merged = await mergeMerchants(store, store.merchantId(args.from_merchant_id), store.merchantId(args.into_merchant_id))
       return { merchant_id: merged.id, name: merged.name }
     },
-    (store, args) => `Merchant ${find(store.merchants, args.from_merchant_id, "Merchant").name} (merged into ${find(store.merchants, args.into_merchant_id, "Merchant").name})`
+    (store, args) => `Merchant ${findMerchant(store, args.from_merchant_id).name} (merged into ${findMerchant(store, args.into_merchant_id).name})`
   )
 
   tool(
@@ -1057,8 +1097,8 @@ export function registerManageTools(server: McpServer, options: { manage: Manage
     { title: "Delete a merchant", description: "Deletes a merchant; movements and rules that named it keep everything else and name no merchant, as in the app. Can be undone with restore_deleted.", annotations: DELETE },
     { merchant_id: ref("From list_merchants") },
     (args) => args.merchant_id,
-    async (store, args) => deleteMerchant(store, args.merchant_id),
-    (store, args) => `Merchant ${find(store.merchants, args.merchant_id, "Merchant").name}`
+    async (store, args) => deleteMerchant(store, store.merchantId(args.merchant_id)),
+    (store, args) => `Merchant ${findMerchant(store, args.merchant_id).name}`
   )
 
   // Settings -----------------------------------------------------------------------------------
