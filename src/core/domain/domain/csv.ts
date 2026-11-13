@@ -47,6 +47,22 @@ export function neutralizeCsvFormula(field: string): string {
   return /^[=+\-@\t\r]/.test(field) ? `'${field}` : field
 }
 
+/**
+ * A date or number field: its ISO day or exact decimal, or, when the stored value can't be read (a
+ * damaged row), the stored text itself, neutralized. The export is the way out of a ledger that no
+ * longer renders, so one bad row must not stop it.
+ */
+function readableOr(raw: string, read: (raw: string) => string): string {
+  try {
+    return read(raw)
+  } catch {
+    return neutralizeCsvFormula(raw)
+  }
+}
+
+const dayField = (raw: string, zone: TimeZone) => readableOr(raw, (text) => dayKey(new Date(text), zone))
+const decimalField = (raw: string) => readableOr(raw, (text) => decimalText(new Decimal(text)))
+
 export function exportCsv(
   transactions: readonly Transaction[],
   accounts: readonly Account[],
@@ -64,14 +80,14 @@ export function exportCsv(
   const rows = [...transactions]
     .sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0))
     .map((t) => [
-      dayKey(new Date(t.date), zone),
+      dayField(t.date, zone),
       t.status,
       t.kind,
       neutralizeCsvFormula(t.description),
       neutralizeCsvFormula(
         t.categoryId ? (categoryNames.get(t.categoryId) ?? t.categoryId) : ""
       ),
-      decimalText(new Decimal(t.amount)),
+      decimalField(t.amount),
       t.currency,
       neutralizeCsvFormula(accountNames.get(t.accountId) ?? ""),
       t.cardId ? (lastFour.get(t.cardId) ?? "") : "",
@@ -80,12 +96,8 @@ export function exportCsv(
           ? (accountNames.get(t.destinationAccountId) ?? "")
           : ""
       ),
-      t.actualDebitedPrincipal
-        ? decimalText(new Decimal(t.actualDebitedPrincipal))
-        : "",
-      rateHasSecondCurrency(t.exchangeRate)
-        ? decimalText(new Decimal(t.exchangeRate.rate))
-        : "",
+      t.actualDebitedPrincipal ? decimalField(t.actualDebitedPrincipal) : "",
+      rateHasSecondCurrency(t.exchangeRate) ? decimalField(t.exchangeRate.rate) : "",
       t.isShared ? "yes" : "no",
       neutralizeCsvFormula(t.note ?? ""),
       neutralizeCsvFormula(tagsCsvField(t.tags ?? [])),
