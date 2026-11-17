@@ -78,6 +78,16 @@ export function firstOccurrence(rule: Schedule, onOrAfter: Date, zone: TimeZone)
   return occurrence(rule, firstIndexOnOrAfter(rule, onOrAfter, zone), zone)
 }
 
+/**
+ * The cycle that ends at the first occurrence on or after `date`: that occurrence and the one before
+ * it. Before the rule's start the earlier one is a step behind the anchor, so a rule that hasn't
+ * started yet still has a cycle a payment can fall in.
+ */
+export function cycleEndingAt(rule: Schedule, date: Date, zone: TimeZone): { start: Date; end: Date } {
+  const index = firstIndexOnOrAfter(rule, date, zone)
+  return { start: occurrence(rule, index - 1, zone), end: occurrence(rule, index, zone) }
+}
+
 /** Whether `date` falls after the rule's last day. */
 function isPastEnd(rule: Pick<RecurringRule, "endDate">, date: Date, zone: TimeZone): boolean {
   return rule.endDate !== undefined && isAfterDay(date, new Date(rule.endDate), zone)
@@ -154,9 +164,9 @@ export function occurrenceTransaction(rule: RecurringRule, date: Date, context: 
 const occurrenceKey = (ruleId: string, date: Date, zone: TimeZone) => `${ruleId} ${dayKey(date, zone)}`
 
 /** How far a manual payment's amount may be from the rule's: 7.5 % either way. */
-const MANUAL_PAYMENT_TOLERANCE = dec("0.075")
+export const MANUAL_PAYMENT_TOLERANCE = dec("0.075")
 /** How many calendar days before the occurrence a manual payment still counts for it. */
-const MANUAL_PAYMENT_DAYS_BEFORE = 2
+export const MANUAL_PAYMENT_DAYS_BEFORE = 2
 
 /**
  * The movement that already pays this occurrence, if any: typed by hand (or linked to this rule)
@@ -201,7 +211,8 @@ const byId = (a: { id: string }, b: { id: string }) => (a.id < b.id ? -1 : a.id 
  * Saves the movements every active rule owes up to today (at most the latest 12 per rule), skipping
  * an occurrence that already has a movement from the rule that day or that a manual payment already
  * covers (`manualPaymentFor`; rules claim payments in id order), and moves each rule's `nextDate`
- * past what it owed. One atomic save; reads happen inside it so two runs (two tabs, load and
+ * past what it owed. A manual payment that covers an occurrence is linked to the rule, so the rule's
+ * history shows it and the rule reads as paid. One atomic save; reads happen inside it so two runs (two tabs, load and
  * focus) can't both create the same movement. A rule that no longer validates (its category or
  * currency is gone) is left as it was. Returns the movements created.
  */
@@ -215,6 +226,7 @@ export async function materializeRecurring(store: LedgerStore, today: Date = new
     const knownIds = new Set(context.transactions.map((transaction) => transaction.id))
     const paid = new Set<string>()
     const created: Transaction[] = []
+    const linked = new Map<string, Transaction>()
     const advanced: RecurringRule[] = []
     for (const rule of [...rules].sort(byId)) {
       const owed = dueOccurrences(rule, today, zone)
@@ -230,6 +242,7 @@ export async function materializeRecurring(store: LedgerStore, today: Date = new
             if (!payment) return true
             paid.add(payment.id)
             claimed.push(payment.id)
+            if (payment.recurringId !== rule.id) linked.set(payment.id, { ...payment, recurringId: rule.id })
             return false
           })
           .map((entry) => occurrenceTransaction(rule, entry.date, context, entry.index))
@@ -237,12 +250,16 @@ export async function materializeRecurring(store: LedgerStore, today: Date = new
         created.push(...movements)
       } catch {
         // The rule stays as it was, so the payments it matched are free for the next rule.
-        for (const id of claimed) paid.delete(id)
+        for (const id of claimed) {
+          paid.delete(id)
+          linked.delete(id)
+        }
         continue
       }
       advanced.push({ ...rule, nextDate: occurrence(rule, last.index + 1, zone).toISOString() })
     }
     for (const movement of created) await store.saveTransaction(movement)
+    for (const movement of linked.values()) await store.saveTransaction(movement)
     for (const rule of advanced) await store.saveRecurringRule(rule)
     return created
   })

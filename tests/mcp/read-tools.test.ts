@@ -233,6 +233,13 @@ describe("MCP read tools", () => {
     expect(data.payments).toEqual([expect.objectContaining({ id: `recurring:${RULE}:2026-12-01`, type: "recurring", status: "upcoming", days_from_today: 16, amount: { amount: "450", currency: "USD" } })])
   })
 
+  it("says where each recurring payment stands: paid by the occurrence it recorded, and the days to the next", async () => {
+    const { mcp } = await connected()
+    const { data } = await mcp.tool("list_recurring_rules")
+    const id = occurrenceId({ id: RULE, startDate: "2026-10-01T15:00:00.000Z", frequency: "monthly", interval: 1 }, 1)
+    expect(data.rules).toEqual([expect.objectContaining({ id: RULE, next_date: "2026-12-01T15:00:00.000Z", payment_state: "paid", days_until_next: 16, draft_transaction_id: null, current_payment: expect.objectContaining({ transaction_id: id }), last_payment: expect.objectContaining({ transaction_id: id, amount: { amount: "450", currency: "USD" } }) })])
+  })
+
   it("answers 401 with WWW-Authenticate without credentials, and 403 needs_plan without the coffee", async () => {
     const { app: http } = testAuthApp(app.db)
     const anonymous = await mcpClient(http, {}).initialize()

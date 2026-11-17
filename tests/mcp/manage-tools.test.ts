@@ -169,6 +169,31 @@ describe("MCP manage tools", () => {
     expect(pulled).toEqual(expect.arrayContaining(["account", "transaction", "settings"]))
   })
 
+  it("links a movement to a recurring payment, which then reads as paid, and unlinks it", async () => {
+    const { tool, data } = await setup()
+    const accountId = data<{ result: { account_id: string } }>(await tool("create_account", { id: randomUUID(), kind: "cash", name: "Efectivo", balance: "100", currency: "USD" })).result.account_id
+    const [ruleId, paid, income] = [randomUUID(), randomUUID(), randomUUID()]
+    const today = new Date()
+    const inTwentyDays = new Date(today.getTime() + 20 * 86_400_000)
+    await tool("create_recurring_rule", { id: ruleId, kind: "expense", amount: "6.49", currency: "USD", account_id: accountId, category_id: "subscriptions", name: "Apple Music", frequency: "monthly", start_date: inTwentyDays.toISOString(), is_subscription: true, auto_confirm: false })
+    await tool("create_transaction", { id: paid, kind: "expense", amount: "6.49", currency: "USD", account_id: accountId, category_id: "subscriptions", description: "APPLE.COM/BILL", date: today.toISOString() })
+    await tool("create_transaction", { id: income, kind: "income", amount: "6.49", currency: "USD", account_id: accountId, category_id: "salary", description: "Reembolso", date: today.toISOString() })
+    type Listed = { rules: { id: string; payment_state: string; days_until_next: number; current_payment: { transaction_id: string } | null; last_payment: { transaction_id: string; amount: { amount: string } } | null }[] }
+    const rule = async () => data<Listed>(await tool("list_recurring_rules")).rules.find((candidate) => candidate.id === ruleId)!
+
+    expect(await rule()).toMatchObject({ payment_state: "upcoming", days_until_next: 20, current_payment: null, last_payment: null })
+    expect((await tool("set_transaction_recurring_rule", { transaction_id: paid, rule_id: ruleId })).isError).toBeFalsy()
+    expect(await rule()).toMatchObject({ payment_state: "paid", days_until_next: 20, current_payment: { transaction_id: paid }, last_payment: { transaction_id: paid, amount: { amount: "6.49" } } })
+    expect((await admin.db.execute(sql`select recurring_id from transactions where id = ${paid}`)).rows).toEqual([{ recurring_id: ruleId }])
+
+    // A movement of another kind can't pay an expense rule.
+    expect((await tool("set_transaction_recurring_rule", { transaction_id: income, rule_id: ruleId })).isError).toBe(true)
+
+    expect((await tool("set_transaction_recurring_rule", { transaction_id: paid, rule_id: null })).isError).toBeFalsy()
+    expect(await rule()).toMatchObject({ payment_state: "upcoming", last_payment: null })
+    expect((await admin.db.execute(sql`select recurring_id from transactions where id = ${paid}`)).rows).toEqual([{ recurring_id: null }])
+  })
+
   it("runs loans, debts, goals and rules through the same domain checks", async () => {
     const { tool, data } = await setup()
     const accountId = data<{ result: { account_id: string } }>(await tool("create_account", { id: randomUUID(), kind: "cash", name: "Efectivo", balance: "1000", currency: "USD" })).result.account_id

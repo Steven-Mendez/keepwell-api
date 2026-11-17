@@ -19,6 +19,7 @@ import {
   savings,
   spendingAmount,
   trendReport,
+  ruleStatus,
   upcomingPayments,
   yearMonth,
   yearMonthContaining,
@@ -340,31 +341,43 @@ export function listCategories(ledger: Ledger) {
   }
 }
 
-export function listRecurringRules(ledger: WithMerchants) {
+/** A payment linked to a rule, as the rule's status names it. */
+const paymentRef = (transaction: Transaction | undefined) =>
+  transaction ? { transaction_id: transaction.id, date: transaction.date, amount: { amount: transaction.amount, currency: transaction.currency } } : null
+
+export function listRecurringRules(ledger: WithMerchants, now: Date) {
   return {
-    rules: ledger.recurringRules.map((rule) => ({
-      id: rule.id,
-      name: rule.name,
-      kind: rule.kind,
-      amount: { amount: rule.amount, currency: rule.currency },
-      category_id: rule.categoryId ?? null,
-      account_id: rule.accountId,
-      card_id: rule.cardId ?? null,
-      destination_account_id: rule.destinationAccountId ?? null,
-      frequency: rule.frequency,
-      interval: rule.interval,
-      start_date: rule.startDate,
-      next_date: rule.nextDate,
-      end_date: rule.endDate ?? null,
-      is_subscription: rule.isSubscription,
-      auto_confirm: rule.autoConfirm,
-      is_paused: rule.isPaused,
-      note: rule.note ?? null,
-      tags: rule.tags ?? [],
-      merchant_id: rule.merchantId ?? null,
-      via_merchant_id: rule.viaMerchantId ?? null,
-      recorded_by: rule.source === "mcp" ? "mcp" : "app",
-    })),
+    rules: ledger.recurringRules.map((rule) => {
+      const status = ruleStatus(rule, ledger.transactions, now, ledger.timeZone)
+      return {
+        id: rule.id,
+        name: rule.name,
+        kind: rule.kind,
+        amount: { amount: rule.amount, currency: rule.currency },
+        category_id: rule.categoryId ?? null,
+        account_id: rule.accountId,
+        card_id: rule.cardId ?? null,
+        destination_account_id: rule.destinationAccountId ?? null,
+        frequency: rule.frequency,
+        interval: rule.interval,
+        start_date: rule.startDate,
+        next_date: rule.nextDate,
+        end_date: rule.endDate ?? null,
+        is_subscription: rule.isSubscription,
+        auto_confirm: rule.autoConfirm,
+        is_paused: rule.isPaused,
+        note: rule.note ?? null,
+        tags: rule.tags ?? [],
+        merchant_id: rule.merchantId ?? null,
+        via_merchant_id: rule.viaMerchantId ?? null,
+        recorded_by: rule.source === "mcp" ? "mcp" : "app",
+        payment_state: status.state === "toConfirm" ? "to_confirm" : status.state,
+        days_until_next: status.daysUntilNext ?? null,
+        draft_transaction_id: status.draft?.id ?? null,
+        current_payment: paymentRef(status.payment),
+        last_payment: paymentRef(status.lastPayment),
+      }
+    }),
   }
 }
 
