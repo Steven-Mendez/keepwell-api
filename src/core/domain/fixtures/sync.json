@@ -478,6 +478,205 @@
         },
         "created_at": "2026-11-01T18:00:00.000Z"
       }
+    },
+    {
+      "name": "merchant",
+      "event": {
+        "event_id": "99999999-9999-4999-8999-999999999999",
+        "entity": "merchant",
+        "entity_id": "66666666-6666-4666-8666-666666666666",
+        "operation": "create",
+        "payload": {
+          "id": "66666666-6666-4666-8666-666666666666",
+          "name": "Subway",
+          "domain": "subway.com",
+          "brand_id": "subway",
+          "default_category_id": "restaurants",
+          "is_platform": false,
+          "created_at": "2026-11-01T18:00:00.000Z",
+          "updated_at": "2026-11-01T18:00:00.000Z",
+          "deleted_at": null
+        },
+        "created_at": "2026-11-01T18:00:00.000Z"
+      }
+    },
+    {
+      "name": "platform merchant without a brand",
+      "event": {
+        "event_id": "99999999-9999-4999-8999-999999999999",
+        "entity": "merchant",
+        "entity_id": "77777777-7777-4777-8777-777777777777",
+        "operation": "create",
+        "payload": {
+          "id": "77777777-7777-4777-8777-777777777777",
+          "name": "Uber Eats",
+          "domain": "ubereats.com",
+          "brand_id": null,
+          "default_category_id": null,
+          "is_platform": true,
+          "created_at": "2026-11-01T18:00:00.000Z",
+          "updated_at": "2026-11-01T18:00:00.000Z",
+          "deleted_at": null
+        },
+        "created_at": "2026-11-01T18:00:00.000Z"
+      }
+    },
+    {
+      "name": "expense at a business through a platform",
+      "event": {
+        "event_id": "99999999-9999-4999-8999-999999999999",
+        "entity": "transaction",
+        "entity_id": "44444444-4444-4444-8444-444444444444",
+        "operation": "update",
+        "payload": {
+          "id": "44444444-4444-4444-8444-444444444444",
+          "date": "2026-11-01T18:00:00.000Z",
+          "status": "confirmed",
+          "description": "Subway",
+          "kind": "expense",
+          "category_id": "restaurants",
+          "amount": "1520.75",
+          "currency": "NIO",
+          "account_id": "11111111-1111-4111-8111-111111111111",
+          "card_id": null,
+          "destination_account_id": null,
+          "actual_debited_principal": null,
+          "rate_principal": "USD",
+          "rate_second": "NIO",
+          "rate": "36.6243",
+          "is_shared": false,
+          "note": null,
+          "recurring_id": null,
+          "tags": [],
+          "source": "app",
+          "imported_id": null,
+          "merchant_id": "66666666-6666-4666-8666-666666666666",
+          "via_merchant_id": "77777777-7777-4777-8777-777777777777",
+          "created_at": "2026-11-01T18:00:00.000Z",
+          "updated_at": "2026-11-01T18:00:00.000Z",
+          "deleted_at": null
+        },
+        "created_at": "2026-11-01T18:00:00.000Z"
+      }
+    },
+    {
+      "name": "expense with no business",
+      "event": {
+        "event_id": "99999999-9999-4999-8999-999999999999",
+        "entity": "transaction",
+        "entity_id": "44444444-4444-4444-8444-444444444444",
+        "operation": "update",
+        "payload": {
+          "id": "44444444-4444-4444-8444-444444444444",
+          "date": "2026-11-01T18:00:00.000Z",
+          "status": "confirmed",
+          "description": "Supermercado",
+          "kind": "expense",
+          "category_id": "groceries",
+          "amount": "1520.75",
+          "currency": "NIO",
+          "account_id": "11111111-1111-4111-8111-111111111111",
+          "card_id": null,
+          "destination_account_id": null,
+          "actual_debited_principal": null,
+          "rate_principal": "USD",
+          "rate_second": "NIO",
+          "rate": "36.6243",
+          "is_shared": false,
+          "note": null,
+          "recurring_id": null,
+          "tags": [],
+          "source": "app",
+          "imported_id": null,
+          "merchant_id": null,
+          "via_merchant_id": null,
+          "created_at": "2026-11-01T18:00:00.000Z",
+          "updated_at": "2026-11-01T18:00:00.000Z",
+          "deleted_at": null
+        },
+        "created_at": "2026-11-01T18:00:00.000Z"
+      }
+    },
+    {
+      "name": "categorization rule that sets the business",
+      "event": {
+        "event_id": "99999999-9999-4999-8999-999999999999",
+        "entity": "categorizationRule",
+        "entity_id": "55555555-5555-4555-8555-555555555555",
+        "operation": "create",
+        "payload": {
+          "id": "55555555-5555-4555-8555-555555555555",
+          "match": "Subway",
+          "category_id": "restaurants",
+          "kind": "expense",
+          "tags": [],
+          "sort_index": 0,
+          "merchant_id": "66666666-6666-4666-8666-666666666666",
+          "created_at": "2026-11-01T18:00:00.000Z",
+          "updated_at": "2026-11-01T18:00:00.000Z",
+          "deleted_at": null
+        },
+        "created_at": "2026-11-01T18:00:00.000Z"
+      }
+    },
+    {
+      "name": "debt repayment deposited into an account",
+      "event": {
+        "event_id": "99999999-9999-4999-8999-999999999999",
+        "entity": "personalDebtRepayment",
+        "entity_id": "77777777-7777-4777-8777-777777777777",
+        "operation": "create",
+        "payload": {
+          "id": "77777777-7777-4777-8777-777777777777",
+          "debt_id": "55555555-5555-4555-8555-555555555555",
+          "amount": "300",
+          "date": "2026-11-05T18:00:00.000Z",
+          "transaction_id": "44444444-4444-4444-8444-444444444444",
+          "created_at": "2026-11-01T18:00:00.000Z",
+          "updated_at": "2026-11-01T18:00:00.000Z",
+          "deleted_at": null
+        },
+        "created_at": "2026-11-01T18:00:00.000Z"
+      }
+    },
+    {
+      "name": "debt repayment only recorded",
+      "event": {
+        "event_id": "99999999-9999-4999-8999-999999999999",
+        "entity": "personalDebtRepayment",
+        "entity_id": "77777777-7777-4777-8777-777777777777",
+        "operation": "create",
+        "payload": {
+          "id": "77777777-7777-4777-8777-777777777777",
+          "debt_id": "55555555-5555-4555-8555-555555555555",
+          "amount": "300",
+          "date": "2026-11-05T18:00:00.000Z",
+          "transaction_id": null,
+          "created_at": "2026-11-01T18:00:00.000Z",
+          "updated_at": "2026-11-01T18:00:00.000Z",
+          "deleted_at": null
+        },
+        "created_at": "2026-11-01T18:00:00.000Z"
+      }
+    },
+    {
+      "name": "debt repayment from an app older than deposits",
+      "event": {
+        "event_id": "99999999-9999-4999-8999-999999999999",
+        "entity": "personalDebtRepayment",
+        "entity_id": "77777777-7777-4777-8777-777777777777",
+        "operation": "create",
+        "payload": {
+          "id": "77777777-7777-4777-8777-777777777777",
+          "debt_id": "55555555-5555-4555-8555-555555555555",
+          "amount": "300",
+          "date": "2026-11-05T18:00:00.000Z",
+          "created_at": "2026-11-01T18:00:00.000Z",
+          "updated_at": "2026-11-01T18:00:00.000Z",
+          "deleted_at": null
+        },
+        "created_at": "2026-11-01T18:00:00.000Z"
+      }
     }
   ],
   "invalid": [
@@ -867,6 +1066,131 @@
           "tags": [],
           "source": "app",
           "imported_id": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+          "created_at": "2026-11-01T18:00:00.000Z",
+          "updated_at": "2026-11-01T18:00:00.000Z",
+          "deleted_at": null
+        },
+        "created_at": "2026-11-01T18:00:00.000Z"
+      }
+    },
+    {
+      "name": "merchant with a domain that has a scheme",
+      "reason": "a domain is a bare lowercase host name",
+      "event": {
+        "event_id": "99999999-9999-4999-8999-999999999999",
+        "entity": "merchant",
+        "entity_id": "66666666-6666-4666-8666-666666666666",
+        "operation": "create",
+        "payload": {
+          "id": "66666666-6666-4666-8666-666666666666",
+          "name": "Subway",
+          "domain": "https://subway.com",
+          "brand_id": "subway",
+          "default_category_id": "restaurants",
+          "is_platform": false,
+          "created_at": "2026-11-01T18:00:00.000Z",
+          "updated_at": "2026-11-01T18:00:00.000Z",
+          "deleted_at": null
+        },
+        "created_at": "2026-11-01T18:00:00.000Z"
+      }
+    },
+    {
+      "name": "merchant with a blank name",
+      "reason": "a merchant has a name",
+      "event": {
+        "event_id": "99999999-9999-4999-8999-999999999999",
+        "entity": "merchant",
+        "entity_id": "66666666-6666-4666-8666-666666666666",
+        "operation": "create",
+        "payload": {
+          "id": "66666666-6666-4666-8666-666666666666",
+          "name": " ",
+          "domain": "subway.com",
+          "brand_id": "subway",
+          "default_category_id": "restaurants",
+          "is_platform": false,
+          "created_at": "2026-11-01T18:00:00.000Z",
+          "updated_at": "2026-11-01T18:00:00.000Z",
+          "deleted_at": null
+        },
+        "created_at": "2026-11-01T18:00:00.000Z"
+      }
+    },
+    {
+      "name": "merchant without is_platform",
+      "reason": "is_platform is required",
+      "event": {
+        "event_id": "99999999-9999-4999-8999-999999999999",
+        "entity": "merchant",
+        "entity_id": "66666666-6666-4666-8666-666666666666",
+        "operation": "create",
+        "payload": {
+          "id": "66666666-6666-4666-8666-666666666666",
+          "name": "Subway",
+          "domain": "subway.com",
+          "brand_id": "subway",
+          "default_category_id": "restaurants",
+          "created_at": "2026-11-01T18:00:00.000Z",
+          "updated_at": "2026-11-01T18:00:00.000Z",
+          "deleted_at": null
+        },
+        "created_at": "2026-11-01T18:00:00.000Z"
+      }
+    },
+    {
+      "name": "movement with a merchant id that isn't an id",
+      "reason": "merchant_id is a UUID",
+      "event": {
+        "event_id": "99999999-9999-4999-8999-999999999999",
+        "entity": "transaction",
+        "entity_id": "44444444-4444-4444-8444-444444444444",
+        "operation": "update",
+        "payload": {
+          "id": "44444444-4444-4444-8444-444444444444",
+          "date": "2026-11-01T18:00:00.000Z",
+          "status": "confirmed",
+          "description": "Supermercado",
+          "kind": "expense",
+          "category_id": "groceries",
+          "amount": "1520.75",
+          "currency": "NIO",
+          "account_id": "11111111-1111-4111-8111-111111111111",
+          "card_id": null,
+          "destination_account_id": null,
+          "actual_debited_principal": null,
+          "rate_principal": "USD",
+          "rate_second": "NIO",
+          "rate": "36.6243",
+          "is_shared": false,
+          "note": null,
+          "recurring_id": null,
+          "tags": [],
+          "source": "app",
+          "imported_id": null,
+          "merchant_id": "subway",
+          "via_merchant_id": null,
+          "created_at": "2026-11-01T18:00:00.000Z",
+          "updated_at": "2026-11-01T18:00:00.000Z",
+          "deleted_at": null
+        },
+        "created_at": "2026-11-01T18:00:00.000Z"
+      }
+    },
+    {
+      "name": "debt repayment with a transaction id that isn't an id",
+      "reason": "transaction_id must be an id",
+      "event": {
+        "event_id": "99999999-9999-4999-8999-999999999999",
+        "entity": "personalDebtRepayment",
+        "entity_id": "77777777-7777-4777-8777-777777777777",
+        "operation": "create",
+        "payload": {
+          "id": "77777777-7777-4777-8777-777777777777",
+          "debt_id": "55555555-5555-4555-8555-555555555555",
+          "amount": "300",
+          "date": "2026-11-05T18:00:00.000Z",
+          "transaction_id": "deposit",
           "created_at": "2026-11-01T18:00:00.000Z",
           "updated_at": "2026-11-01T18:00:00.000Z",
           "deleted_at": null

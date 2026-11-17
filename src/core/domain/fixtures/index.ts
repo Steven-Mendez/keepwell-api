@@ -3,6 +3,7 @@ import {
   Card,
   CategorizationRule,
   Loan,
+  Merchant,
   PersonalDebt,
   RecurringRule,
   SavingsGoal,
@@ -27,6 +28,7 @@ export const ENTITY_SCHEMAS = {
   personalDebt: PersonalDebt,
   categorizationRule: CategorizationRule,
   settings: Settings,
+  merchant: Merchant,
 } as const
 
 export type FixtureEntity = keyof typeof ENTITY_SCHEMAS

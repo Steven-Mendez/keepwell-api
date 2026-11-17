@@ -27,6 +27,7 @@ export const USER_OWNED_TABLES: { name: string; key: string }[] = [
   { name: "personal_debts", key: "id" },
   { name: "savings_goals", key: "id" },
   { name: "categorization_rules", key: "id" },
+  { name: "merchants", key: "id" },
   { name: "cards", key: "id" },
   { name: "ledger_accounts", key: "id" },
   { name: "categories", key: "id" },

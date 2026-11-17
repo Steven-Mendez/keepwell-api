@@ -83,6 +83,7 @@ export const personalDebtRepayments = ledgerTable("personal_debt_repayments", "p
 export const categorizationRules = ledgerTable("categorization_rules", "categorizationRule")
 export const settings = ledgerTable("settings", "settings")
 export const notificationStates = ledgerTable("notification_states", "notificationState")
+export const merchants = ledgerTable("merchants", "merchant")
 
 /** The table that stores each sync entity. */
 export const LEDGER_TABLES = {
@@ -99,6 +100,7 @@ export const LEDGER_TABLES = {
   categorizationRule: categorizationRules,
   settings,
   notificationState: notificationStates,
+  merchant: merchants,
 } as const satisfies Record<SyncEntity, unknown>
 
 export type LedgerTable = (typeof LEDGER_TABLES)[SyncEntity]

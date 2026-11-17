@@ -29,6 +29,15 @@ forgets whose data it reads.
 - **Columns follow the sync wire schemas.** The ledger tables are generated from `schema/sync.ts`,
   the same Zod objects that validate pushed events, so a column and its validation can't drift.
   Money, rates and instants are `text` exactly as they travel; arrays are JSON text.
+  `tests/database/wire-columns.test.ts` checks the migrated tables against the shared
+  `fixtures/wire-columns.json`.
+- **Merchants** (`merchants`, November 2026) are the person's businesses and platforms, a ledger
+  table like the rest. Movements and recurring rules point at them with `merchant_id` (the business)
+  and `via_merchant_id` (the platform it went through), categorization rules with `merchant_id`. The
+  links are plain ids without foreign keys (ADR 0003) and optional on the wire: an app older than
+  merchants leaves them out and the server keeps the stored ones (`decide`); `null` clears them.
+  Deleting a merchant unlinks what named it, as the apps' `deleteMerchant` does, and the account's
+  deletion erases them with everything else.
 - **Two database roles.** `keepwell_app` (the API) and `keepwell_jobs` (account deletion, which must
   erase history the API role can't touch). Migrations run as `admin` from the pipeline.
 

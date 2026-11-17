@@ -1,4 +1,4 @@
-import type { Money as StoredMoney, TransactionCategory, TransactionKind } from "../schema"
+import type { Merchant, Money as StoredMoney, TransactionCategory, TransactionKind } from "../schema"
 import { OTHER_EXPENSE_ID, OTHER_INCOME_ID, isFallbackCategory, newCustomCategoryId, orderedCategories, shippedCategory } from "../schema"
 
 import { dec, decimalText } from "./decimal"
@@ -77,7 +77,10 @@ function budgetOf(budget: StoredMoney | undefined): StoredMoney | undefined {
   return { amount: decimalText(amount), currency: budget.currency }
 }
 
-/** Deletes a category; its movements and recurring rules move to "Other" of the same kind. */
+/**
+ * Deletes a category; its movements and recurring rules move to "Other" of the same kind, and the
+ * merchants that suggested it suggest none.
+ */
 export async function deleteCategory(store: LedgerStore, id: string): Promise<void> {
   const category = (await store.fetchCategories()).find((candidate) => candidate.id === id)
   if (!category) return
@@ -90,6 +93,9 @@ export async function deleteCategory(store: LedgerStore, id: string): Promise<vo
     for (const rule of await store.fetchRecurringRules()) {
       if (rule.categoryId === id) await store.saveRecurringRule({ ...rule, categoryId: otherId })
     }
+    for (const merchant of await store.fetchMerchants()) {
+      if (merchant.defaultCategoryId === id) await store.saveMerchant(withoutDefaultCategory(merchant))
+    }
     await store.deleteCategory(id)
   })
 }
@@ -98,8 +104,8 @@ export async function deleteCategory(store: LedgerStore, id: string): Promise<vo
  * Runs after every pull. A device that edited a movement (or recurring rule) before it heard of a
  * category's deletion wins with its later edit and brings the deleted id back (ADR 0005 keeps the
  * newest row whole). Whatever still points at one of `deletedCategoryIds` (the tombstones) moves to
- * "Other" of its kind, as `deleteCategory` did; with nothing to repair nothing is written. Returns how
- * many records moved.
+ * "Other" of its kind, and a merchant whose default category it is loses that default, as
+ * `deleteCategory` did; with nothing to repair nothing is written. Returns how many records changed.
  */
 export async function reassignDeletedCategories(store: LedgerStore, deletedCategoryIds: ReadonlySet<string>): Promise<number> {
   const orphaned = (item: { categoryId?: string | undefined; kind: TransactionKind }) =>
@@ -107,12 +113,22 @@ export async function reassignDeletedCategories(store: LedgerStore, deletedCateg
   if (deletedCategoryIds.size === 0) return 0
   const movements = (await store.fetchTransactions()).filter(orphaned)
   const rules = (await store.fetchRecurringRules()).filter(orphaned)
-  if (movements.length === 0 && rules.length === 0) return 0
+  const merchants = (await store.fetchMerchants()).filter(
+    (merchant) => merchant.defaultCategoryId !== undefined && !isFallbackCategory(merchant.defaultCategoryId) && deletedCategoryIds.has(merchant.defaultCategoryId),
+  )
+  if (movements.length === 0 && rules.length === 0 && merchants.length === 0) return 0
   await store.atomically(async () => {
     for (const movement of movements) await store.saveTransaction({ ...movement, categoryId: otherCategoryId(movement.kind) })
     for (const rule of rules) await store.saveRecurringRule({ ...rule, categoryId: otherCategoryId(rule.kind) })
+    for (const merchant of merchants) await store.saveMerchant(withoutDefaultCategory(merchant))
   })
-  return movements.length + rules.length
+  return movements.length + rules.length + merchants.length
+}
+
+/** A merchant whose default category was deleted suggests none (it doesn't move to "Other"). */
+function withoutDefaultCategory(merchant: Merchant): Merchant {
+  const { defaultCategoryId: _deleted, ...rest } = merchant
+  return rest
 }
 
 export async function reorderCategories(store: LedgerStore, ids: readonly string[]): Promise<void> {

@@ -1,5 +1,5 @@
-import { InMemoryStore, isTimeZone, loadLedger, materializeRecurring, resolveTimeZone, type Ledger, type TimeZone } from "../domain/domain"
-import { uuidV5 } from "../domain/schema"
+import { fetchMerchants, InMemoryStore, isTimeZone, loadLedger, materializeRecurring, resolveTimeZone, type Ledger, type TimeZone } from "../domain/domain"
+import { uuidV5, type Merchant } from "../domain/schema"
 import { recurringRuleToWire, toDomain, transactionToWire, type LedgerRows } from "../ledger/wire-to-domain"
 import type { LedgerReader } from "../ports/ledger-reader"
 import type { ApplySyncBatch } from "./apply-sync-batch"
@@ -11,6 +11,12 @@ import type { ApplySyncBatch } from "./apply-sync-batch"
 export function defaultTimeZone(env: Record<string, string | undefined>): TimeZone {
   return resolveTimeZone(env.KEEPWELL_TIME_ZONE ?? "America/Managua")
 }
+
+/**
+ * The domain's `Ledger` plus the person's merchants (by name), which the MCP read tools name movements
+ * with; the domain's `loadLedger` leaves them out, as the apps' screens fetch them on their own.
+ */
+export type ServerLedger = Ledger & { merchants: Merchant[] }
 
 /** The client id the server writes under when it changes data itself. */
 export const SERVER_CLIENT_ID = "00000000-0000-5000-8000-000000000000"
@@ -47,7 +53,7 @@ export class ReadLedger {
     return resolveTimeZone(await this.reader.latestDeviceTimeZone(userId), this.defaultTimeZone)
   }
 
-  async execute(userId: string): Promise<Ledger> {
+  async execute(userId: string): Promise<ServerLedger> {
     return (await this.load(userId)).ledger
   }
 
@@ -55,16 +61,20 @@ export class ReadLedger {
    * The ledger and the rows it came from. `fresh` is false when recording due occurrences changed
    * the rows, so a caller that needs the stored rows reads them again.
    */
-  async load(userId: string): Promise<{ ledger: Ledger; rows: Awaited<ReturnType<LedgerReader["load"]>>; fresh: boolean }> {
+  async load(userId: string): Promise<{ ledger: ServerLedger; rows: Awaited<ReturnType<LedgerReader["load"]>>; fresh: boolean }> {
     const now = this.clock()
     const rows = await this.reader.load(userId)
     const store = new InMemoryStore(await this.timeZone(userId, rows), toDomain(rows))
     const before = new Map((await store.fetchRecurringRules()).map((rule) => [rule.id, rule.nextDate]))
+    const rulesBefore = new Map((await store.fetchTransactions()).map((transaction) => [transaction.id, transaction.recurringId]))
     const created = await materializeRecurring(store, now)
     const advanced = (await store.fetchRecurringRules()).filter((rule) => before.get(rule.id) !== rule.nextDate)
-    if (created.length > 0 || advanced.length > 0) {
+    // Manual payments that covered an occurrence: the rule they now belong to is all that changed.
+    const linked = (await store.fetchTransactions()).filter((transaction) => rulesBefore.has(transaction.id) && rulesBefore.get(transaction.id) !== transaction.recurringId)
+    if (created.length > 0 || advanced.length > 0 || linked.length > 0) {
       const at = now.toISOString()
       const stored = new Map(rows.recurringRule.map((row) => [row.id, row]))
+      const storedMovements = new Map(rows.transaction.map((row) => [row.id, row]))
       const events = [
         ...created.map((transaction) => ({
           event_id: uuidV5(`materialize|${transaction.id}`),
@@ -74,6 +84,19 @@ export class ReadLedger {
           payload: transactionToWire(transaction, { created_at: at, updated_at: at }),
           created_at: at,
         })),
+        ...linked.map((transaction) => {
+          // Like advancing a rule, not an edit: it keeps its stamp, so an edit made earlier still wins.
+          const row = storedMovements.get(transaction.id)
+          const updatedAt = row?.updated_at ?? at
+          return {
+            event_id: uuidV5(`link|${transaction.id}|${transaction.recurringId ?? ""}|${updatedAt}`),
+            entity: "transaction",
+            entity_id: transaction.id,
+            operation: "update",
+            payload: transactionToWire(transaction, { created_at: row?.created_at ?? at, updated_at: updatedAt }),
+            created_at: at,
+          }
+        }),
         ...advanced.map((rule) => {
           // The stamp it had, so an edit stamped before this read still wins; it is in the event id
           // too, so advancing again after such an edit is a new event, not the replay of this one.
@@ -90,6 +113,6 @@ export class ReadLedger {
       ]
       await this.writer.execute({ userId, clientId: SERVER_CLIENT_ID, platform: "other", events, deadline: Date.now() + 10_000 })
     }
-    return { ledger: await loadLedger(store), rows, fresh: created.length === 0 && advanced.length === 0 }
+    return { ledger: { ...(await loadLedger(store)), merchants: await fetchMerchants(store) }, rows, fresh: created.length === 0 && advanced.length === 0 && linked.length === 0 }
   }
 }

@@ -106,6 +106,7 @@ import { WEB_STRINGS_ACCOUNT } from "./web-strings.account"
 import { WEB_STRINGS_ACCOUNTS } from "./web-strings.accounts"
 import { WEB_STRINGS_DEBTS } from "./web-strings.debts"
 import { WEB_STRINGS_EDITOR } from "./web-strings.editor"
+import { WEB_STRINGS_MERCHANTS } from "./web-strings.merchants"
 import { WEB_STRINGS_RECURRING } from "./web-strings.recurring"
 import { WEB_STRINGS_RULES } from "./web-strings.rules"
 import { WEB_STRINGS_SETTINGS } from "./web-strings.settings"
@@ -122,4 +123,5 @@ export const WEB_STRINGS: WebStrings = {
   ...WEB_STRINGS_RULES,
   ...WEB_STRINGS_ACCOUNT,
   ...WEB_STRINGS_SYNC,
+  ...WEB_STRINGS_MERCHANTS,
 }
