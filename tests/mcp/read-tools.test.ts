@@ -60,7 +60,7 @@ describe("MCP read tools", () => {
     expect((init.body as { result: { serverInfo: { name: string } } }).result.serverInfo.name).toBe("keepwell")
     const list = await mcp.call("tools/list")
     const tools = (list.body as { result: { tools: { name: string; annotations?: { readOnlyHint?: boolean } }[] } }).result.tools
-    expect(tools.map((t) => t.name).sort()).toEqual(["get_financial_context", "get_monthly_summary", "get_net_worth", "get_trends", "get_upcoming_payments", "list_accounts", "list_categories", "list_categorization_rules", "list_loans", "list_personal_debts", "list_recurring_rules", "list_savings_goals", "search_transactions"])
+    expect(tools.map((t) => t.name).sort()).toEqual(["get_financial_context", "get_monthly_summary", "get_net_worth", "get_trends", "get_upcoming_payments", "list_accounts", "list_categories", "list_categorization_rules", "list_loans", "list_merchants", "list_personal_debts", "list_recurring_rules", "list_savings_goals", "search_transactions"])
     expect(tools.every((t) => t.annotations?.readOnlyHint)).toBe(true)
   })
 
@@ -231,6 +231,13 @@ describe("MCP read tools", () => {
     const { data } = await mcp.tool("get_upcoming_payments", { days: 30 })
     expect((data.payments as { name: string; date: string }[]).map((p) => [p.name, p.date])).toEqual([["Alquiler", "2026-12-01"]])
     expect(data.payments).toEqual([expect.objectContaining({ id: `recurring:${RULE}:2026-12-01`, type: "recurring", status: "upcoming", days_from_today: 16, amount: { amount: "450", currency: "USD" } })])
+  })
+
+  it("says where each recurring payment stands: paid by the occurrence it recorded, and the days to the next", async () => {
+    const { mcp } = await connected()
+    const { data } = await mcp.tool("list_recurring_rules")
+    const id = occurrenceId({ id: RULE, startDate: "2026-10-01T15:00:00.000Z", frequency: "monthly", interval: 1 }, 1)
+    expect(data.rules).toEqual([expect.objectContaining({ id: RULE, next_date: "2026-12-01T15:00:00.000Z", payment_state: "paid", days_until_next: 16, draft_transaction_id: null, current_payment: expect.objectContaining({ transaction_id: id }), last_payment: expect.objectContaining({ transaction_id: id, amount: { amount: "450", currency: "USD" } }) })])
   })
 
   it("answers 401 with WWW-Authenticate without credentials, and 403 needs_plan without the coffee", async () => {

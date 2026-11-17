@@ -169,6 +169,31 @@ describe("MCP manage tools", () => {
     expect(pulled).toEqual(expect.arrayContaining(["account", "transaction", "settings"]))
   })
 
+  it("links a movement to a recurring payment, which then reads as paid, and unlinks it", async () => {
+    const { tool, data } = await setup()
+    const accountId = data<{ result: { account_id: string } }>(await tool("create_account", { id: randomUUID(), kind: "cash", name: "Efectivo", balance: "100", currency: "USD" })).result.account_id
+    const [ruleId, paid, income] = [randomUUID(), randomUUID(), randomUUID()]
+    const today = new Date()
+    const inTwentyDays = new Date(today.getTime() + 20 * 86_400_000)
+    await tool("create_recurring_rule", { id: ruleId, kind: "expense", amount: "6.49", currency: "USD", account_id: accountId, category_id: "subscriptions", name: "Apple Music", frequency: "monthly", start_date: inTwentyDays.toISOString(), is_subscription: true, auto_confirm: false })
+    await tool("create_transaction", { id: paid, kind: "expense", amount: "6.49", currency: "USD", account_id: accountId, category_id: "subscriptions", description: "APPLE.COM/BILL", date: today.toISOString() })
+    await tool("create_transaction", { id: income, kind: "income", amount: "6.49", currency: "USD", account_id: accountId, category_id: "salary", description: "Reembolso", date: today.toISOString() })
+    type Listed = { rules: { id: string; payment_state: string; days_until_next: number; current_payment: { transaction_id: string } | null; last_payment: { transaction_id: string; amount: { amount: string } } | null }[] }
+    const rule = async () => data<Listed>(await tool("list_recurring_rules")).rules.find((candidate) => candidate.id === ruleId)!
+
+    expect(await rule()).toMatchObject({ payment_state: "upcoming", days_until_next: 20, current_payment: null, last_payment: null })
+    expect((await tool("set_transaction_recurring_rule", { transaction_id: paid, rule_id: ruleId })).isError).toBeFalsy()
+    expect(await rule()).toMatchObject({ payment_state: "paid", days_until_next: 20, current_payment: { transaction_id: paid }, last_payment: { transaction_id: paid, amount: { amount: "6.49" } } })
+    expect((await admin.db.execute(sql`select recurring_id from transactions where id = ${paid}`)).rows).toEqual([{ recurring_id: ruleId }])
+
+    // A movement of another kind can't pay an expense rule.
+    expect((await tool("set_transaction_recurring_rule", { transaction_id: income, rule_id: ruleId })).isError).toBe(true)
+
+    expect((await tool("set_transaction_recurring_rule", { transaction_id: paid, rule_id: null })).isError).toBeFalsy()
+    expect(await rule()).toMatchObject({ payment_state: "upcoming", last_payment: null })
+    expect((await admin.db.execute(sql`select recurring_id from transactions where id = ${paid}`)).rows).toEqual([{ recurring_id: null }])
+  })
+
   it("runs loans, debts, goals and rules through the same domain checks", async () => {
     const { tool, data } = await setup()
     const accountId = data<{ result: { account_id: string } }>(await tool("create_account", { id: randomUUID(), kind: "cash", name: "Efectivo", balance: "1000", currency: "USD" })).result.account_id
@@ -283,5 +308,75 @@ describe("MCP manage tools", () => {
     expect(data(await tool("reopen_account", { account_id: oldId }))).toMatchObject({ ok: true, result: { account_id: oldId, closed_at: null } })
     expect((await admin.db.execute(sql`select closed_at from ledger_accounts where id = ${oldId}`)).rows).toEqual([{ closed_at: null }])
     expect((await tool("create_transaction", { id: randomUUID(), kind: "expense", amount: "5", currency: "USD", account_id: oldId, category_id: "groceries", description: "Café", date: today() })).isError).toBeFalsy()
+  })
+
+  it("records, shows, edits and clears what the bank actually charged (actual_debited)", async () => {
+    const { tool, data } = await setup()
+    const accountId = data<{ result: { account_id: string } }>(await tool("create_account", { id: randomUUID(), kind: "cash", name: "Efectivo", balance: "1000", currency: "USD" })).result.account_id
+    const stored = async (id: string) => ((await admin.db.execute(sql`select amount, actual_debited_principal from transactions where id = ${id}`)).rows[0] as { amount: string; actual_debited_principal: string | null })
+    const nio = (extra: Record<string, unknown> = {}) => ({ id: randomUUID(), kind: "expense", amount: "3690", currency: "NIO", account_id: accountId, category_id: "groceries", description: "Compra", date: today(), ...extra })
+
+    // A movement in the second currency, charged 100 USD by the bank: balances count the charge.
+    const call = nio({ actual_debited: "100" })
+    const created = await tool("create_transaction", call)
+    expect(created.isError, created.content[0]?.text).toBeFalsy()
+    expect(data(created)).toMatchObject({ result: { amount: { amount: "3690", currency: "NIO" }, actual_debited: { amount: "100", currency: "USD" } } })
+    expect((await stored(call.id)).actual_debited_principal).toBe("100")
+    expect(data(await tool("get_net_worth"))).toMatchObject({ net_worth: { amount: "900" } })
+
+    // Refused on a movement already in the principal currency, and when it isn't positive.
+    const same = await tool("create_transaction", nio({ currency: "USD", amount: "10", actual_debited: "10" }))
+    expect(same.isError).toBe(true)
+    expect(same.content[0]!.text).toContain("actual_debited")
+    expect(same.content[0]!.text).toContain("invalid")
+    const zero = await tool("create_transaction", nio({ actual_debited: "0" }))
+    expect(zero.isError).toBe(true)
+    expect(zero.content[0]!.text).toContain("greater than zero")
+    expect(await count(sql`select count(*) as n from transactions`)).toBe(1)
+
+    // search_transactions shows it next to the amount; null when there is none.
+    const plain = nio()
+    await tool("create_transaction", plain)
+    type Found = { transactions: { id: string; actual_debited: { amount: string; currency: string } | null }[] }
+    const found = data<Found>(await tool("search_transactions", { account_id: accountId })).transactions
+    expect(found.find((t) => t.id === call.id)!.actual_debited).toEqual({ amount: "100", currency: "USD" })
+    expect(found.find((t) => t.id === plain.id)!.actual_debited).toBeNull()
+
+    // Left out, an edit keeps it; a new amount clears it unless given again; null clears it.
+    expect((await tool("update_transaction", { transaction_id: call.id, description: "Compra grande" })).isError).toBeFalsy()
+    expect((await stored(call.id)).actual_debited_principal).toBe("100")
+    expect((await tool("update_transaction", { transaction_id: call.id, amount: "3690.00" })).isError).toBeFalsy()
+    expect((await stored(call.id)).actual_debited_principal).toBe("100")
+    expect((await tool("update_transaction", { transaction_id: call.id, amount: "3700" })).isError).toBeFalsy()
+    expect(await stored(call.id)).toEqual({ amount: "3700", actual_debited_principal: null })
+    expect((await tool("update_transaction", { transaction_id: call.id, amount: "3800", actual_debited: "102.50" })).isError).toBeFalsy()
+    expect(await stored(call.id)).toEqual({ amount: "3800", actual_debited_principal: "102.5" })
+    expect((await tool("update_transaction", { transaction_id: call.id, actual_debited: null })).isError).toBeFalsy()
+    expect((await stored(call.id)).actual_debited_principal).toBeNull()
+    expect((await tool("update_transaction", { transaction_id: call.id, actual_debited: "101" })).isError).toBeFalsy()
+    // Moving it to another account drops it too, unless given again.
+    const otherId = data<{ result: { account_id: string } }>(await tool("create_account", { id: randomUUID(), kind: "cash", name: "Billetera", balance: "0", currency: "USD" })).result.account_id
+    expect((await tool("update_transaction", { transaction_id: call.id, account_id: otherId })).isError).toBeFalsy()
+    expect((await stored(call.id)).actual_debited_principal).toBeNull()
+    expect((await tool("update_transaction", { transaction_id: call.id, account_id: accountId, actual_debited: "101" })).isError).toBeFalsy()
+    expect((await stored(call.id)).actual_debited_principal).toBe("101")
+    // Moving it by card alone (the card's account is another one) drops it too.
+    const card = data<{ result: { account_id: string; card_id: string } }>(await tool("create_credit_card", { id: randomUUID(), bank: "BAC", last_four: "4242", network: "visa", debt_mode: "dual" })).result
+    expect((await tool("update_transaction", { transaction_id: call.id, card_id: card.card_id })).isError).toBeFalsy()
+    expect((await stored(call.id)).actual_debited_principal).toBeNull()
+    expect((await tool("update_transaction", { transaction_id: call.id, account_id: accountId, card_id: null, actual_debited: "101" })).isError).toBeFalsy()
+    expect((await stored(call.id)).actual_debited_principal).toBe("101")
+    // A change to the principal currency drops it; asking to keep one there is refused.
+    const toUsd = await tool("update_transaction", { transaction_id: call.id, currency: "USD", amount: "101", actual_debited: "101" })
+    expect(toUsd.isError).toBe(true)
+    expect(toUsd.content[0]!.text).toContain("actual_debited")
+    expect((await tool("update_transaction", { transaction_id: call.id, currency: "USD", amount: "101" })).isError).toBeFalsy()
+    expect(await stored(call.id)).toEqual({ amount: "101", actual_debited_principal: null })
+
+    // apply_changes takes it too.
+    const batched = nio({ actual_debited: "50" })
+    const applied = await tool("apply_changes", { changes: [{ tool: "create_transaction", arguments: batched }] })
+    expect(applied.isError, applied.content[0]?.text).toBeFalsy()
+    expect((await stored(batched.id)).actual_debited_principal).toBe("50")
   })
 })

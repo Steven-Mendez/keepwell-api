@@ -30,7 +30,7 @@ function rows(manualPayment: Record<string, unknown> | undefined): LedgerRows {
     account: [account], card: [], category: [categoryRow("housing", "Housing", AT)],
     transaction: manualPayment ? [transactionRow(MANUAL, "2026-11-01T16:00:00.000Z", { description: "Alquiler", category_id: "housing", amount: "500", ...manualPayment })] : [],
     recurringRule: [rule], savingsGoal: [], loan: [], loanPayment: [], personalDebt: [], personalDebtRepayment: [], categorizationRule: [],
-    settings: [settings], notificationState: [],
+    settings: [settings], notificationState: [], merchant: [],
   } as unknown as LedgerRows
 }
 
@@ -43,10 +43,19 @@ async function read(ledgerRows: LedgerRows) {
 }
 
 describe("the server recording an occurrence paid by hand (T29)", () => {
-  it("records no movement for it and still advances the rule", async () => {
+  it("records no movement for it, links the manual payment to the rule and advances the rule", async () => {
     const events = await read(rows({}))
-    expect(events.filter((event) => event.entity === "transaction")).toEqual([])
-    expect(events).toEqual([expect.objectContaining({ entity: "recurringRule", operation: "update", entity_id: RULE, payload: expect.objectContaining({ next_date: ADVANCED }) })])
+    expect(events.filter((event) => event.operation === "create")).toEqual([])
+    expect(events).toEqual([
+      // Linked with the stamp it had, so an edit a device made earlier and sends later still wins.
+      expect.objectContaining({ entity: "transaction", operation: "update", entity_id: MANUAL, payload: expect.objectContaining({ recurring_id: RULE, amount: "500", description: "Alquiler", updated_at: "2026-11-01T16:00:00.000Z" }) }),
+      expect.objectContaining({ entity: "recurringRule", operation: "update", entity_id: RULE, payload: expect.objectContaining({ next_date: ADVANCED }) }),
+    ])
+  })
+
+  it("a payment already linked to the rule is left alone", async () => {
+    const events = await read(rows({ recurring_id: RULE }))
+    expect(events.map((event) => event.entity)).toEqual(["recurringRule"])
   })
 
   it("records it when the movement doesn't match: another amount, or three days before", async () => {

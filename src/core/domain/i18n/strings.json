@@ -2165,6 +2165,32 @@
   }
  },
  "recurring": {
+  "%@ left to pay": {
+   "es": "Faltan %@ por pagar"
+  },
+  "%@ · in %lld days": {
+   "en": {
+    "one": "%@ · in %lld day",
+    "other": "%@ · in %lld days"
+   },
+   "es": {
+    "one": "%@ · en %lld día",
+    "other": "%@ · en %lld días"
+   }
+  },
+  "%lld of %lld paid this month": {
+   "es": "%lld de %lld pagados este mes"
+  },
+  "%lld payments": {
+   "en": {
+    "one": "%lld payment",
+    "other": "%lld payments"
+   },
+   "es": {
+    "one": "%lld pago",
+    "other": "%lld pagos"
+   }
+  },
   "Add recurring": {
    "es": "Agregar recurrente"
   },
@@ -2210,6 +2236,9 @@
   "Draft": {
    "es": "Borrador"
   },
+  "Edit": {
+   "es": "Editar"
+  },
   "Edit recurring": {
    "es": "Editar recurrente"
   },
@@ -2237,6 +2266,16 @@
   "Hide amounts": {
    "es": "Ocultar montos"
   },
+  "in %lld days": {
+   "en": {
+    "one": "in %lld day",
+    "other": "in %lld days"
+   },
+   "es": {
+    "one": "en %lld día",
+    "other": "en %lld días"
+   }
+  },
   "Income": {
    "es": "Ingresos"
   },
@@ -2251,6 +2290,15 @@
   },
   "Last day": {
    "es": "Último día"
+  },
+  "Last payment %@": {
+   "es": "Último pago %@"
+  },
+  "Link a movement you already recorded and it counts as a payment of this one.": {
+   "es": "Asocia un movimiento que ya registraste y cuenta como un pago de este."
+  },
+  "Link a payment": {
+   "es": "Asociar un pago"
   },
   "Monthly": {
    "es": "Mensual"
@@ -2267,11 +2315,23 @@
   "New subscription": {
    "es": "Nueva suscripción"
   },
+  "Next %@": {
+   "es": "Próximo %@"
+  },
   "Next charge": {
    "es": "Próximo cobro"
   },
   "Next dates": {
    "es": "Próximas fechas"
+  },
+  "Next payment": {
+   "es": "Siguiente pago"
+  },
+  "No movements to link": {
+   "es": "No hay movimientos para asociar"
+  },
+  "No payments yet": {
+   "es": "Aún no hay pagos"
   },
   "Note": {
    "es": "Nota"
@@ -2295,6 +2355,12 @@
   "Optional": {
    "es": "Opcional"
   },
+  "Other movements": {
+   "es": "Otros movimientos"
+  },
+  "Overdue": {
+   "es": "Atrasado"
+  },
   "Overdue · %lld days": {
    "en": {
     "one": "Overdue · %lld day",
@@ -2305,6 +2371,15 @@
     "other": "Atrasado · %lld días"
    }
   },
+  "Paid": {
+   "es": "Pagado"
+  },
+  "Paid this year": {
+   "es": "Pagado este año"
+  },
+  "Paid · %@": {
+   "es": "Pagado · %@"
+  },
   "Pause": {
    "es": "Pausar"
   },
@@ -2314,6 +2389,12 @@
   "Payment method": {
    "es": "Método de pago"
   },
+  "Payments": {
+   "es": "Pagos"
+  },
+  "Price changed from %@ to %@": {
+   "es": "El precio cambió de %@ a %@"
+  },
   "Proposed by Claude · resume to confirm": {
    "es": "Propuesto por Claude · reanúdalo para confirmar"
   },
@@ -2322,9 +2403,6 @@
   },
   "Record automatically": {
    "es": "Registrar automáticamente"
-  },
-  "Recorded": {
-   "es": "Registrados"
   },
   "Recurring": {
    "es": "Recurrentes"
@@ -2341,8 +2419,8 @@
   "Save": {
    "es": "Guardar"
   },
-  "See all": {
-   "es": "Ver todos"
+  "Search movements": {
+   "es": "Buscar movimientos"
   },
   "Show amounts": {
    "es": "Mostrar montos"
@@ -2359,8 +2437,14 @@
   "Subscriptions per month": {
    "es": "Suscripciones al mes"
   },
+  "Suggested": {
+   "es": "Sugeridos"
+  },
   "To": {
    "es": "Hacia"
+  },
+  "To confirm": {
+   "es": "Por confirmar"
   },
   "To confirm · %@": {
    "es": "Por confirmar · %@"
@@ -2371,11 +2455,20 @@
   "Transfers": {
    "es": "Transferencias"
   },
+  "Unlink payment": {
+   "es": "Desasociar pago"
+  },
+  "Upcoming": {
+   "es": "Próximo"
+  },
   "We couldn't confirm it. Try again.": {
    "es": "No pudimos confirmarlo. Inténtalo de nuevo."
   },
   "We couldn't delete it. Try again.": {
    "es": "No pudimos eliminarlo. Inténtalo de nuevo."
+  },
+  "We couldn't link it. Try again.": {
+   "es": "No pudimos asociarlo. Inténtalo de nuevo."
   },
   "We couldn't load your recurring movements.": {
    "es": "No pudimos cargar tus movimientos recurrentes."
@@ -2391,6 +2484,18 @@
   },
   "≈ %@ per year": {
    "es": "≈ %@ al año"
+  },
+  "Link to a recurring": {
+   "es": "Asociar a un recurrente"
+  },
+  "It counts as a payment of the one you choose.": {
+   "es": "Cuenta como un pago del que elijas."
+  },
+  "We couldn't load your recurring payments.": {
+   "es": "No pudimos cargar tus pagos recurrentes."
+  },
+  "No recurring payments of this kind": {
+   "es": "No hay pagos recurrentes de este tipo"
   }
  },
  "settings": {
@@ -3867,6 +3972,12 @@
   "kind.transfer": {
    "en": "Transfer",
    "es": "Transferencia"
+  },
+  "Recurring payment": {
+   "es": "Pago recurrente"
+  },
+  "Link ›": {
+   "es": "Asociar ›"
   }
  },
  "widgets": {

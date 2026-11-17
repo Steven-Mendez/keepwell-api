@@ -1,5 +1,5 @@
 import { newID } from "../schema/id"
-import type { CategorizationRule, Transaction, TransactionCategory, TransactionKind } from "../schema"
+import type { CategorizationRule, Merchant, Transaction, TransactionCategory, TransactionKind } from "../schema"
 import { MAX_RULE_MATCH_LENGTH, OTHER_EXPENSE_ID, OTHER_INCOME_ID } from "../schema"
 
 import { DomainError } from "./errors"
@@ -36,10 +36,23 @@ export function pastMatches(rule: CategorizationRule, transactions: readonly Tra
   )
 }
 
-/** The movement in the rule's category, with the rule's tags after its own. */
-export function applyingRule(rule: CategorizationRule, transaction: Transaction): Transaction {
+/**
+ * The movement in the rule's category, with the rule's tags after its own and the rule's merchant
+ * when it names none yet (one the person picked stays). The rule's merchant is set only when it is
+ * one of `merchants` (the alive ones: a rule may still name one deleted elsewhere until the repair
+ * after a pull) and `mayLinkMerchant` (`false` when the person cleared the business on purpose: a
+ * draft's `merchantId: null` is never overridden by a rule).
+ */
+export function applyingRule(rule: CategorizationRule, transaction: Transaction, merchants: readonly Pick<Merchant, "id">[], mayLinkMerchant = true): Transaction {
   const { tags: _previous, ...rest } = transaction
-  return { ...rest, categoryId: rule.categoryId, ...tagsField(mergeTags(transaction.tags ?? [], rule.tags ?? [])) }
+  const ruleMerchant = rule.merchantId
+  const links =
+    mayLinkMerchant && ruleMerchant !== undefined && transaction.merchantId === undefined && merchants.some((merchant) => merchant.id === ruleMerchant)
+  const merchant = links ? { merchantId: ruleMerchant } : {}
+  const applied: Transaction = { ...rest, categoryId: rule.categoryId, ...merchant, ...tagsField(mergeTags(transaction.tags ?? [], rule.tags ?? [])) }
+  // The platform is never the business itself.
+  if (applied.viaMerchantId !== undefined && applied.viaMerchantId === applied.merchantId) delete applied.viaMerchantId
+  return applied
 }
 
 /** The rule that would categorize this movement: none unless it is uncategorized, otherwise the first that matches. */
@@ -52,9 +65,9 @@ export function categorizingRule(
 }
 
 /** A new uncategorized movement takes the first rule that matches; otherwise it stays as it is. */
-export function autoCategorized(transaction: Transaction, rules: readonly CategorizationRule[]): Transaction {
+export function autoCategorized(transaction: Transaction, rules: readonly CategorizationRule[], merchants: readonly Pick<Merchant, "id">[]): Transaction {
   const rule = categorizingRule(transaction, rules)
-  return rule ? applyingRule(rule, transaction) : transaction
+  return rule ? applyingRule(rule, transaction, merchants) : transaction
 }
 
 /** The rules saving may apply: those whose category still exists with the rule's kind, in the same order. */
@@ -69,6 +82,8 @@ export interface CategorizationRuleDraft {
   categoryId: string
   kind: TransactionKind
   tags?: string[]
+  /** The business the rule sets on the movements it matches; absent for none. */
+  merchantId?: string
 }
 
 /** The rule as saving stores it: text trimmed and cut, expense or income only, a category of that kind that exists. */
@@ -79,7 +94,7 @@ export function validatedRule(draft: CategorizationRuleDraft & { id: string }, c
   const category = categories.find((candidate) => candidate.id === draft.categoryId)
   if (!category) throw DomainError.notFound(draft.categoryId)
   if (category.kind !== draft.kind) throw DomainError.categoryKindMismatch(draft.kind, category.kind)
-  return { id: draft.id, match, categoryId: draft.categoryId, kind: draft.kind, ...tagsField(draft.tags) }
+  return { id: draft.id, match, categoryId: draft.categoryId, kind: draft.kind, ...tagsField(draft.tags), ...(draft.merchantId === undefined ? {} : { merchantId: draft.merchantId }) }
 }
 
 export async function fetchCategorizationRules(store: LedgerStore): Promise<CategorizationRule[]> {
@@ -87,8 +102,13 @@ export async function fetchCategorizationRules(store: LedgerStore): Promise<Cate
 }
 
 export async function saveCategorizationRule(store: LedgerStore, draft: CategorizationRuleDraft): Promise<CategorizationRule> {
-  if (draft.id !== undefined && !(await store.fetchCategorizationRules()).some((rule) => rule.id === draft.id)) throw DomainError.notFound(draft.id)
+  const existing = draft.id === undefined ? undefined : (await store.fetchCategorizationRules()).find((rule) => rule.id === draft.id)
+  if (draft.id !== undefined && !existing) throw DomainError.notFound(draft.id)
   const rule = validatedRule({ ...draft, id: draft.id ?? newID() }, await store.fetchCategories())
+  // A newly chosen business has to exist; the one the edited rule already names stays even when this
+  // device hasn't pulled it yet (as on a movement, `merchantLinks`): the person didn't change it.
+  const unchanged = rule.merchantId !== undefined && rule.merchantId === existing?.merchantId
+  if (rule.merchantId !== undefined && !unchanged && !(await store.fetchMerchants()).some((merchant) => merchant.id === rule.merchantId)) throw DomainError.notFound(rule.merchantId)
   await store.saveCategorizationRule(rule)
   return rule
 }
@@ -110,7 +130,8 @@ export async function pastMatchCount(store: LedgerStore, rule: CategorizationRul
 export async function applyRuleToPast(store: LedgerStore, rule: CategorizationRule): Promise<number> {
   return store.atomically(async () => {
     const matches = pastMatches(rule, await store.fetchTransactions())
-    for (const transaction of matches) await store.saveTransaction(applyingRule(rule, transaction))
+    const merchants = await store.fetchMerchants()
+    for (const transaction of matches) await store.saveTransaction(applyingRule(rule, transaction, merchants))
     return matches.length
   })
 }

@@ -1,4 +1,4 @@
-import type { Account, Card, CardColor, CardKind, CardNetwork, Transaction, TransactionCategory, TransactionKind } from "@/lib/schema"
+import type { Account, Card, CardColor, CardKind, CardNetwork, Merchant, Transaction, TransactionCategory, TransactionKind } from "@/lib/schema"
 import { LOAN_PAYMENTS_ID, OTHER_EXPENSE_ID, OTHER_INCOME_ID } from "@/lib/schema"
 import { accountDisplayName, amountIn, isConfirmed, rateHasSecondCurrency, translatesById } from "@/lib/domain"
 import { formatAmount } from "@/lib/domain/format"
@@ -166,12 +166,16 @@ export interface LedgerLookup {
   accounts: readonly Account[]
   cards: readonly Card[]
   categories: readonly TransactionCategory[]
+  /** Absent where nothing names a business. */
+  merchants?: readonly Merchant[]
 }
 
 export class TransactionDisplay {
   private readonly accounts: Map<string, Account>
   private readonly cards: Map<string, Card>
   private readonly categories: Map<string, TransactionCategory>
+  /** The person's merchants by id. */
+  readonly merchants: ReadonlyMap<string, Merchant>
 
   constructor(
     private readonly t: Translator,
@@ -180,6 +184,25 @@ export class TransactionDisplay {
     this.accounts = new Map(lookup.accounts.map((account) => [account.id, account]))
     this.cards = new Map(lookup.cards.map((card) => [card.id, card]))
     this.categories = new Map(lookup.categories.map((category) => [category.id, category]))
+    this.merchants = new Map((lookup.merchants ?? []).map((merchant) => [merchant.id, merchant]))
+  }
+
+  /** The business it was with, if it names one that still exists. */
+  merchant(transaction: Pick<Transaction, "merchantId">): Merchant | undefined {
+    return transaction.merchantId ? this.merchants.get(transaction.merchantId) : undefined
+  }
+
+  /** The platform it went through, likewise. */
+  viaMerchant(transaction: Pick<Transaction, "viaMerchantId">): Merchant | undefined {
+    return transaction.viaMerchantId ? this.merchants.get(transaction.viaMerchantId) : undefined
+  }
+
+  /** "Subway · via Uber Eats", "Subway", "via Apple", or `undefined` when it names neither. */
+  merchantLine(transaction: Pick<Transaction, "merchantId" | "viaMerchantId">): string | undefined {
+    const business = this.merchant(transaction)?.name
+    const via = this.viaMerchant(transaction)?.name
+    const parts = [business, via === undefined ? undefined : this.t.in("web", "via %@", via)].filter((part) => part !== undefined)
+    return parts.length > 0 ? parts.join(" · ") : undefined
   }
 
   style(transaction: Transaction): TransactionStyle {
@@ -243,7 +266,7 @@ export class TransactionDisplay {
   searchableText(transaction: Transaction): string {
     // Tags are searchable as text too: "boda" finds "#boda" among everything else it matches.
     const tags = (transaction.tags ?? []).map((tag) => `#${tag}`)
-    return [transaction.description, transaction.note, this.categoryName(transaction), this.category(transaction)?.name, this.subtitle(transaction), ...tags].filter(Boolean).join(" ")
+    return [transaction.description, transaction.note, this.merchantLine(transaction), this.categoryName(transaction), this.category(transaction)?.name, this.subtitle(transaction), ...tags].filter(Boolean).join(" ")
   }
 }
 

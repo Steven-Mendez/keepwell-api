@@ -3,11 +3,16 @@ import {
   MAX_DEBT_NAME_LENGTH,
   MAX_LOAN_INSTALLMENTS,
   MAX_LOAN_NAME_LENGTH,
+  OTHER_INCOME_ID,
+  type CurrencySettings,
   type DebtDirection,
+  type DebtRepayment,
   type Loan,
   type LoanFrequency,
   type LoanPayment,
   type PersonalDebt,
+  type Transaction,
+  type TransactionCategory,
 } from "../schema"
 
 import { dayKey, startOfDay, type TimeZone } from "./calendar"
@@ -16,6 +21,7 @@ import { DomainError } from "./errors"
 import type { Money } from "./money"
 import { saveTransaction, type PaymentSource } from "./movements"
 import { occurrence } from "./recurring"
+import { debtShareIn, splitDebts } from "./rules"
 import type { LedgerStore } from "./store"
 
 // Port of iOS Debts.swift and DebtRules.swift (loans, their schedule, personal debts, totals and
@@ -259,7 +265,28 @@ export function equalShare(total: Decimal, people: number): Decimal {
   return total.div(people + 1).toDecimalPlaces(2, Decimal.ROUND_DOWN)
 }
 
-/** Every share positive and all of them together no more than the bill. */
+/**
+ * What is left of an expense to split, in its own currency: its amount less the shares the "they owe
+ * me" debts already split from it take (`splitDebts`: alive ones, settled or not; a deleted debt
+ * frees its share), never below zero. Anything else has nothing to split.
+ */
+export function splitRemaining(
+  expense: Transaction,
+  debts: readonly PersonalDebt[]
+): Decimal {
+  if (expense.kind !== "expense") return ZERO
+  const total = dec(expense.amount)
+  let taken = ZERO
+  for (const debt of splitDebts(expense, debts))
+    taken = taken.plus(
+      debt.amount.currency === expense.currency
+        ? dec(debt.amount.amount)
+        : (debtShareIn(debt, expense, expense.currency) ?? ZERO)
+    )
+  return Decimal.max(total.minus(taken), ZERO)
+}
+
+/** Every share positive and all of them together no more than the bill (or what is left of it). */
 export function checkSplit(shares: readonly Decimal[], total: Decimal): void {
   const sum = shares.reduce((acc, share) => acc.plus(share), ZERO)
   if (
@@ -525,27 +552,150 @@ export async function savePersonalDebt(
   return debt
 }
 
-/** "Record repayment": a positive amount no larger than what is left. Paying the rest settles it. */
+/** Where a deposited repayment is filed as income: "Refunds", or "Other income" once it was deleted. */
+export const REPAYMENT_CATEGORY_ID = "refunds"
+
+export function repaymentCategoryId(
+  categories: readonly Pick<TransactionCategory, "id" | "kind">[]
+): string {
+  return categories.some(
+    (category) =>
+      category.id === REPAYMENT_CATEGORY_ID && category.kind === "income"
+  )
+    ? REPAYMENT_CATEGORY_ID
+    : OTHER_INCOME_ID
+}
+
+/** "Ana · Dinner": the deposit's description, the same on every app (the person, then the debt's note). */
+export function repaymentDescription(
+  debt: Pick<PersonalDebt, "person" | "note">
+): string {
+  const note = debt.note?.trim() ?? ""
+  return note === "" ? debt.person : `${debt.person} · ${note}`
+}
+
+/**
+ * Whether a repayment of the debt can be deposited into an account: only on a "they owe me" debt in
+ * the ledger's principal or second currency, the ones a movement can be recorded in.
+ */
+export function canDepositRepayment(
+  debt: Pick<PersonalDebt, "direction" | "amount">,
+  currencies: Pick<CurrencySettings, "principal" | "second">
+): boolean {
+  return (
+    debt.direction === "theyOweMe" &&
+    (debt.amount.currency === currencies.principal ||
+      debt.amount.currency === currencies.second)
+  )
+}
+
+/** "Deposit into account": the repayment also enters an account as an income movement. */
+export interface RepaymentDeposit {
+  accountId: string
+  /** Defaults to `repaymentCategoryId`. */
+  categoryId?: string
+}
+
+/**
+ * "Record repayment": a positive amount no larger than what is left. Paying the rest settles it.
+ *
+ * With `deposit` (only on a "they owe me" debt in the principal or second currency,
+ * `canDepositRepayment`: otherwise `unsupportedTransactionKind` or `invalidCurrency`), it also records a confirmed income movement of the
+ * repayment's amount and currency into that account, through the same use case as a typed movement,
+ * and links it (`DebtRepayment.transactionId`), in one atomic write as `payLoanInstallment` does: a
+ * failure records neither. That movement changes the balance but no total counts it as income
+ * (`isReimbursement`).
+ */
 export async function repayPersonalDebt(
   store: LedgerStore,
   id: string,
   amountText: string,
-  day: Date
+  day: Date,
+  deposit?: RepaymentDeposit
 ): Promise<PersonalDebt> {
-  const debt = await existingDebt(store, id)
-  const amount = positive(amountText)
-  const remaining = debtRemaining(debt)
-  if (isSettled(debt) || amount.gt(remaining)) throw DomainError.invalidAmount()
-  const updated: PersonalDebt = {
-    ...debt,
-    repayments: [
-      ...debt.repayments,
-      { id: newID(), amount: decimalText(amount), date: day.toISOString() },
-    ],
-    ...(amount.eq(remaining) ? { settledAt: day.toISOString() } : {}),
-  }
-  await store.savePersonalDebt(updated)
-  return updated
+  return store.atomically(async () => {
+    const debt = await existingDebt(store, id)
+    const amount = positive(amountText)
+    const remaining = debtRemaining(debt)
+    if (isSettled(debt) || amount.gt(remaining)) throw DomainError.invalidAmount()
+    let transactionId: string | undefined
+    if (deposit) {
+      if (debt.direction !== "theyOweMe")
+        throw DomainError.unsupportedTransactionKind("income")
+      const currencies = (await store.loadSettings())?.currencies
+      if (!currencies || !canDepositRepayment(debt, currencies))
+        throw DomainError.invalidCurrency(debt.amount.currency)
+      const saved = await saveTransaction(store, {
+        id: newID(),
+        kind: "income",
+        amount,
+        currency: debt.amount.currency,
+        categoryId:
+          deposit.categoryId ??
+          repaymentCategoryId(await store.fetchCategories()),
+        source: { type: "account", id: deposit.accountId },
+        description: repaymentDescription(debt),
+        date: day,
+        note: "",
+        isDraft: false,
+      })
+      transactionId = saved.transaction.id
+    }
+    const repayment: DebtRepayment = {
+      id: newID(),
+      amount: decimalText(amount),
+      date: day.toISOString(),
+      ...(transactionId === undefined ? {} : { transactionId }),
+    }
+    const updated: PersonalDebt = {
+      ...debt,
+      repayments: [...debt.repayments, repayment],
+      ...(amount.eq(remaining) ? { settledAt: day.toISOString() } : {}),
+    }
+    await store.savePersonalDebt(updated)
+    return updated
+  })
+}
+
+/**
+ * Deletes one repayment and the movement it deposited, in one atomic write, as "Mark unpaid" does
+ * for a loan: a movement already deleted leaves only the debt to save. A debt that this repayment
+ * settled (settled the moment it was paid) opens again; one settled by hand stays settled.
+ */
+export async function deleteDebtRepayment(
+  store: LedgerStore,
+  debtId: string,
+  repaymentId: string
+): Promise<PersonalDebt> {
+  return store.atomically(async () => {
+    const debt = await existingDebt(store, debtId)
+    const repayment = debt.repayments.find(
+      (candidate) => candidate.id === repaymentId
+    )
+    if (!repayment) throw DomainError.notFound(repaymentId)
+    const movementId = repayment.transactionId
+    if (
+      movementId !== undefined &&
+      (await store.fetchTransactions()).some(
+        (transaction) => transaction.id === movementId
+      )
+    ) {
+      await store.deleteTransaction(movementId)
+    }
+    const { settledAt, ...open } = debt
+    // The same instant, however each app wrote it ("…:00Z" or "…:00.000Z").
+    const reopens =
+      settledAt !== undefined &&
+      new Date(settledAt).getTime() === new Date(repayment.date).getTime()
+    const updated: PersonalDebt = {
+      ...(reopens ? open : debt),
+      repayments: debt.repayments.filter(
+        (candidate) => candidate.id !== repaymentId
+      ),
+    }
+    await store.savePersonalDebt(updated)
+    return updated
+  })
 }
 
 /** "Mark as settled", even with something left. */
@@ -586,7 +736,10 @@ export interface SplitShare {
   amount: Decimal
 }
 
-/** "Split": one "they owe me" debt per person for their share of an expense, each linked to the movement. */
+/**
+ * "Split": one "they owe me" debt per person for their share of an expense, each linked to the
+ * movement. The shares together can't exceed what earlier splits left of it (`splitRemaining`).
+ */
 export async function splitTransaction(
   store: LedgerStore,
   transactionId: string,
@@ -602,9 +755,11 @@ export async function splitTransaction(
     cleaned(share.person, MAX_DEBT_NAME_LENGTH)
   )
   if (people.some((person) => person === "")) throw DomainError.missingName()
+  // A second split shares only what the first left (`splitRemaining`), so the shares never add up to
+  // more than the expense.
   checkSplit(
     shares.map((share) => share.amount),
-    dec(expense.amount)
+    splitRemaining(expense, await store.fetchPersonalDebts())
   )
   const created = shares.map((share, index): PersonalDebt => ({
     id: newID(),

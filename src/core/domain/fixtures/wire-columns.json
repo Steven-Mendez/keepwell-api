@@ -309,6 +309,16 @@
         "nullable": true,
         "optional": true
       },
+      "merchant_id": {
+        "type": "string",
+        "nullable": true,
+        "optional": true
+      },
+      "via_merchant_id": {
+        "type": "string",
+        "nullable": true,
+        "optional": true
+      },
       "created_at": {
         "type": "string",
         "nullable": false,
@@ -424,6 +434,16 @@
       "source": {
         "type": "string",
         "nullable": false,
+        "optional": true
+      },
+      "merchant_id": {
+        "type": "string",
+        "nullable": true,
+        "optional": true
+      },
+      "via_merchant_id": {
+        "type": "string",
+        "nullable": true,
         "optional": true
       },
       "created_at": {
@@ -696,6 +716,11 @@
         "nullable": false,
         "optional": false
       },
+      "transaction_id": {
+        "type": "string",
+        "nullable": true,
+        "optional": true
+      },
       "created_at": {
         "type": "string",
         "nullable": false,
@@ -742,6 +767,11 @@
         "type": "number",
         "nullable": false,
         "optional": false
+      },
+      "merchant_id": {
+        "type": "string",
+        "nullable": true,
+        "optional": true
       },
       "created_at": {
         "type": "string",
@@ -825,6 +855,53 @@
       "dismissed_at": {
         "type": "string",
         "nullable": true,
+        "optional": false
+      },
+      "created_at": {
+        "type": "string",
+        "nullable": false,
+        "optional": false
+      },
+      "updated_at": {
+        "type": "string",
+        "nullable": false,
+        "optional": false
+      },
+      "deleted_at": {
+        "type": "string",
+        "nullable": true,
+        "optional": false
+      }
+    },
+    "merchant": {
+      "id": {
+        "type": "string",
+        "nullable": false,
+        "optional": false
+      },
+      "name": {
+        "type": "string",
+        "nullable": false,
+        "optional": false
+      },
+      "domain": {
+        "type": "string",
+        "nullable": true,
+        "optional": false
+      },
+      "brand_id": {
+        "type": "string",
+        "nullable": true,
+        "optional": false
+      },
+      "default_category_id": {
+        "type": "string",
+        "nullable": true,
+        "optional": false
+      },
+      "is_platform": {
+        "type": "boolean",
+        "nullable": false,
         "optional": false
       },
       "created_at": {

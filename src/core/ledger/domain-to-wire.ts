@@ -4,6 +4,7 @@ import type {
   Card,
   CategorizationRule,
   Loan,
+  Merchant,
   PersonalDebt,
   SavingsGoal,
   Settings,
@@ -82,6 +83,19 @@ export function categorizationRuleColumns(rule: CategorizationRule, sortIndex: n
     kind: rule.kind,
     tags: normalizedTags(rule.tags ?? []),
     sort_index: sortIndex,
+    // Always written, null for none, as on a movement.
+    merchant_id: orNull(rule.merchantId),
+  }
+}
+
+export function merchantColumns(merchant: Merchant): Columns<"merchant"> {
+  return {
+    id: merchant.id,
+    name: merchant.name,
+    domain: orNull(merchant.domain),
+    brand_id: orNull(merchant.brandId),
+    default_category_id: orNull(merchant.defaultCategoryId),
+    is_platform: merchant.isPlatform,
   }
 }
 
@@ -146,6 +160,8 @@ export function repaymentColumns(debt: PersonalDebt): Columns<"personalDebtRepay
     debt_id: debt.id,
     amount: repayment.amount,
     date: repayment.date,
+    // Always written, null for none, as the apps do: the server sends every column it knows.
+    transaction_id: orNull(repayment.transactionId),
   }))
 }
 
