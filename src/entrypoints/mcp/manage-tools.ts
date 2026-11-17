@@ -33,6 +33,7 @@ import {
   importedLineIds,
   importedTransactionId,
   importTransactions,
+  linkPayment,
   MAX_IMPORT_LINES,
   mergeMerchants,
   payLoanInstallment,
@@ -57,6 +58,7 @@ import {
   settlePersonalDebt,
   splitRemaining,
   splitTransaction,
+  unlinkPayment,
   unpayLoanInstallment,
   updateCreditTerms,
   withRate,
@@ -726,6 +728,28 @@ export function registerManageTools(server: McpServer, options: { manage: Manage
       find(store.recurringRules, args.rule_id, "Recurring payment")
       await setRecurringRulePaused(store, args.rule_id, args.paused, now)
       return { id: args.rule_id, paused: args.paused }
+    }
+  )
+
+  tool(
+    "set_transaction_recurring_rule",
+    {
+      title: "Link a movement to a recurring payment",
+      description:
+        "Says which recurring payment a movement paid, so the rule reads as paid and lists it in its history; rule_id null takes it out of its rule. The movement must be of the rule's kind. Nothing else changes: the rule's schedule stays, and the movement keeps its amount and date.",
+      annotations: WRITE,
+    },
+    { transaction_id: ref("From search_transactions"), rule_id: ref("From list_recurring_rules").nullable() },
+    (args) => `${args.transaction_id}|${args.rule_id ?? ""}`,
+    async (store, args) => {
+      find(store.transactions, args.transaction_id, "Movement")
+      if (args.rule_id === null) {
+        await unlinkPayment(store, args.transaction_id)
+      } else {
+        find(store.recurringRules, args.rule_id, "Recurring payment")
+        await linkPayment(store, args.rule_id, args.transaction_id)
+      }
+      return { id: args.transaction_id, rule_id: args.rule_id }
     }
   )
 

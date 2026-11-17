@@ -116,7 +116,7 @@ export function createMcpServer(context: McpContext): McpServer {
     (args, ledger) => searchTransactions(ledger, args)
   )
   tool("list_categories", { title: "List categories", description: "Expense and income categories in the person's order, with their monthly budgets." }, {}, (_, ledger) => listCategories(ledger))
-  tool("list_recurring_rules", { title: "List recurring payments", description: "Recurring movements and subscriptions with their schedule and whether they are paused." }, {}, (_, ledger) => listRecurringRules(ledger))
+  tool("list_recurring_rules", { title: "List recurring payments", description: "Recurring movements and subscriptions with their schedule, whether they are paused, and where each stands today. payment_state: paid (the cycle that ends at next_date has a confirmed payment, current_payment), to_confirm or overdue (a draft waits, draft_transaction_id, for confirm_transaction), upcoming, paused or ended. days_until_next counts calendar days to next_date. last_payment is the latest confirmed movement linked to the rule; search_transactions with recurring_rule_id lists them all." }, {}, (_, ledger) => listRecurringRules(ledger, context.now()))
   tool("list_savings_goals", { title: "List savings goals", description: "Savings goals with their target and what is set aside." }, {}, (_, ledger) => listSavingsGoals(ledger))
   tool("list_loans", { title: "List loans", description: "Loans with their installments and which are paid." }, {}, (_, ledger) => listLoans(ledger))
   tool(
