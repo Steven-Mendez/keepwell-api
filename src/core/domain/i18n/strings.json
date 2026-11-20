@@ -2972,6 +2972,9 @@
   "Adds the tag": {
    "es": "Agrega la etiqueta"
   },
+  "Airplane": {
+   "es": "Avión"
+  },
   "Amber": {
    "es": "Ámbar"
   },
@@ -2981,17 +2984,56 @@
   "Balance isn't zero": {
    "es": "El saldo no es cero"
   },
+  "Bank building": {
+   "es": "Edificio de banco"
+  },
   "Bank transfer": {
    "es": "Transferencia bancaria"
   },
+  "Banknote": {
+   "es": "Billete"
+  },
+  "Basket": {
+   "es": "Canasta"
+  },
+  "Beach umbrella": {
+   "es": "Sombrilla de playa"
+  },
+  "Bell": {
+   "es": "Campana"
+  },
+  "Bicycle": {
+   "es": "Bicicleta"
+  },
+  "Birthday cake": {
+   "es": "Pastel de cumpleaños"
+  },
   "Blue": {
    "es": "Azul"
+  },
+  "Book": {
+   "es": "Libro"
+  },
+  "Briefcase": {
+   "es": "Maletín"
+  },
+  "Bus": {
+   "es": "Autobús"
+  },
+  "Camera": {
+   "es": "Cámara"
+  },
+  "Car": {
+   "es": "Auto"
   },
   "Card color": {
    "es": "Color de la tarjeta"
   },
   "Card number": {
    "es": "Número de la tarjeta"
+  },
+  "Cart with a plus sign": {
+   "es": "Carrito con signo más"
   },
   "Categories": {
    "es": "Categorías"
@@ -3026,6 +3068,9 @@
   "Closing transfer": {
    "es": "Transferencia de cierre"
   },
+  "Coffee cup": {
+   "es": "Taza de café"
+  },
   "Color": {
    "es": "Color"
   },
@@ -3040,6 +3085,9 @@
   },
   "Credit": {
    "es": "Crédito"
+  },
+  "Credit card": {
+   "es": "Tarjeta de crédito"
   },
   "Cyan": {
    "es": "Cian"
@@ -3065,11 +3113,17 @@
   "Delete this category?": {
    "es": "¿Eliminar esta categoría?"
   },
+  "Document": {
+   "es": "Documento"
+  },
   "Donations": {
    "es": "Donaciones"
   },
   "Drafts deleted: %lld": {
    "es": "Borradores que se borran: %lld"
+  },
+  "Dumbbell": {
+   "es": "Pesa"
   },
   "Edit category": {
    "es": "Editar categoría"
@@ -3128,14 +3182,35 @@
   "Family": {
    "es": "Familia"
   },
+  "Family holding hands": {
+   "es": "Familia tomada de la mano"
+  },
   "Fees": {
    "es": "Comisiones"
+  },
+  "Film": {
+   "es": "Película"
+  },
+  "First aid kit": {
+   "es": "Botiquín"
   },
   "Focus search": {
    "es": "Buscar"
   },
+  "Fork and knife": {
+   "es": "Tenedor y cuchillo"
+  },
   "Freelance": {
    "es": "Trabajo independiente"
+  },
+  "Fuel pump": {
+   "es": "Bomba de gasolina"
+  },
+  "Game controller": {
+   "es": "Control de videojuegos"
+  },
+  "Gift": {
+   "es": "Regalo"
   },
   "Gifts": {
    "es": "Regalos"
@@ -3146,11 +3221,17 @@
   "Give the category a name.": {
    "es": "Ponle un nombre a la categoría."
   },
+  "Globe": {
+   "es": "Globo terráqueo"
+  },
   "Go to": {
    "es": "Ir a"
   },
   "Goals": {
    "es": "Metas"
+  },
+  "Graduation cap": {
+   "es": "Birrete"
   },
   "Gray": {
    "es": "Gris"
@@ -3158,11 +3239,23 @@
   "Green": {
    "es": "Verde"
   },
+  "Grid": {
+   "es": "Cuadrícula"
+  },
   "Groceries": {
    "es": "Supermercado"
   },
+  "Hammer": {
+   "es": "Martillo"
+  },
   "Health": {
    "es": "Salud"
+  },
+  "Heart": {
+   "es": "Corazón"
+  },
+  "Heart in a circle": {
+   "es": "Corazón en un círculo"
   },
   "Hidden balance": {
    "es": "Saldo oculto"
@@ -3173,11 +3266,17 @@
   "Home": {
    "es": "Inicio"
   },
+  "House": {
+   "es": "Casa"
+  },
   "Housing": {
    "es": "Vivienda"
   },
   "Icon": {
    "es": "Ícono"
+  },
+  "Inbox tray": {
+   "es": "Bandeja de entrada"
   },
   "Insurance": {
    "es": "Seguros"
@@ -3194,14 +3293,26 @@
   "Its movements move to “%@”.": {
    "es": "Sus movimientos pasan a “%@”."
   },
+  "Key": {
+   "es": "Llave"
+  },
   "Keyboard shortcuts": {
    "es": "Atajos de teclado"
+  },
+  "Laptop": {
+   "es": "Computadora portátil"
   },
   "Last 4 digits": {
    "es": "Últimos 4 dígitos"
   },
+  "Leaf": {
+   "es": "Hoja"
+  },
   "Leisure": {
    "es": "Ocio"
+  },
+  "Lightning bolt": {
+   "es": "Rayo"
   },
   "Lime": {
    "es": "Lima"
@@ -3211,6 +3322,9 @@
   },
   "Log transaction": {
    "es": "Anotar movimiento"
+  },
+  "Map": {
+   "es": "Mapa"
   },
   "Monthly budget": {
    "es": "Presupuesto mensual"
@@ -3226,6 +3340,9 @@
   },
   "Movements from deleted categories land here, so this one can be renamed but not deleted.": {
    "es": "Aquí llegan los movimientos de las categorías eliminadas, así que puedes renombrarla pero no eliminarla."
+  },
+  "Music note": {
+   "es": "Nota musical"
   },
   "Name": {
    "es": "Nombre"
@@ -3260,14 +3377,38 @@
   "Other income": {
    "es": "Otros ingresos"
   },
+  "Paintbrush": {
+   "es": "Pincel"
+  },
+  "Parking sign": {
+   "es": "Señal de estacionamiento"
+  },
+  "Paw print": {
+   "es": "Huella de animal"
+  },
+  "Percent sign": {
+   "es": "Signo de porcentaje"
+  },
+  "Person running": {
+   "es": "Persona corriendo"
+  },
   "Personal care": {
    "es": "Cuidado personal"
   },
   "Pets": {
    "es": "Mascotas"
   },
+  "Phone": {
+   "es": "Teléfono"
+  },
+  "Pills": {
+   "es": "Pastillas"
+  },
   "Pink": {
    "es": "Rosa"
+  },
+  "Price tag": {
+   "es": "Etiqueta de precio"
   },
   "Product and expiry": {
    "es": "Producto y vencimiento"
@@ -3305,6 +3446,12 @@
   "Restaurants": {
    "es": "Restaurantes"
   },
+  "Return arrow": {
+   "es": "Flecha de regreso"
+  },
+  "Rising chart": {
+   "es": "Gráfica al alza"
+  },
   "Rules": {
    "es": "Reglas"
   },
@@ -3317,6 +3464,9 @@
   "Savings": {
    "es": "Ahorro"
   },
+  "Scissors": {
+   "es": "Tijeras"
+  },
   "See all": {
    "es": "Ver todos"
   },
@@ -3326,14 +3476,35 @@
   "Shopping": {
    "es": "Compras"
   },
+  "Shopping bag": {
+   "es": "Bolsa de compras"
+  },
+  "Shopping cart": {
+   "es": "Carrito de compras"
+  },
   "Show balance": {
    "es": "Mostrar saldo"
   },
   "Show shortcuts": {
    "es": "Ver atajos"
   },
+  "Sofa": {
+   "es": "Sofá"
+  },
+  "Sparkles": {
+   "es": "Destellos"
+  },
+  "Star": {
+   "es": "Estrella"
+  },
+  "Stroller": {
+   "es": "Cochecito de bebé"
+  },
   "Subscriptions": {
    "es": "Suscripciones"
+  },
+  "Suitcase": {
+   "es": "Maleta"
   },
   "Summary": {
    "es": "Resumen"
@@ -3341,8 +3512,17 @@
   "Summary shows how much is left, and Home warns you at 80% and 100%.": {
    "es": "Resumen muestra cuánto queda, e Inicio te avisa al llegar al 80 % y al 100 %."
   },
+  "T-shirt": {
+   "es": "Camiseta"
+  },
   "Taxes": {
    "es": "Impuestos"
+  },
+  "Tent": {
+   "es": "Tienda de campaña"
+  },
+  "Theater masks": {
+   "es": "Máscaras de teatro"
   },
   "This account is closed. Reopen it first.": {
    "es": "Esta cuenta está cerrada. Reábrela primero."
@@ -3359,6 +3539,9 @@
   "Tools": {
    "es": "Herramientas"
   },
+  "Tram": {
+   "es": "Tranvía"
+  },
   "Transaction deleted": {
    "es": "Movimiento eliminado"
   },
@@ -3371,11 +3554,17 @@
   "Travel": {
    "es": "Viajes"
   },
+  "Umbrella": {
+   "es": "Paraguas"
+  },
   "Undo": {
    "es": "Deshacer"
   },
   "Utilities": {
    "es": "Servicios"
+  },
+  "Water drop": {
+   "es": "Gota de agua"
   },
   "We couldn't close the account. Try again.": {
    "es": "No pudimos cerrar la cuenta. Inténtalo de nuevo."
@@ -3388,6 +3577,15 @@
   },
   "We never ask for the full number or the CVV.": {
    "es": "Nunca pedimos el número completo ni el CVV."
+  },
+  "Wi-Fi": {
+   "es": "Wi-Fi"
+  },
+  "Wine glass": {
+   "es": "Copa de vino"
+  },
+  "Wrench and screwdriver": {
+   "es": "Llave y destornillador"
   },
   "Yellow": {
    "es": "Amarillo"
