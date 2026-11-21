@@ -1,7 +1,7 @@
 import type { Account, CurrencySettings, RecurringRule, Transaction } from "../schema"
 
 import { addDays, addMonths, daysInMonth, monthInterval, startOfDay, yearMonthContaining, zonedParts, type TimeZone, type YearMonth } from "./calendar"
-import { Decimal, ZERO, dec, sum } from "./decimal"
+import { Decimal, ZERO, dec, roundedHalfUp, sum } from "./decimal"
 import { convert, settingsRate } from "./money"
 import { pendingOccurrences } from "./recurring"
 import { balanceBefore, balanceOf, direction, isConfirmed, monthlyTotals, nextOccurrence, share, statementCutoff, type SpendingDebts } from "./rules"
@@ -19,7 +19,13 @@ function principalOf(amount: Decimal, currency: string, settings: CurrencySettin
 }
 
 /**
- * What a credit card's next payment asks for, in the principal currency, never below zero (iOS
+ * Amounts converted one by one don't add up to the last digit, so a statement paid in full would
+ * still owe a sliver. Nobody owes less than a cent: half up, as amounts are shown.
+ */
+const cents = (amount: Decimal) => roundedHalfUp(amount, 2)
+
+/**
+ * What a credit card's next payment asks for, in the principal currency's cents, never below zero (iOS
  * `CardStatement.amountDue`). With a cutoff day it's the debt through the last cutoff before `due`,
  * less payments and refunds that reached the card after it; without one, the whole debt today.
  *
@@ -31,7 +37,7 @@ export function cardAmountDue(due: Date, account: Account, transactions: readonl
   const cutoffDay = account.creditTerms?.cutoffDay
   if (cutoffDay === undefined) {
     const debt = sum(balanceOf(account, transactions, zone).map((balance) => principal(balance.amount, balance.currency)))
-    return Decimal.max(debt.neg(), ZERO)
+    return cents(Decimal.max(debt.neg(), ZERO))
   }
   const closed = addDays(statementCutoff(due, cutoffDay, zone), 1, zone).getTime()
   const statement = balanceBefore(account, transactions, closed, zone)
@@ -42,7 +48,7 @@ export function cardAmountDue(due: Date, account: Account, transactions: readonl
     const { currency, amount } = share(transaction, account)
     paid = paid.plus(principal(amount, currency))
   }
-  return Decimal.max(owed.minus(paid), ZERO)
+  return cents(Decimal.max(owed.minus(paid), ZERO))
 }
 
 /** How many complete months before the current one the usual spending averages. */
