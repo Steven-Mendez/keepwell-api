@@ -245,6 +245,33 @@ export function balanceOf(account: Account, transactions: readonly Transaction[]
   return accountCurrencies(account).map((currency) => ({ amount: totals.get(currency) ?? ZERO, currency }))
 }
 
+/**
+ * What the account held just before `instant` (epoch milliseconds). From the opening day on that's
+ * `balanceOf` up to there. Before it, the opening balances are walked back: movements dated from
+ * `instant` up to the opening day are "already part of `openingBalances`", so undoing them leaves
+ * what the account held before they happened. With no such history it's the opening balances as given.
+ */
+export function balanceBefore(account: Account, transactions: readonly Transaction[], instant: number, zone: TimeZone): Money[] {
+  const openingDay = startOfDay(new Date(account.openingDate), zone).getTime()
+  if (instant >= openingDay) {
+    return balanceOf(
+      account,
+      transactions.filter((transaction) => dateOf(transaction).getTime() < instant),
+      zone,
+    )
+  }
+  const totals = new Map<string, Decimal>(account.openingBalances.map((balance) => [balance.currency, dec(balance.amount)]))
+  for (const transaction of transactions) {
+    const time = dateOf(transaction).getTime()
+    if (!isConfirmed(transaction) || time < instant || time >= openingDay) continue
+    const sign = direction(transaction, account.id)
+    if (sign === 0) continue
+    const { currency, amount } = share(transaction, account)
+    totals.set(currency, (totals.get(currency) ?? ZERO).minus(amount.times(sign)))
+  }
+  return accountCurrencies(account).map((currency) => ({ amount: totals.get(currency) ?? ZERO, currency }))
+}
+
 // Rule 6: net worth, with today's settings rate.
 
 /** A balance in a currency the settings no longer convert is left out rather than mixed in, as in the forecast. */

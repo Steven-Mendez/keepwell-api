@@ -67,6 +67,81 @@ export function colorName(t: Translator, key: string): string {
   return t.in("sharedpresentation", names[key] ?? "Gray")
 }
 
+/** The English key of what each icon of the picker shows (`CategoryDisplay.symbolName`). */
+export const SYMBOL_NAMES: Readonly<Record<string, string>> = {
+  "cart": "Shopping cart",
+  "basket": "Basket",
+  "fork.knife": "Fork and knife",
+  "cup.and.saucer": "Coffee cup",
+  "wineglass": "Wine glass",
+  "birthday.cake": "Birthday cake",
+  "bus": "Bus",
+  "car": "Car",
+  "fuelpump": "Fuel pump",
+  "tram": "Tram",
+  "bicycle": "Bicycle",
+  "parkingsign": "Parking sign",
+  "house": "House",
+  "sofa": "Sofa",
+  "bolt": "Lightning bolt",
+  "drop": "Water drop",
+  "wifi": "Wi-Fi",
+  "phone": "Phone",
+  "cross.case": "First aid kit",
+  "pills": "Pills",
+  "heart": "Heart",
+  "dumbbell": "Dumbbell",
+  "figure.run": "Person running",
+  "scissors": "Scissors",
+  "bag": "Shopping bag",
+  "tshirt": "T-shirt",
+  "gift": "Gift",
+  "tag": "Price tag",
+  "sparkles": "Sparkles",
+  "cart.badge.plus": "Cart with a plus sign",
+  "graduationcap": "Graduation cap",
+  "book": "Book",
+  "theatermasks": "Theater masks",
+  "film": "Film",
+  "music.note": "Music note",
+  "gamecontroller": "Game controller",
+  "airplane": "Airplane",
+  "suitcase": "Suitcase",
+  "beach.umbrella": "Beach umbrella",
+  "globe": "Globe",
+  "tent": "Tent",
+  "map": "Map",
+  "pawprint": "Paw print",
+  "leaf": "Leaf",
+  "figure.2.and.child.holdinghands": "Family holding hands",
+  "stroller": "Stroller",
+  "umbrella": "Umbrella",
+  "heart.circle": "Heart in a circle",
+  "briefcase": "Briefcase",
+  "laptopcomputer": "Laptop",
+  "wrench.and.screwdriver": "Wrench and screwdriver",
+  "hammer": "Hammer",
+  "paintbrush": "Paintbrush",
+  "camera": "Camera",
+  "banknote": "Banknote",
+  "creditcard": "Credit card",
+  "building.columns": "Bank building",
+  "chart.line.uptrend.xyaxis": "Rising chart",
+  "percent": "Percent sign",
+  "doc.text": "Document",
+  "key": "Key",
+  "star": "Star",
+  "arrow.uturn.backward": "Return arrow",
+  "tray.and.arrow.down": "Inbox tray",
+  "bell": "Bell",
+  "square.grid.2x2": "Grid",
+}
+
+/** What a screen reader says for an icon of the picker: the picture, translated, never the SF Symbol id. */
+export function symbolName(t: Translator, symbol: string): string {
+  return t.in("sharedpresentation", SYMBOL_NAMES[symbol] ?? "Icon")
+}
+
 /** Defaults translate by id until renamed; created and renamed ones show what was typed. */
 export function categoryName(t: Translator, category: TransactionCategory): string {
   return translatesById(category) ? t.in("sharedpresentation", category.name) : category.name
