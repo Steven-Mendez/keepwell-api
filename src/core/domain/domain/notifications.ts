@@ -2,6 +2,7 @@ import { budgetStatuses, type BudgetLevel } from "./budgets"
 import { addDays, compareMonths, dayKey, monthKey, startOfDay, yearMonthContaining, zonedDate, type TimeZone } from "./calendar"
 import type { Decimal } from "./decimal"
 import { debtDueStatus, debtRemaining, orderedLoans } from "./debts"
+import { cardAmountDue } from "./forecast"
 import { fromStored, type Money } from "./money"
 import { homeOverview, ledgerDebtLinks, type Ledger } from "./overviews"
 import { upcoming } from "./recurring"
@@ -56,7 +57,8 @@ const daysBetween = (from: Date, to: Date, zone: TimeZone) => Math.round((startO
  * Everything that applies on the day of `now`, newest first:
  *
  * - drafts dated today or before (`planned`),
- * - card payments from `paymentReminderDaysBefore` days ahead until the due day,
+ * - card payments from `paymentReminderDaysBefore` days ahead until the due day, while the statement
+ *   still asks for something (`cardAmountDue`),
  * - statements closing today, loan installments inside the same window as card payments,
  * - personal debts with a due date, open and with something left, inside that same window,
  * - subscriptions renewing tomorrow, and other recurring expenses due tomorrow that are recorded as
@@ -97,7 +99,8 @@ export function ledgerNotifications(ledger: Ledger, now: Date): LedgerNotificati
     if (dueDay) {
       const due = nextOccurrence(dueDay, now, zone)
       const daysLeft = daysBetween(today, due, zone)
-      if (daysLeft <= window) {
+      // A statement already paid, or a card that owes nothing, has no payment to remind of.
+      if (daysLeft <= window && !cardAmountDue(due, account, ledger.transactions, ledger.settings.currencies, zone).isZero()) {
         found.push({
           id: `payment:${account.id}:${dayKey(due, zone)}`,
           kind: "payment",

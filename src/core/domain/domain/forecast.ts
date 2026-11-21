@@ -4,7 +4,7 @@ import { addDays, addMonths, daysInMonth, monthInterval, startOfDay, yearMonthCo
 import { Decimal, ZERO, dec, sum } from "./decimal"
 import { convert, settingsRate } from "./money"
 import { pendingOccurrences } from "./recurring"
-import { balanceOf, direction, isConfirmed, monthlyTotals, nextOccurrence, share, statementCutoff, type SpendingDebts } from "./rules"
+import { balanceBefore, balanceOf, direction, isConfirmed, monthlyTotals, nextOccurrence, share, statementCutoff, type SpendingDebts } from "./rules"
 
 // Port of iOS Domain/Rules/BalanceForecast.swift and CardStatement.swift: "at the end of the month
 // you'll have about C$X", computed line by line the same on both platforms.
@@ -22,6 +22,9 @@ function principalOf(amount: Decimal, currency: string, settings: CurrencySettin
  * What a credit card's next payment asks for, in the principal currency, never below zero (iOS
  * `CardStatement.amountDue`). With a cutoff day it's the debt through the last cutoff before `due`,
  * less payments and refunds that reached the card after it; without one, the whole debt today.
+ *
+ * A card opened after that cutoff has its opening debt walked back to it (`balanceBefore`): what it
+ * bought between the cutoff and the opening day belongs to the next statement, not this one.
  */
 export function cardAmountDue(due: Date, account: Account, transactions: readonly Transaction[], settings: CurrencySettings, zone: TimeZone): Decimal {
   const principal = (amount: Decimal, currency: string) => principalOf(amount, currency, settings)
@@ -31,11 +34,7 @@ export function cardAmountDue(due: Date, account: Account, transactions: readonl
     return Decimal.max(debt.neg(), ZERO)
   }
   const closed = addDays(statementCutoff(due, cutoffDay, zone), 1, zone).getTime()
-  const statement = balanceOf(
-    account,
-    transactions.filter((transaction) => new Date(transaction.date).getTime() < closed),
-    zone,
-  )
+  const statement = balanceBefore(account, transactions, closed, zone)
   const owed = sum(statement.map((balance) => principal(balance.amount, balance.currency))).neg()
   let paid = ZERO
   for (const transaction of transactions) {
