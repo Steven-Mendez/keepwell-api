@@ -116,7 +116,7 @@ export function upcomingPayments(ledger: Ledger, now: Date, days: number): Upcom
     const due = nextOccurrence(dueDay, now, zone)
     if (!inWindow(due)) continue
     const owed = cardAmountDue(due, account, ledger.transactions, settings, zone)
-    // Nothing to pay is nothing pending; the payment reminder still says the day has come.
+    // Nothing to pay is nothing pending, and nothing the payment reminder speaks of either.
     if (owed.isZero()) continue
     found.push({
       ...at(due),

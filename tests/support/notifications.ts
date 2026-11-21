@@ -12,12 +12,13 @@ export const silentLog: JobLog = { info() {}, warn() {}, error() {} }
 
 /**
  * A small ledger: a credit account closing on the 13th and due on the 15th (payment reminders start
- * three days before), a groceries budget of 100 with 85 spent in November, and a draft dated Nov 13.
+ * three days before), a groceries budget of 100 with 85 spent in November on that card, which is
+ * what its statement asks for, and a draft dated Nov 13.
  */
 export function ledger(extra: Partial<Ledger> = {}): Ledger {
   return {
     settings: DEFAULT_SETTINGS,
-    accounts: [{ id: VISA, name: "Visa", kind: "credit", openingBalances: [], openingDate: "2026-01-01T00:00:00.000Z", creditTerms: { debtMode: "principal", cutoffDay: 13, dueDay: 15 } }],
+    accounts: [{ id: VISA, name: "Visa", kind: "credit", openingBalances: [{ amount: "0", currency: "USD" }], openingDate: "2026-01-01T00:00:00.000Z", creditTerms: { debtMode: "principal", cutoffDay: 13, dueDay: 15 } }],
     cards: [],
     categories: [{ id: GROCERIES, name: "Groceries", kind: "expense", isRenamed: false, monthlyBudget: { amount: "100", currency: "USD" } }],
     transactions: [
