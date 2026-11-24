@@ -12,6 +12,12 @@ export function newID(): string {
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`
 }
 
+/** A public link's secret (`ShareToken`): 128 random bits as base64url, 22 characters. */
+export function newShareToken(): string {
+  const bytes = crypto.getRandomValues(new Uint8Array(16))
+  return btoa(String.fromCharCode(...bytes)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "")
+}
+
 /**
  * RFC 9562 name-based UUID (version 5, SHA-1). The same name always gives the same id on every
  * device and on the server, so an occurrence of a recurring rule or an installment of a loan

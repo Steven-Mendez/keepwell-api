@@ -319,6 +319,11 @@
         "nullable": true,
         "optional": true
       },
+      "share_token": {
+        "type": "string",
+        "nullable": true,
+        "optional": true
+      },
       "created_at": {
         "type": "string",
         "nullable": false,
