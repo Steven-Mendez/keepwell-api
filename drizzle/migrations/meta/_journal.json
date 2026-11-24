@@ -176,6 +176,13 @@
       "when": 1794571623116,
       "tag": "0024_debt_repayment_transaction",
       "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1795557065564,
+      "tag": "0025_transaction_share_token",
+      "breakpoints": true
     }
   ]
 }

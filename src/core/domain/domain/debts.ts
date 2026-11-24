@@ -1,4 +1,4 @@
-import { loanPaymentId, newID } from "../schema/id"
+import { loanPaymentId, newID, newShareToken } from "../schema/id"
 import {
   MAX_DEBT_NAME_LENGTH,
   MAX_LOAN_INSTALLMENTS,
@@ -745,32 +745,143 @@ export async function splitTransaction(
   transactionId: string,
   shares: readonly SplitShare[]
 ): Promise<PersonalDebt[]> {
+  return store.atomically(async () => {
+    const expense = await splitExpense(store, transactionId)
+    const people = sharePeople(shares)
+    // A second split shares only what the first left (`splitRemaining`), so the shares never add up to
+    // more than the expense.
+    checkSplit(
+      shares.map((share) => share.amount),
+      splitRemaining(expense, await store.fetchPersonalDebts())
+    )
+    const created = shares.map((share, index) =>
+      newSplitDebt(expense, people[index]!, share.amount)
+    )
+    for (const debt of created) await store.savePersonalDebt(debt)
+    return created
+  })
+}
+
+/** A share of an edited split: `debtId` names the debt it already is; without it, it's a new one. */
+export interface SplitShareEdit extends SplitShare {
+  debtId?: string
+}
+
+/**
+ * "Edit split": the expense's shares become exactly `shares`, in one atomic write. A listed share
+ * keeps its debt (repayments, settling, due date) with the new name and amount, in the debt's own
+ * currency; a new one becomes a debt as `splitTransaction` makes them; a share left out is deleted
+ * (a repayment it deposited stays in its account). Together they can't exceed the expense, and none
+ * can drop below what was already repaid. No shares left also stops sharing the expense's link.
+ */
+export async function saveSplit(
+  store: LedgerStore,
+  transactionId: string,
+  shares: readonly SplitShareEdit[]
+): Promise<PersonalDebt[]> {
+  return store.atomically(async () => {
+    const expense = await splitExpense(store, transactionId)
+    const people = sharePeople(shares)
+    if (shares.some((share) => share.amount.lte(0)))
+      throw DomainError.invalidAmount()
+    const current = splitDebts(expense, await store.fetchPersonalDebts())
+    const saved = shares.map((share, index): PersonalDebt => {
+      if (share.debtId === undefined)
+        return newSplitDebt(expense, people[index]!, share.amount)
+      const debt = current.find((candidate) => candidate.id === share.debtId)
+      if (!debt) throw DomainError.notFound(share.debtId)
+      if (debtRepaid(debt).gt(share.amount)) throw DomainError.invalidAmount()
+      return {
+        ...debt,
+        person: people[index]!,
+        amount: { ...debt.amount, amount: decimalText(share.amount) },
+      }
+    })
+    const taken = saved.reduce(
+      (sum, debt) =>
+        sum.plus(
+          debt.amount.currency === expense.currency
+            ? dec(debt.amount.amount)
+            : (debtShareIn(debt, expense, expense.currency) ?? ZERO)
+        ),
+      ZERO
+    )
+    if (taken.gt(dec(expense.amount))) throw DomainError.invalidAmount()
+    const kept = new Set(saved.map((debt) => debt.id))
+    for (const debt of current)
+      if (!kept.has(debt.id)) await store.deletePersonalDebt(debt.id)
+    for (const debt of saved) await store.savePersonalDebt(debt)
+    if (saved.length === 0 && expense.shareToken !== undefined) {
+      const { shareToken: _, ...unshared } = expense
+      await store.saveTransaction(unshared)
+    }
+    return saved
+  })
+}
+
+/**
+ * "Share link": gives a split expense its public link, or keeps the one it has. Only an expense with
+ * shares has anything to show.
+ */
+export async function shareSplit(
+  store: LedgerStore,
+  transactionId: string
+): Promise<Transaction> {
+  const expense = await splitExpense(store, transactionId)
+  if (expense.shareToken !== undefined) return expense
+  if (splitDebts(expense, await store.fetchPersonalDebts()).length === 0)
+    throw DomainError.invalidAmount()
+  const shared = { ...expense, shareToken: newShareToken() }
+  await store.saveTransaction(shared)
+  return shared
+}
+
+/** "Stop sharing": the link stops working; sharing again makes a new one. */
+export async function stopSharingSplit(
+  store: LedgerStore,
+  transactionId: string
+): Promise<Transaction> {
+  const expense = await splitExpense(store, transactionId)
+  if (expense.shareToken === undefined) return expense
+  const { shareToken: _, ...unshared } = expense
+  await store.saveTransaction(unshared)
+  return unshared
+}
+
+async function splitExpense(
+  store: LedgerStore,
+  transactionId: string
+): Promise<Transaction> {
   const expense = (await store.fetchTransactions()).find(
     (transaction) => transaction.id === transactionId
   )
   if (!expense) throw DomainError.notFound(transactionId)
   if (expense.kind !== "expense")
     throw DomainError.unsupportedTransactionKind(expense.kind)
+  return expense
+}
+
+function sharePeople(shares: readonly SplitShare[]): string[] {
   const people = shares.map((share) =>
     cleaned(share.person, MAX_DEBT_NAME_LENGTH)
   )
   if (people.some((person) => person === "")) throw DomainError.missingName()
-  // A second split shares only what the first left (`splitRemaining`), so the shares never add up to
-  // more than the expense.
-  checkSplit(
-    shares.map((share) => share.amount),
-    splitRemaining(expense, await store.fetchPersonalDebts())
-  )
-  const created = shares.map((share, index): PersonalDebt => ({
+  return people
+}
+
+function newSplitDebt(
+  expense: Transaction,
+  person: string,
+  amount: Decimal
+): PersonalDebt {
+  return {
     id: newID(),
-    person: people[index]!,
+    person,
     direction: "theyOweMe",
-    amount: { amount: decimalText(share.amount), currency: expense.currency },
+    amount: { amount: decimalText(amount), currency: expense.currency },
     date: expense.date,
     note: expense.description,
     repayments: [],
     transactionId: expense.id,
-  }))
-  for (const debt of created) await store.savePersonalDebt(debt)
-  return created
+  }
 }

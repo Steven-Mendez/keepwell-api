@@ -1,4 +1,4 @@
-import { bigint, boolean, index, integer, pgTable, primaryKey, text, timestamp, uniqueIndex, type PgColumnBuilderBase } from "drizzle-orm/pg-core"
+import { bigint, boolean, index, integer, pgTable, primaryKey, text, timestamp, uniqueIndex, type AnyPgColumn, type PgColumnBuilderBase } from "drizzle-orm/pg-core"
 import type { z } from "zod"
 
 import { SYNC_WIRE, type SyncEntity } from "../../core/domain/schema"
@@ -52,7 +52,8 @@ export function jsonColumns(wire: z.ZodObject): string[] {
     .map(([name]) => name)
 }
 
-function ledgerTable<E extends SyncEntity>(name: string, entity: E, extra: Record<string, PgColumnBuilderBase> = {}) {
+/** `indexed` names wire columns looked up across users, outside the (user_id, id) key. */
+function ledgerTable<E extends SyncEntity>(name: string, entity: E, extra: Record<string, PgColumnBuilderBase> = {}, indexed: readonly string[] = []) {
   return pgTable(
     name,
     {
@@ -63,7 +64,10 @@ function ledgerTable<E extends SyncEntity>(name: string, entity: E, extra: Recor
       updated_at: text("updated_at").notNull(),
       deleted_at: text("deleted_at"),
     },
-    (table) => [primaryKey({ columns: [table.user_id, table.id] })]
+    (table) => [
+      primaryKey({ columns: [table.user_id, table.id] }),
+      ...indexed.map((column) => index(`${name}_${column}_idx`).on((table as unknown as Record<string, AnyPgColumn>)[column]!)),
+    ]
   )
 }
 
@@ -73,7 +77,8 @@ const source = { source: text("source").notNull().default("app") }
 export const ledgerAccounts = ledgerTable("ledger_accounts", "account")
 export const cards = ledgerTable("cards", "card")
 export const categories = ledgerTable("categories", "category")
-export const transactions = ledgerTable("transactions", "transaction", source)
+// `share_token`: the public page of a shared split finds its movement by the link alone.
+export const transactions = ledgerTable("transactions", "transaction", source, ["share_token"])
 export const recurringRules = ledgerTable("recurring_rules", "recurringRule", source)
 export const savingsGoals = ledgerTable("savings_goals", "savingsGoal")
 export const loans = ledgerTable("loans", "loan")

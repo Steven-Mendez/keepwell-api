@@ -115,6 +115,9 @@ export type Card = z.infer<typeof Card>
 export const MAX_IMPORTED_ID_LENGTH = 128
 export const ImportedId = z.string().min(1).max(MAX_IMPORTED_ID_LENGTH)
 
+/** The secret in a split expense's public link: 128 random bits as base64url (`newShareToken`). */
+export const ShareToken = z.string().regex(/^[A-Za-z0-9_-]{22}$/, "Not a share token")
+
 /**
  * A movement. `amount` is always positive and `kind` carries the direction, so a mis-signed value
  * can't flip an expense into income (iOS `Transaction.checkAmounts`).
@@ -158,6 +161,11 @@ export const Transaction = z.object({
   merchantId: Id.optional(),
   /** The platform it went through (Uber Eats delivering from a restaurant, Apple billing an app). */
   viaMerchantId: Id.optional(),
+  /**
+   * The public link to a split expense (`shareSplit`): anyone with it sees the shares, read only.
+   * Only the owner sets or clears it; an edit keeps it.
+   */
+  shareToken: ShareToken.optional(),
 })
 export type Transaction = z.infer<typeof Transaction>
 
