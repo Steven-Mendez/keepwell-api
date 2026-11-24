@@ -34,6 +34,8 @@ import type { PushSender } from "../core/ports/push"
 import { ClearReadNotifications } from "../core/use-cases/clear-read-notifications"
 import { createApp } from "./http/app"
 import { DrizzleInvitationStore } from "../adapters/database/invitation-store"
+import { DrizzleSharedSplitIndex } from "../adapters/database/shared-split-index"
+import { ViewSharedSplit } from "../core/use-cases/view-shared-split"
 import type { HealthCheck } from "./http/routes/health"
 
 export interface Urls {
@@ -159,13 +161,15 @@ export function bootstrap(options: { logger: Logger; version: string; database: 
     clear: new ClearReadNotifications({ devices: pushStore, ledger: readLedger, sender: pushSender, log: logger }),
   }
 
+  const sharedSplits = new ViewSharedSplit(new DrizzleSharedSplitIndex(db), ledgerReader)
+
   const invitations = { store: new DrizzleInvitationStore(db), secure: urls.apiBaseUrl.startsWith("https://"), cookieDomain: urls.cookieDomain }
 
   const healthChecks: HealthCheck[] = [
     { name: "db", run: () => pingDatabase(db) },
     { name: "config", run: async () => void (await auth) },
   ]
-  const app = createApp({ logger, version, healthChecks, auth, webOrigin: urls.webOrigin, requestDeletion, capabilities, sync, push, mcp, switches, appStore, invitations, beforeAuth: async () => void (await built).secret.ensureFresh() })
+  const app = createApp({ logger, version, healthChecks, auth, webOrigin: urls.webOrigin, requestDeletion, capabilities, sync, push, mcp, switches, appStore, invitations, sharedSplits, beforeAuth: async () => void (await built).secret.ensureFresh() })
 
   /**
    * Does the first request's slow work ahead of it: opens the database connection (DSQL IAM token

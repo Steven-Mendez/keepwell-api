@@ -1,6 +1,6 @@
 import { z } from "zod"
 
-import { SYNC_WIRE, SyncEvent } from "../../core/domain/schema"
+import { ShareToken, SYNC_WIRE, SyncEvent } from "../../core/domain/schema"
 import { DeviceBody } from "./routes/push"
 import { PullQuery, PushBody, SnapshotQuery } from "./routes/sync"
 
@@ -82,6 +82,14 @@ export function openApiDocument() {
         parameters: [{ name: "clientId", in: "path", required: true, schema: { type: "string", format: "uuid" } }],
         put: { summary: "Register or refresh this installation as a push device (ADR 0012)", requestBody: { required: true, content: content(json(DeviceBody)) }, responses: { "204": { description: "Registered" }, ...errors } },
         delete: { summary: "Forget this installation's push device (also on sign-out)", responses: { "204": { description: "Removed" }, ...errors } },
+      },
+      "/shared/{token}": {
+        parameters: [{ name: "token", in: "path", required: true, schema: json(ShareToken) }],
+        get: {
+          security: [],
+          summary: "A shared split's public page: each person's share and whether they paid, read only",
+          responses: { "200": { description: "The expense and its shares" }, "404": { description: "No live split shares this link", content: content(ref("Error")) } },
+        },
       },
     },
   }

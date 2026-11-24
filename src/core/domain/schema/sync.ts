@@ -1,6 +1,6 @@
 import { z } from "zod"
 
-import { CardColor, CardKind, CardNetwork, DebtDirection, DebtMode, ImportedId, LoanFrequency, MerchantDomain, RecurringFrequency, AccountKind } from "./entities"
+import { CardColor, CardKind, CardNetwork, DebtDirection, DebtMode, ImportedId, ShareToken, LoanFrequency, MerchantDomain, RecurringFrequency, AccountKind } from "./entities"
 import { CurrencyCode, DecimalString, Id, IsoDateTime, PositiveDecimalString, RecordSource, TimeZoneId, TransactionKind, TransactionStatus } from "./primitives"
 
 // The sync wire format (ADR 0005): each event carries one row as stored, in snake_case, the same
@@ -130,6 +130,11 @@ export const TransactionWire = z.object({
    */
   imported_id: ImportedId.nullable().optional(),
   ...MerchantColumns,
+  /**
+   * Optional, not only nullable, like the merchant columns: an app older than shared links lacks the
+   * key and keeps the link; newer apps always send it, null once sharing stops.
+   */
+  share_token: ShareToken.nullable().optional(),
   ...Audit,
 })
 

@@ -224,6 +224,7 @@ export function categorizedTransaction(
   const recurringId = draft.recurringId ?? existing?.recurringId
   // Nobody types it: an edit from any editor keeps the statement line the movement came from.
   const importedId = existing?.importedId ?? draft.importedId
+  const shareToken = existing?.shareToken
   const built: Transaction = {
     id: draft.id,
     date: draft.date.toISOString(),
@@ -243,6 +244,7 @@ export function categorizedTransaction(
     ...(recurringId === undefined ? {} : { recurringId }),
     ...tagsField(draft.tags),
     ...(importedId === undefined ? {} : { importedId }),
+    ...(shareToken === undefined ? {} : { shareToken }),
     ...links,
   }
   // The rule reads the text as typed, before the safety net below fills in a category's name.

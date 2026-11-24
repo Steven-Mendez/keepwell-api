@@ -689,6 +689,17 @@
               }
             ]
           },
+          "share_token": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[A-Za-z0-9_-]{22}$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "created_at": {
             "type": "string",
             "format": "date-time",
@@ -2162,6 +2173,39 @@
           },
           "403": {
             "description": "`needs_plan`: the capability named in `details.capability` is missing",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/shared/{token}": {
+      "parameters": [
+        {
+          "name": "token",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]{22}$"
+          }
+        }
+      ],
+      "get": {
+        "security": [],
+        "summary": "A shared split's public page: each person's share and whether they paid, read only",
+        "responses": {
+          "200": {
+            "description": "The expense and its shares"
+          },
+          "404": {
+            "description": "No live split shares this link",
             "content": {
               "application/json": {
                 "schema": {
