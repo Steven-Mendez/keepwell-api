@@ -25,6 +25,8 @@ import { requestContext } from "./middlewares/request-context"
 import { securityHeaders } from "./middlewares/security-headers"
 import { authRoutes } from "./routes/auth"
 import { invitationRoutes } from "./routes/invitations"
+import { sharedRoutes } from "./routes/shared"
+import type { ViewSharedSplit } from "../../core/use-cases/view-shared-split"
 import type { InvitationStore } from "../../core/ports/invitations"
 import { healthRoutes, type HealthCheck } from "./routes/health"
 import { meRoutes } from "./routes/me"
@@ -53,6 +55,8 @@ export interface AppDependencies {
   /** Invitation check for the web's first sign-in. */
   invitations?: { store: InvitationStore; secure: boolean; cookieDomain?: string; now?: () => Date }
   appStore?: { redeem: Promise<RedeemPurchase>; notifications: Promise<HandleAppStoreNotification> }
+  /** A shared split's public page; with it, /shared/:token is mounted. */
+  sharedSplits?: ViewSharedSplit
   /** The MCP server's data access; with it, /mcp is mounted. */
   mcp?: { readLedger: ReadLedger; baseURL: string; now?: () => Date; connections?: McpConnections; createPending?: CreatePending; manage?: ManageLedger }
 }
@@ -87,6 +91,7 @@ export function createApp(deps: AppDependencies) {
 
   app.route("/", healthRoutes({ version: deps.version, checks: deps.healthChecks ?? [] }))
   app.get("/openapi.json", (c) => c.json(openApiDocument()))
+  if (deps.sharedSplits) app.route("/", sharedRoutes({ view: deps.sharedSplits }))
   if (deps.auth) {
     app.route("/", authRoutes(deps.auth, { webOrigin: deps.webOrigin, before: deps.beforeAuth }))
     app.route("/", meRoutes(deps.auth, { requestDeletion: deps.requestDeletion, capabilities: deps.capabilities }))

@@ -22,6 +22,8 @@ import { CreatePending } from "../../src/core/use-cases/create-pending"
 import { ManageLedger } from "../../src/core/use-cases/manage-ledger"
 import { ScopedMcpTrash } from "../../src/adapters/database/repositories/mcp-trash"
 import { DrizzleInvitationStore } from "../../src/adapters/database/invitation-store"
+import { DrizzleSharedSplitIndex } from "../../src/adapters/database/shared-split-index"
+import { ViewSharedSplit } from "../../src/core/use-cases/view-shared-split"
 import { DrizzlePurchaseStore } from "../../src/adapters/database/purchase-store"
 import type { AppStoreVerifier } from "../../src/core/ports/app-store"
 import { HandleAppStoreNotification, RedeemPurchase } from "../../src/core/use-cases/redeem-purchase"
@@ -119,7 +121,7 @@ export function testAuthApp(db: Database, config: Partial<AppConfig> = {}, optio
     redeem: Promise.resolve(new RedeemPurchase(verifier, purchases, audit, { "app.keepwell.coffee": "supporter" }, options.acceptSandbox ?? false)),
     notifications: Promise.resolve(new HandleAppStoreNotification(verifier, purchases, audit)),
   }
-  const app = createApp({ logger, version: "test", auth: Promise.resolve(auth), webOrigin: "http://localhost:3000", requestDeletion, capabilities, sync, push, clock: options.clock, mcp, switches: { current: async () => options.switches?.() ?? NORMAL_SWITCHES }, appStore, invitations: { store: new DrizzleInvitationStore(db), secure: false, now: options.now } })
+  const app = createApp({ logger, version: "test", auth: Promise.resolve(auth), webOrigin: "http://localhost:3000", requestDeletion, capabilities, sync, push, clock: options.clock, mcp, switches: { current: async () => options.switches?.() ?? NORMAL_SWITCHES }, appStore, invitations: { store: new DrizzleInvitationStore(db), secure: false, now: options.now }, sharedSplits: new ViewSharedSplit(new DrizzleSharedSplitIndex(db), ledgerReader) })
   return { app, auth, lines, queue, accounts, audit, entitlements, capabilities, pushSender, pushStore }
 }
 

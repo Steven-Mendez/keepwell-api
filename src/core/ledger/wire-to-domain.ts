@@ -108,6 +108,7 @@ export function toDomain(rows: LedgerRows) {
       ...present("importedId", row.imported_id ?? null),
       ...present("merchantId", row.merchant_id),
       ...present("viaMerchantId", row.via_merchant_id),
+      ...present("shareToken", row.share_token),
     }))
     .sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0))
   const recurringRules: RecurringRule[] = alive(rows.recurringRule).map((row) => ({
@@ -231,6 +232,8 @@ export function transactionToWire(transaction: Transaction, audit: { created_at:
     // Always written, null for none: unlinking reaches every device (absent would keep the stored one).
     merchant_id: transaction.merchantId ?? null,
     via_merchant_id: transaction.viaMerchantId ?? null,
+    // Always written, null when not shared: an MCP edit keeps the link only by writing it back.
+    share_token: transaction.shareToken ?? null,
     ...audit,
     deleted_at: null,
   }
